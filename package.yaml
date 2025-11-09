@@ -1,0 +1,35 @@
+name:                tkani-backend
+version:             0.1.0.0
+# ... other fields
+
+dependencies:
+- base >= 4.7 && < 5
+
+library:
+  source-dirs: src
+  dependencies:
+    - aeson
+    - bytestring
+    - hasql
+    - hasql-pool
+    - hasql-transaction
+    - katip
+    - mtl
+    - servant-server
+    - servant-swagger
+    - servant-swagger-ui
+    - text
+    - transformers
+    - wai
+    - warp
+
+executables:
+  tkani-backend-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - tkani-backend

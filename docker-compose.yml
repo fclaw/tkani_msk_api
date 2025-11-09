@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # The Database Service
+  db:
+    image: postgres:15
+    container_name: tkani-db
+    restart: unless-stopped
+    networks:
+      - tkani-net
+    environment:
+      # These credentials are now read from the .env file
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # <-- Grabbed from env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The healthcheck also uses the variables from .env
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"] # <-- Grabbed from env
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The API Service
+  api:
+    image: tkani-api:latest
+    container_name: tkani-api-container
+    restart: unless-stopped
+    networks:
+      - tkani-net
+    ports:
+      # We can also make the port configurable
+      - "${API_EXTERNAL_PORT}:${API_INTERNAL_PORT}"
+    environment:
+      # Pass the full database connection string to your Haskell app.
+      # It's constructed from the same variables.
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+     # Also pass the internal port to the application itself, in case it needs to be configured.
+      PORT: ${API_INTERNAL_PORT}
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  tkani-net:
+    name: tkani-net
+    external: true
+
+volumes:
+  postgres-data:
+    name: tkani-postgres-data
