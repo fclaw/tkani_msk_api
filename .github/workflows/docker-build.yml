@@ -15,6 +15,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # --- THE FIX: ADD CACHING ---
+      - name: Cache stack dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          # Create a cache key based on the resolver and the cabal file contents
+          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml.lock') }}-${{ hashFiles('**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-stack-
+
       # 2. Set up QEMU for multi-platform builds (crucial for building from a Mac)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
