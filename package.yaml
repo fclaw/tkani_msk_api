@@ -1,13 +1,19 @@
-name:                tkani-backend
+name:                tkani-api
 version:             0.1.0.0
-# ... other fields
+# ... other fields ...
 
 dependencies:
-- base >= 4.7 && < 5
+  - base >= 4.18 && < 5
 
 library:
   source-dirs: src
+  exposed-modules:
+    - API
+    - Handlers
+    - Types
+    - Config
   dependencies:
+    # This list should already be complete
     - aeson
     - bytestring
     - hasql
@@ -15,21 +21,37 @@ library:
     - hasql-transaction
     - katip
     - mtl
+    - servant
     - servant-server
-    - servant-swagger
-    - servant-swagger-ui
     - text
     - transformers
     - wai
     - warp
+    - unix
 
 executables:
-  tkani-backend-exe:
+  tkani-api-exe:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - tkani-backend
+      # This is the section to update.
+
+      # It depends on our own library
+      - tkani-api
+
+      # It directly uses these packages in Main.hs
+      - mtl
+      - servant
+      - servant-server
+      - warp
+      - wai
+      - text
+      
+      # --- ADD THESE LINES ---
+      - katip             # For initLogEnv, closeScribes
+      - hasql
+      - hasql-pool        # For acquire, release

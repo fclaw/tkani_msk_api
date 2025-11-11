@@ -1,48 +1,48 @@
-# --- Stage 1: The Nix-based Builder ---
-# Start from the official NixOS image, which has Nix installed.
-FROM nixos/nix:latest as builder
+# --- Stage 1: The Stack-based Builder ---
+# Start from an official image from the 'fpco' (Formal Methods Company)
+# that has Stack and common Haskell dependencies pre-installed.
+# Using a specific LTS version ensures reproducibility.
+FROM fpco/stack-build:lts-24.19 as builder
 
 # Set the working directory
 WORKDIR /app
 
-# Copy all your project files into the container.
-# This includes .cabal, package.yaml, shell.nix, and your src/ and app/ dirs.
+# --- Dependency Caching Optimization ---
+# Copy the stack configuration files first.
+COPY stack.yaml package.yaml ./
+
+# This command downloads and builds all Haskell dependencies defined in package.yaml.
+# Docker will cache this layer and only re-run it if your dependency list changes.
+RUN stack build --only-dependencies
+
+# Copy the rest of your application source code (src/, app/, etc.)
 COPY . .
 
-# --- The Magic Command ---
-# Use 'nix-build' to produce the executable.
-# This command tells Nix to build the default derivation in the current directory.
-# We will create a default.nix file to define what that is.
-# The result will be a symlink at `./result/bin/tkani-backend-exe`
-RUN nix-build
+# --- The Build Command ---
+# Now, build your actual project. This will be fast because dependencies are cached.
+# 'stack install' compiles the code and copies the final executable to a known location.
+RUN stack install --local-bin-path /usr/local/bin
+
 
 # --- Stage 2: The Final Production Image ---
-# Start from a minimal base image.
+# Start from a minimal base image. 'debian:slim' is a good choice.
 FROM debian:bookworm-slim
 
-# The 'postgresql-client' provides 'libpq.so.5' and 'zlib1g' provides zlib.
-# These are the runtime C libraries that our statically-linked executable still needs.
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client zlib1g && rm -rf /var/lib/apt/lists/*
+# Install the RUNTIME C libraries that our "static" Haskell executable might still need.
+# Even statically linked binaries often need a few core libraries like libpq and zlib.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    zlib1g \
+    libgmp10 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy ONLY the compiled executable from the builder stage.
-# The path inside the nix store is complex, but the `result` symlink gives us a stable path.
-COPY --from=builder /app/result/bin/tkani-backend-exe .
+COPY --from=builder /usr/local/bin/tkani-api-exe .
 
+# Expose the port your Warp server listens on.
+EXPOSE 8080
 
-# 1. Declare a build-time argument with a default value.
-ARG APP_PORT=8080
-
-# ... (Copy files, etc.) ...
-
-# 2. Use the ARG in the EXPOSE instruction.
-EXPOSE $APP_PORT
-
-# 3. Your Haskell/C++ app should be configured to listen on this port.
-#    You can pass this ARG as an ENV variable to the final container.
-ENV PORT=$APP_PORT
-
-
-# The command to run the application
-CMD ["./tkani-backend-exe"]
+# The command to run the application when the container starts.
+CMD ["./tkani-api-exe"]

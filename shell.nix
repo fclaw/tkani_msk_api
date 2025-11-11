@@ -1,85 +1,57 @@
-# This is now the single source of truth for nixpkgs.
-# We no longer take pkgs as a function argument.
 let
-  nixpkgs = fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz";
+  sources = import ./nix/sources.nix;
+  pkgs = import sources.nixpkgs { };
+in
 
-  # --- THE FIX: Create an overlay to override dependencies ---
-  # An overlay is a set of modifications applied to nixpkgs.
-  overlay = self: super: {
-    haskellPackages = super.haskellPackages.override {
-      overrides = hself: hsuper: {
-        # This tells Nix: for the 'hasql' package,
-        # ignore its default dependencies and build it with this specific version of 'transformers'.
-        hasql = hsuper.callCabal2nix "hasql" hsuper.hasql_1_9_3_2 {
-          transformers = hsuper.transformers_0_6_2_0;
-        };
-      };
-    };
+let
+  # Wrap Stack to configure Nix integration and target the correct Stack-Nix file
+  #
+  # - nix: Enable Nix support
+  # - no-nix-pure: Pass environment variables, like `NIX_PATH`
+  # - nix-shell-file: Specify the Nix file to use (otherwise it uses `shell.nix` by default)
+  stack-wrapped = pkgs.symlinkJoin {
+    name = "stack";
+    paths = [ pkgs.stack ];
+    buildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/stack \
+        --add-flags "\
+          --nix \
+          --no-nix-pure \
+          --nix-shell-file=nix/stack-integration.nix \
+        "
+    '';
   };
-
-  # Import nixpkgs and apply our overlay
-  pkgs = import nixpkgs { overlays = [ overlay ]; };
-  
-  # Select the Haskell package set for a specific GHC version from our modified pkgs
-  # (Let's use a known recent version like ghc963 for unstable)
-  haskellPackages = pkgs.haskell.packages.ghc967;
-
-  # Define our Haskell dependencies here, including the missing one.
-  ghcWithPackages = haskellPackages.ghc.withPackages (ps: with ps; [
-    # Dependencies from your package.yaml
-    aeson
-    bytestring
-    hasql
-    hasql-pool
-    hasql-transaction
-    katip
-    mtl
-    servant-server
-    servant-swagger
-    servant-swagger-ui
-    text
-    transformers
-    wai
-    warp
-
-    # --- THE FIX ---
-    # Explicitly add the 'unix' package that was missing.
-    unix
-  ]);
 
 in
 pkgs.mkShell {
-  # These are the packages made available in the shell environment.
   buildInputs = [
-    ghcWithPackages # This provides ghc, cabal, and all our haskell deps
-
-    # --- System Libraries and Tools ---
-    
-    # Correct package name for Sqitch with PostgreSQL support
-    pkgs.sqitchPg
-
-    # The PostgreSQL C library itself (needed by hasql and sqitchPg)
-    pkgs.postgresql
-
-    # Other common dependencies for Haskell builds
-    pkgs.zlib
-    pkgs.pkg-config
+    stack-wrapped
+    # Other useful tools
     pkgs.git
-
-    # Docker client (for building images)
     pkgs.docker
+    pkgs.docker-compose
   ];
 
-  # The shellHook is executed when you enter the nix-shell
+  # Configure the Nix path to our own `pkgs`, to ensure Stack-with-Nix uses the correct one rather than the global <nixpkgs> when looking for the right `ghc` argument to pass in `nix/stack-integration.nix`
+  # See https://nixos.org/nixos/nix-pills/nix-search-paths.html for more information
+  NIX_PATH = "nixpkgs=" + pkgs.path;
+
+  # This shellHook is not strictly necessary but is a good practice.
+  # It warns the user if their system's GHC is different from Stack's.
   shellHook = ''
-    echo "Entering Nix-based Haskell development shell..."
+    echo "✅ Entered Nix-based Stack development shell."
+    echo "   Using stack provided by Nix. It will manage its own GHC."
+    echo "   Available commands: stack, ghcid, hpack, docker, ..."
     
-    # Docker socket setup
+    # Docker socket setup for macOS
     DOCKER_SOCKET_PATH="/var/run/docker.sock"
-    if [ -L "$DOCKER_SOCKET_PATH" ]; then
+    if [ -S "$DOCKER_SOCKET_PATH" ]; then
+      if [ -L "$DOCKER_SOCKET_PATH" ]; then
         DOCKER_SOCKET_PATH=$(readlink $DOCKER_SOCKET_PATH)
+      fi
+      export DOCKER_HOST="unix://$DOCKER_SOCKET_PATH"
+      echo "   🐳 Docker host configured to use: $DOCKER_HOST"
     fi
-    export DOCKER_HOST="unix://$DOCKER_SOCKET_PATH"
-    echo "Docker host configured to use: $DOCKER_HOST"
   '';
 }

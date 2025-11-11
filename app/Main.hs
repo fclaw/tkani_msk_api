@@ -1,36 +1,67 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-import Network.Wai (Application)
+module Main where
+
 import Network.Wai.Handler.Warp (run)
-import Servant
-import Data.Text (Text)
+import Servant (Handler)
+import Servant.Server
+import Servant.Server.Generic
+-- Database and logging imports
+import qualified Hasql.Pool as Pool
+import Katip (initLogEnv, closeScribes)
+import Control.Monad.Reader (runReaderT)
+import qualified Hasql.Pool.Config as Config
+import Hasql.Connection.Setting (connection)
+import Hasql.Connection.Setting.Connection (string)
+import Control.Monad (void)
+import Control.Exception (finally)
 
--- 1. Define the API type using Servant's type-level DSL.
---    This defines a single endpoint: GET "/" which returns plain text.
-type API = Get '[PlainText] Text
 
--- 2. Create a 'Proxy' for our API type.
---    Servant uses this to work with the API type at the value level.
-api :: Proxy API
-api = Proxy
+import Types (AppState(..), AppM(..))
+import Handlers (apiHandlers) -- Import our top-level record of handlers
+import Config (loadConfig, AppConfig(..))
 
--- 3. Implement the handler for our API.
---    The type signature of the handler must match the API type.
---    Here, it's a simple 'Handler' that returns a 'Text'.
-server :: Server API
-server = return "Hello, World! This is the Servant/Warp test server."
 
--- 4. Create the WAI Application.
---    'serve' turns our Servant API and its handlers into a standard WAI Application.
-app :: Application
-app = serve api server
+-- | This is the "natural transformation" that converts our 'AppM' into a 'Handler'.
+--   It takes the 'AppState' and provides it to the 'ReaderT' within 'AppM'.
+nt :: AppState -> AppM a -> Handler a
+nt state appM = runReaderT (unAppM appM) state
 
--- 5. The main entry point.
---    It starts the Warp server on port 8080 and tells it to run our 'app'.
+-- | We use 'hoistServer' to apply our natural transformation to the whole server.
+app :: AppState -> Application
+app state = genericServeT (nt state) apiHandlers
+
+
 main :: IO ()
 main = do
-  let port = 8080
-  putStrLn $ "Starting server on http://localhost:" ++ show port
-  run port app
+  -- 1. Load configuration from environment variables
+  config <- loadConfig
+
+  -- 2. Initialize the logger
+  logEnv <- initLogEnv "tkani-api" "production"
+
+  -- 3. Define the connection string.
+  let connString = string (configDBConnString config)
+  
+  -- 4. Build the configuration using the DSL.
+  let poolConfig = Config.settings
+        [ Config.size 10                         -- Pool size of 10
+        , Config.acquisitionTimeout 10           -- Timeout of 10 seconds
+        , Config.staticConnectionSettings [connection connString] -- The connection string itself
+        ]
+
+  -- 4. Acquire the pool using the generated config.
+  pool <- Pool.acquire poolConfig
+
+  -- 3. Create the shared AppState
+  let appState = AppState
+        { appDBPool = pool
+        , appLogEnv = logEnv
+        }
+
+  -- 5. Run the server
+  let port = configApiPort config -- <-- From config
+  putStrLn $ "Starting server on port " <> show port
+   -- 6. run server and clean up resources on shutdown
+  run port (app appState) `finally` (Pool.release pool >> closeScribes logEnv)
