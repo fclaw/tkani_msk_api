@@ -34,6 +34,7 @@ fi
 # for use in this script.
 export $(grep -v '^#' $ENV_FILE | xargs)
 
+
 # --- The Main Workflow ---
 
 echo "🚀 Starting the PostgreSQL database service..."

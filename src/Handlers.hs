@@ -12,13 +12,13 @@ import Servant.API.Generic (fromServant, toServant)
 
 import Types (AppM) -- Your custom monad
 import API (Routes (..)) -- Import our new ApiWithDocs
-import qualified Handlers.Welcome as Welcome
+import qualified Handlers.GetFabricInfo as GetFabricInfo
+import qualified Handlers.PutNewFabric as PutNewFabric
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
--- The compiler will enforce that this record has a '_welcome' field
--- with the correct handler type.
 apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
-  { _welcome = Welcome.handler -- Assign the handler function to the field
+  {  _getFabricInfo = GetFabricInfo.handler -- Assign the handler function to the field
+  , _putNewFabric = PutNewFabric.handler
   }

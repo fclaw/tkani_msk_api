@@ -16,15 +16,20 @@ library:
     # This list should already be complete
     - aeson
     - bytestring
+    - containers
     - hasql
     - hasql-pool
+    - hasql-th
     - hasql-transaction
     - katip
     - mtl
+    - profunctors
     - servant
     - servant-server
+    - template-haskell
     - text
     - transformers
+    - tuple-sop
     - wai
     - warp
     - unix
@@ -49,6 +54,7 @@ executables:
       - servant-server
       - warp
       - wai
+      - wai-cors
       - text
       
       # --- ADD THESE LINES ---

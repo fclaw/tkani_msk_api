@@ -1,4 +1,4 @@
 %syntax-version=1.0.0
 %project=tkani-api
 
-1.create_tables 2025-11-11T09:51:29Z System Administrator <root@Sonny.local> # Create initial fabrics and pre_cuts tables
+1.create_tables 2025-11-11T19:39:41Z System Administrator <root@Sonny.local> # Create initial fabrics and pre_cuts tables

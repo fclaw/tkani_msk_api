@@ -1,12 +1,20 @@
+-- src/Config.hs
+
+{-# LANGUAGE OverloadedStrings #-}
+
 module Config
   ( AppConfig(..)
   , loadConfig
   ) where
 
-import System.Environment (lookupEnv)
+import Control.Applicative ((<|>))
+import Data.Text (Text, pack, unpack, strip)
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text, pack)
+import qualified Data.Map as Map
+import Control.Exception (catch, IOException)
 
 -- | A data type to hold all our application's configuration.
 data AppConfig = AppConfig
@@ -14,31 +22,60 @@ data AppConfig = AppConfig
   , configApiPort      :: Int
   } deriving (Show)
 
--- | A helper function to read an environment variable with a default value.
-getEnvOrDefault :: String -> String -> IO String
-getEnvOrDefault varName defValue = fromMaybe defValue <$> lookupEnv varName
+type EnvMap = Map.Map Text Text
 
--- | The main function to load all configuration from the environment.
+-- | Parses a single line from a .env file (e.g., "KEY=VALUE")
+parseEnvLine :: Text -> Maybe (Text, Text)
+parseEnvLine line =
+  case T.breakOn "=" (strip line) of
+    (key, val) | not (T.null val) -> Just (strip key, strip (T.drop 1 val))
+    _                             -> Nothing
+
+-- | Reads a .env file and parses it into a Map.
+loadEnvFile :: FilePath -> IO EnvMap
+loadEnvFile path = (Map.fromList . mapMaybe parseEnvLine . T.lines <$> TIO.readFile path)
+  `catch` handleIOError
+  where
+    mapMaybe :: (a -> Maybe b) -> [a] -> [b]
+    mapMaybe _ [] = []
+    mapMaybe f (x:xs) = case f x of
+                          Just y  -> y : mapMaybe f xs
+                          Nothing -> mapMaybe f xs
+    handleIOError :: IOException -> IO EnvMap
+    handleIOError _ = do
+      putStrLn $ "Warning: .env file not found at " ++ path ++ ". Using defaults."
+      return Map.empty
+
+-- | Looks up a value in the EnvMap, returning a default if not found.
+lookupWithDefault :: EnvMap -> Text -> Text -> Text
+lookupWithDefault envMap key defValue = Map.findWithDefault defValue key envMap
+
+-- | The main function to load all configuration.
 loadConfig :: IO AppConfig
 loadConfig = do
-  dbHost <- getEnvOrDefault "POSTGRES_HOST" "localhost"
-  dbPort <- getEnvOrDefault "POSTGRES_PORT" "5432"
-  dbUser <- getEnvOrDefault "POSTGRES_USER" "youruser"
-  dbPass <- getEnvOrDefault "POSTGRES_PASSWORD" "yourpass"
-  dbName <- getEnvOrDefault "POSTGRES_DB" "tkani_db"
-  
-  -- Read the API port, with a default value of 8080
-  apiPortStr <- getEnvOrDefault "API_INTERNAL_PORT" "8080"
-  let apiPort = fromMaybe 8080 (readMaybe apiPortStr)
+  -- 1. Load the .env file into a Map
+  env <- loadEnvFile ".env"
 
-  -- Construct the database connection string
-  let connString = pack $
-        "host=" ++ dbHost ++
-        " port=" ++ dbPort ++
-        " user=" ++ dbUser ++
-        " password=" ++ dbPass ++
-        " dbname=" ++ dbName
-        
+  -- 2. Look up each variable from the Map, providing defaults
+  let dbHost = lookupWithDefault env "POSTGRES_HOST" "localhost"
+  let dbPort = lookupWithDefault env "POSTGRES_PORT" "5432"
+  let dbUser = lookupWithDefault env "POSTGRES_USER" "youruser"
+  let dbPass = lookupWithDefault env "POSTGRES_PASSWORD" "yourpass"
+  let dbName = lookupWithDefault env "POSTGRES_DB" "tkani_db"
+  let apiPortStr = lookupWithDefault env "API_INTERNAL_PORT" "8080"
+  
+  -- 3. Parse the port number
+  let apiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)
+
+  -- 4. Construct the database connection string
+  let connString =
+        "host=" <> dbHost <>
+        " port=" <> dbPort <>
+        " user=" <> dbUser <>
+        " password=" <> dbPass <>
+        " dbname=" <> dbName
+
+  -- 5. Return the final AppConfig record
   pure $ AppConfig
     { configDBConnString = connString
     , configApiPort      = apiPort

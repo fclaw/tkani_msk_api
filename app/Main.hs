@@ -16,6 +16,7 @@ import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
 import Control.Monad (void)
 import Control.Exception (finally)
+import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 
 
 import Types (AppState(..), AppM(..))
@@ -30,7 +31,7 @@ nt state appM = runReaderT (unAppM appM) state
 
 -- | We use 'hoistServer' to apply our natural transformation to the whole server.
 app :: AppState -> Application
-app state = genericServeT (nt state) apiHandlers
+app state = simpleCors $ genericServeT (nt state) apiHandlers
 
 
 main :: IO ()
