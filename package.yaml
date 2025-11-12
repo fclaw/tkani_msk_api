@@ -9,6 +9,7 @@ library:
   source-dirs: src
   exposed-modules:
     - API
+    - API.Types
     - Handlers
     - Types
     - Config
@@ -21,6 +22,7 @@ library:
     - hasql-pool
     - hasql-th
     - hasql-transaction
+    - http-api-data
     - katip
     - mtl
     - profunctors
@@ -56,6 +58,7 @@ executables:
       - wai
       - wai-cors
       - text
+      - yaml
       
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

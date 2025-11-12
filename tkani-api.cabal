@@ -13,14 +13,16 @@ build-type:     Simple
 library
   exposed-modules:
       API
+      API.Types
       Handlers
       Types
       Config
   other-modules:
-      API.Types
       API.WithField
       DB
+      Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo
+      Handlers.GetProviders
       Handlers.PutNewFabric
       TH.RecordToTuple
       Paths_tkani_api
@@ -35,6 +37,7 @@ library
     , hasql-pool
     , hasql-th
     , hasql-transaction
+    , http-api-data
     , katip
     , mtl
     , profunctors
@@ -69,4 +72,5 @@ executable tkani-api-exe
     , wai
     , wai-cors
     , warp
+    , yaml
   default-language: Haskell2010

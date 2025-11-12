@@ -12,7 +12,8 @@ CREATE TABLE fabrics (
   total_length_m DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
   available_length_m DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
   in_stock BOOLEAN NOT NULL DEFAULT TRUE, -- whether the fabric is in stock
-  selling_in_pre_cuts BOOLEAN NOT NULL DEFAULT FALSE -- whether the fabric is being sold in pre-cuts
+  selling_in_pre_cuts BOOLEAN NOT NULL DEFAULT FALSE, -- whether the fabric is being sold in pre-cuts
+  is_sold BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE pre_cuts (

@@ -6,7 +6,7 @@ set -e
 
 # --- Configuration ---
 # The base URL of your running API service.
-API_URL="http://localhost:8080"
+API_URL="http://localhost:8082"
 
 # --- Argument Parsing ---
 # Check if the correct number of arguments are provided.

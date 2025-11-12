@@ -4,7 +4,7 @@
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE DataKinds             #-}
 
 module DB
   ( getFabricInfoById
@@ -25,7 +25,7 @@ import Control.Monad (join)
 import Data.Tuple.Ops (initT, app2, app3)
 
 
-import API.Types (FabricInfo(..), PreCut(..)) -- Your data types
+import API.Types (FabricInfo(..), PreCut(..), FullFabric) -- Your data types
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 
@@ -45,9 +45,9 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
-getFabricStatement :: Hasql.Statement Int (Either String (WithField "fiId" Int FabricInfo))
+getFabricStatement :: Hasql.Statement Int (Either String FullFabric)
 getFabricStatement =
-  dimap fromIntegral (maybe (Left "fabric not found") id . fmap (convertFromJson @(WithField "fiId" Int FabricInfo)))
+  dimap fromIntegral (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
   [TH.maybeStatement|
     select json_build_object(
       'fiId', f.id,
@@ -55,13 +55,16 @@ getFabricStatement =
       'fiTotalLengthM', f.total_length_m,
       'fiPricePerMeter', f.price_per_meter,
       'fiAvailableLengthM', f.available_length_m,
+      'fiIsSold', f.is_sold,
       'fiPreCuts', coalesce((
         select jsonb_agg(
           json_build_object(
           'pcId', pc.id,
           'pcLengthM', pc.length_m,
-          'pcPriceRub', pc.price_rub)
-         ) from pre_cuts AS pc
+          'pcPriceRub', pc.price_rub,
+          'pcInStock', pc.in_stock)
+         ) :: jsonb
+         from pre_cuts AS pc
          where pc.fabric_id = f.id and pc.in_stock = TRUE),
          '[]'::jsonb)) :: jsonb
     from fabrics AS f
@@ -70,7 +73,7 @@ getFabricStatement =
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
-getFabricInfoById :: Int -> Hasql.Pool -> IO (Either Text (WithField "fiId" Int FabricInfo))
+getFabricInfoById :: Int -> Hasql.Pool -> IO (Either Text FullFabric)
 getFabricInfoById fabricId_ pool = fmap (join . first (pack . show)) $ runTransaction pool Hasql.Read $ fmap (first pack) $ fabricId_ `Hasql.statement` getFabricStatement
 
 putNewFabricStatement :: Hasql.Statement FabricInfo Int

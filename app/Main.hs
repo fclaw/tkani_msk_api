@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
@@ -17,11 +18,21 @@ import Hasql.Connection.Setting.Connection (string)
 import Control.Monad (void)
 import Control.Exception (finally)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
+import Data.Yaml (decodeFileEither)
 
 
 import Types (AppState(..), AppM(..))
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
+
+import API.Types (ProviderInfo)
+
+
+
+
+
+handleProviderResult (Right providers) go = go providers
+handleProviderResult (Left error) _ = undefined
 
 
 -- | This is the "natural transformation" that converts our 'AppM' into a 'Handler'.
@@ -52,17 +63,21 @@ main = do
         , Config.staticConnectionSettings [connection connString] -- The connection string itself
         ]
 
-  -- 4. Acquire the pool using the generated config.
+  -- 5. Acquire the pool using the generated config.
   pool <- Pool.acquire poolConfig
 
-  -- 3. Create the shared AppState
-  let appState = AppState
-        { appDBPool = pool
-        , appLogEnv = logEnv
-        }
+  providerResult <- decodeFileEither @[ProviderInfo] "providers.yaml"
+  handleProviderResult providerResult $ \providers_ -> do
 
-  -- 5. Run the server
-  let port = configApiPort config -- <-- From config
-  putStrLn $ "Starting server on port " <> show port
-   -- 6. run server and clean up resources on shutdown
-  run port (app appState) `finally` (Pool.release pool >> closeScribes logEnv)
+    -- 6. Create the shared AppState
+    let appState = AppState
+          { appDBPool = pool
+          , appLogEnv = logEnv
+          , providers = providers_
+          }
+
+    -- 7. Run the server
+    let port = configApiPort config -- <-- From config
+    putStrLn $ "Starting server on port " <> show port
+     -- 8. run server and clean up resources on shutdown
+    run port (app appState) `finally` (Pool.release pool >> closeScribes logEnv)

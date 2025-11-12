@@ -18,11 +18,13 @@ import Data.Aeson (Value)
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
 
+import API.Types (ProviderInfo)
 
 -- | AppState holds all the shared, read-only resources for our application.
 data AppState = AppState
   { appDBPool :: Pool
   , appLogEnv :: LogEnv
+  , providers :: [ProviderInfo]
   }
 
 -- | AppM is our application's custom monad.

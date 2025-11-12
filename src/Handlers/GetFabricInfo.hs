@@ -12,7 +12,7 @@ import Control.Monad.Reader (asks)
 import Data.Text (pack)
 
 
-import API.Types (FabricInfo)
+import API.Types (FullFabric)
 import API.WithField (WithField)
 import Types (AppM, AppState(appDBPool))
 import API.Types (ApiResponse, mkError)
@@ -22,7 +22,7 @@ import Data.Bifunctor (first)
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: Int -> AppM (ApiResponse (WithField "fiId" Int FabricInfo))
+handler :: Int -> AppM (ApiResponse FullFabric)
 handler fabricId_ = do
   -- 1. Log the incoming request
   $(logTM) InfoS "Request received for fabric info"

@@ -4,18 +4,26 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds         #-}
 
 module API.Types 
   (PreCut, 
    FabricInfo (..), 
    ApiError (..), 
    ApiResponse,
+   FullFabric,
+   Providers (..),
+   DeliveryPoint (..),
+   ProviderInfo (..),
    mkError) where
 
-import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..))
-import Data.Text (Text)
+import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
+import Data.Text (Text, toLower)
 import GHC.Generics (Generic)
 import Data.Text (pack)
+import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
+
+import API.WithField (WithField)
 
 
 -- | A standard structure for an error response.
@@ -81,14 +89,54 @@ data FabricInfo = FabricInfo
     fiDescription        :: Text
   , fiTotalLengthM       :: Int
   , fiPricePerMeter      :: Int    -- In kopecks/cents
-
     -- Inventory Status
   , fiAvailableLengthM   :: Double -- Amount available for "cut-to-order"
-  
     -- List of associated pre-cuts for this fabric.
-  , fiPreCuts            :: Maybe [PreCut]
+  , fiPreCuts            :: Maybe [WithField "pcId" Int PreCut]
   } deriving (Show, Generic)
 
 -- Automatically derive the necessary instances
 instance ToJSON FabricInfo
 instance FromJSON FabricInfo
+
+type FullFabric = WithField "fiIsSold" Bool (WithField "fiId" Int FabricInfo)
+
+
+data Providers = SDEK
+  deriving (Show, Eq, Read)
+
+-- Convert from URL path segment TO our Providers type
+instance FromHttpApiData Providers where
+  parseUrlPiece text =
+    -- We'll make it case-insensitive for robustness
+    case toLower text of
+      "sdek"     -> Right SDEK
+      _          -> Left "Unknown provider"
+
+-- Convert from our Providers type TO a URL path segment
+instance ToHttpApiData Providers where
+  toUrlPiece provider =
+    case provider of
+      SDEK     -> "sdek"
+
+    
+data DeliveryPoint = DeliveryPoint
+  {   dpCode            :: Text
+    , dpName            :: Text
+    , dpWorkTime        :: Text
+    , dpAddressFull     :: Text
+  } deriving (Show, Generic)
+
+instance ToJSON DeliveryPoint
+instance FromJSON DeliveryPoint
+
+data ProviderInfo = ProviderInfo { piCode :: Text, piName :: Text }
+  deriving (Show, Generic)
+
+-- Make it encodable to JSON for the API response
+instance ToJSON ProviderInfo where
+  toJSON (ProviderInfo code name) = object ["code" .= code, "name" .= name]
+
+-- Make it decodable from YAML/JSON
+instance FromJSON ProviderInfo where
+  parseJSON = withObject "ProviderInfo" $ \v -> ProviderInfo <$> v .: "code" <*> v .: "name"

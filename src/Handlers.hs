@@ -14,6 +14,8 @@ import Types (AppM) -- Your custom monad
 import API (Routes (..)) -- Import our new ApiWithDocs
 import qualified Handlers.GetFabricInfo as GetFabricInfo
 import qualified Handlers.PutNewFabric as PutNewFabric
+import qualified Handlers.GetDeliveryPoints as GetDeliveryPoints
+import qualified Handlers.GetProviders as GetProviders
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -21,4 +23,6 @@ apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
   {  _getFabricInfo = GetFabricInfo.handler -- Assign the handler function to the field
   , _putNewFabric = PutNewFabric.handler
+  , _getDeliveryPoints = GetDeliveryPoints.handler
+  , _getProviders = GetProviders.handler
   }

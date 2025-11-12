@@ -8,9 +8,9 @@ module API where
 import GHC.Generics (Generic)
 import Servant.API.Generic
 import Data.Text (Text)
-import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody)
+import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
 
-import API.Types (FabricInfo, ApiResponse)
+import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo)
 import API.WithField (WithField)
 
 
@@ -18,6 +18,25 @@ import API.WithField (WithField)
 -- The 'route' parameter is a placeholder that Servant uses.
 data Routes route = Routes
   {
-    _putNewFabric :: route :- "fabric" :> ReqBody '[JSON] FabricInfo :> Post '[JSON] (ApiResponse Int)
-  , _getFabricInfo :: route :- "fabric" :> Capture "id" Int :> Get '[JSON] (ApiResponse (WithField "fiId" Int FabricInfo))
+    _putNewFabric 
+       :: route 
+       :- "fabric" 
+       :> ReqBody '[JSON] FabricInfo 
+       :> Post '[JSON] (ApiResponse Int)
+  , _getFabricInfo 
+       :: route 
+       :- "fabric" 
+       :> Capture "id" Int 
+       :> Get '[JSON] (ApiResponse FullFabric)
+  , _getDeliveryPoints
+       :: route 
+       :- "providers" 
+       :> Capture "provider" Providers 
+       :> "delivery-points" 
+       :> QueryParam "city" Text 
+       :> Get '[JSON] (ApiResponse [DeliveryPoint])
+  , _getProviders
+       :: route
+       :- "providers"
+       :> Get '[JSON] (ApiResponse [ProviderInfo])
   } deriving (Generic)
