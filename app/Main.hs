@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
@@ -18,7 +19,9 @@ import Hasql.Connection.Setting.Connection (string)
 import Control.Monad (void)
 import Control.Exception (finally)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
-import Data.Yaml (decodeFileEither)
+import Data.Yaml (decodeFileEither, prettyPrintParseException)
+import GHC.IO.Exception (userError)
+import Control.Monad.Error.Class (throwError)
 
 
 import Types (AppState(..), AppM(..))
@@ -32,7 +35,7 @@ import API.Types (ProviderInfo)
 
 
 handleProviderResult (Right providers) go = go providers
-handleProviderResult (Left error) _ = undefined
+handleProviderResult (Left error) _ = throwError $ userError ("cannot open providers.yaml: " <> prettyPrintParseException error)
 
 
 -- | This is the "natural transformation" that converts our 'AppM' into a 'Handler'.
