@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module API.Types 
   (PreCut, 
@@ -15,15 +16,22 @@ module API.Types
    Providers (..),
    DeliveryPoint (..),
    ProviderInfo (..),
+   OrderRequest (..),
+   OrderStatus (..),
+   OrderResponse (..),
    mkError) where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
-import Data.Text (Text, toLower)
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Char (toLower)
 import GHC.Generics (Generic)
 import Data.Text (pack)
 import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
+import Data.Aeson.TH
 
 import API.WithField (WithField)
+import Text (camelToSnake, recordLabelModifier) 
 
 
 -- | A standard structure for an error response.
@@ -102,14 +110,16 @@ instance FromJSON FabricInfo
 type FullFabric = WithField "fiIsSold" Bool (WithField "fiId" Int FabricInfo)
 
 
-data Providers = SDEK
+data Providers = SDEK | NONE
   deriving (Show, Eq, Read)
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''Providers)
 
 -- Convert from URL path segment TO our Providers type
 instance FromHttpApiData Providers where
   parseUrlPiece text =
     -- We'll make it case-insensitive for robustness
-    case toLower text of
+    case T.toLower text of
       "sdek"     -> Right SDEK
       _          -> Left "Unknown provider"
 
@@ -140,3 +150,55 @@ instance ToJSON ProviderInfo where
 -- Make it decodable from YAML/JSON
 instance FromJSON ProviderInfo where
   parseJSON = withObject "ProviderInfo" $ \v -> ProviderInfo <$> v .: "code" <*> v .: "name"
+
+
+-- We'll assume these types are defined elsewhere
+-- data Fabric = Fabric { fabricId :: Int, ... }
+-- type DeliveryProviderId = Text -- e.g., "sdek", "boxberry"
+-- type DeliveryPointId = Text    -- e.g., "sdek_EKB20"
+
+-- | Represents a customer order request before payment and confirmation.
+-- This is the data structure your bot will build and send to the API.
+data OrderRequest = OrderRequest
+  { -- Core Product Information
+    orFabricId      :: Int          -- The ID of the fabric being ordered. REQUIRED.
+
+    -- Purchase Details (exactly one of these should be Just)
+  , orLengthM       :: Maybe Double   -- Length in meters for a custom cut.
+  , orPreCutId      :: Maybe Int      -- The ID of the specific pre-cut piece.
+
+    -- Customer & Delivery Information
+  , orCustomerFullName :: Text       -- Full name as a single string (e.g., "Иванов Иван Иванович").
+  , orCustomerPhone    :: Text       -- Phone number, normalized (e.g., "+79211234567").
+  
+  , orDeliveryProviderId :: Providers          -- The code for the provider, e.g., "sdek".
+  , orDeliveryPointId    :: Text    -- The unique ID of the chosen delivery point.
+
+   -- link to telegram where the fabric image and description is situated
+  , orTelegramUrl :: Text
+  } deriving (Show, Generic)
+
+-- We'll need ToJSON/FromJSON instances for this to be sent over the API
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "or" } ''OrderRequest)
+
+-- | Represents the lifecycle stages of an order.
+data OrderStatus
+  = New                 -- Order created by the bot, awaiting payment.
+  | Paid                -- Payment received, awaiting fulfillment.
+  | PreparedForDelivery -- Order packed, label printed, awaiting courier pickup.
+  | OnRoute             -- Courier has picked up the package, it's in transit.
+  | Delivered           -- Customer has received the package.
+  deriving (Show, Eq, Read, Bounded, Enum, Generic)
+
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
+
+data OrderResponse = OrderResponse
+  {
+    orDescription :: Text
+  , orTotalSum :: Double
+  } deriving (Show, Generic)
+
+instance ToJSON OrderResponse
+instance FromJSON OrderResponse
+ 

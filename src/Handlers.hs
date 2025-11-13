@@ -16,6 +16,7 @@ import qualified Handlers.GetFabricInfo as GetFabricInfo
 import qualified Handlers.PutNewFabric as PutNewFabric
 import qualified Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified Handlers.GetProviders as GetProviders
+import qualified Handlers.PutNewOrder as PutNewOrder
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -25,4 +26,5 @@ apiHandlers = Routes
   , _putNewFabric = PutNewFabric.handler
   , _getDeliveryPoints = GetDeliveryPoints.handler
   , _getProviders = GetProviders.handler
+  , _putNewOrder = PutNewOrder.handler
   }

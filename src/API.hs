@@ -10,7 +10,7 @@ import Servant.API.Generic
 import Data.Text (Text)
 import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
 
-import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo)
+import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo, OrderResponse, OrderRequest)
 import API.WithField (WithField)
 
 
@@ -39,4 +39,10 @@ data Routes route = Routes
        :: route
        :- "providers"
        :> Get '[JSON] (ApiResponse [ProviderInfo])
+  , _putNewOrder
+       :: route
+       :- "order"
+       :> "create"
+       :> ReqBody '[JSON] OrderRequest
+       :> Post '[JSON] (ApiResponse OrderResponse)
   } deriving (Generic)

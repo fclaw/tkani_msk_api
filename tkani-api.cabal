@@ -24,6 +24,8 @@ library
       Handlers.GetFabricInfo
       Handlers.GetProviders
       Handlers.PutNewFabric
+      Handlers.PutNewOrder
+      Text
       TH.RecordToTuple
       Paths_tkani_api
   hs-source-dirs:
