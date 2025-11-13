@@ -8,7 +8,6 @@ import Data.Text (Text, unpack)
 import Katip (logTM, Severity(..))
 import GHC.Exts (fromString)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (asks)
 import Data.Text (pack)
 
 

@@ -3,11 +3,13 @@
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DeriveGeneric              #-}
 
 module Types
   ( State(..)
   , AppM(..),
   Config (..),
+  SdekToken,
   SDEKCredentials (..)
   ) where
 
@@ -19,18 +21,33 @@ import Data.Text (Text, pack)
 import Control.Concurrent.STM (TVar)
 import Control.Monad.RWS (RWST, MonadState, withRWST) -- Important
 import Control.Lens
-
+import GHC.Generics (Generic)
+import Data.Aeson.TH
 
 -- Katip imports
 import Katip
 import Data.Aeson (Value)
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
-
+import Text (recordLabelModifier) 
 import API.Types (ProviderInfo)
 
 
-type SdekToken = Text
+-- "access_token": "string",
+-- "token_type": "string",
+-- "expires_in": 0,
+-- "scope": "string",
+-- "jti": "string"
+data SdekToken = SdekToken
+ {
+   sdekAccessToken :: Text
+ , sdekTokenType   :: Text
+ , sdekExpiresIn   :: Int
+ , sdekScope       :: Text
+ , sdekJti         :: Text
+ } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sdek" } ''SdekToken)
 
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.

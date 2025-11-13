@@ -26,6 +26,7 @@ library
       Handlers.PutNewFabric
       Handlers.PutNewOrder
       Provider.Sdek
+      Provider.Sdek.Auth
       Text
       TH.RecordToTuple
       Utils.Http

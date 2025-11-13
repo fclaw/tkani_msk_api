@@ -13,6 +13,6 @@ import Provider.Sdek (getDeliveryPoints)
 
 
 handler :: Providers -> Maybe Text -> AppM (ApiResponse [DeliveryPoint])
-handler SDEK (Just city) = liftIO $ getDeliveryPoints city
+handler SDEK (Just city) = getDeliveryPoints city
 handler _ (Just _) = return $ Left $ mkError "None provider has been hit"
 handler _ _ = return $ Left $ mkError "city not provided"
