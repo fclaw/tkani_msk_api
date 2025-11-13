@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Utils.Http
   ( getReq,
     postReq,
-    postFormReq, 
+    postFormReq,
+    handleApiResponse,
     HttpError(..),
     QueryParams,
     FormParams
@@ -20,6 +23,9 @@ import qualified Data.Text              as T
 import           Network.Wreq           (Response, defaults, getWith, params,
                                          postWith, responseBody, header, FormParam (..))
 import qualified Data.Text.Encoding     as TE
+import           Servant                (ServerError, err500, errBody)
+import           Control.Monad.Error.Class
+import           Katip
 
 -- A cleaner way to represent query parameters
 type QueryParams = [(Text, Text)]
@@ -75,3 +81,23 @@ postFormReq url payload = do
   eResponse <- try (postWith defaults url payload) :: IO (Either SomeException (Response LBS.ByteString))
   -- We can reuse our existing response parser!
   pure $ perseResp eResponse
+
+-- | A higher-order function in Continuation-Passing Style to handle the
+--   result of an API call made with our http helpers.
+--   It abstracts away the boilerplate of error logging and throwing.
+handleApiResponse
+  :: ( KatipContext m
+     , MonadError ServerError m)
+  => Text                       -- ^ A descriptive name for the API call (for logging)
+  -> Either HttpError a         -- ^ The result from getReqAuth or similar
+  -> (a -> m b)                 -- ^ The "Continuation": a function to run on success
+  -> m b
+handleApiResponse callName eResult onSUCCESS =
+  case eResult of
+    Left err -> do
+      let errorMsg = "Failed API call to '" <> callName <> "': "
+      $(logTM) ErrorS $ logStr (errorMsg <> "error: " <> T.pack (show err))
+      throwError err500 { errBody = "External API call failed. See logs for details." }
+    -- If the result was Right, simply call the success continuation
+    -- with the unwrapped payload.
+    Right successPayload -> onSUCCESS successPayload

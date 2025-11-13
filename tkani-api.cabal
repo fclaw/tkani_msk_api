@@ -28,6 +28,7 @@ library
       Provider.Sdek
       Provider.Sdek.Auth
       Text
+      TH.Location
       TH.RecordToTuple
       Utils.Http
       Paths_tkani_api

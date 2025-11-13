@@ -9,7 +9,7 @@ module Types
   ( State(..)
   , AppM(..),
   Config (..),
-  SdekToken,
+  SdekToken (..),
   SDEKCredentials (..)
   ) where
 

@@ -79,7 +79,7 @@ withLogEnv action = do
   --    'makeHandleScribe' takes a handle, severity level, and verbosity.
   --    'ColorIfTerminal' will colorize logs if writing to a TTY.
   --    'V2' is a good default verbosity level.
-  handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+  handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
 
   -- 2. Create the initial LogEnv.
   --    "tkani-api" is the application name.

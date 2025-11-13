@@ -19,6 +19,8 @@ module API.Types
    OrderRequest (..),
    OrderStatus (..),
    OrderResponse (..),
+   DisplayInfo (..),
+   PointLocation (..),
    mkError) where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
@@ -134,8 +136,28 @@ data DeliveryPoint = DeliveryPoint
   {   dpCode            :: Text
     , dpName            :: Text
     , dpWorkTime        :: Text
-    , dpAddressFull     :: Text
+    , dpHasDressingRoom :: Bool
+    , dpLocation        :: PointLocation
+    , dpDisplay         :: DisplayInfo
   } deriving (Show, Generic)
+
+data PointLocation = PointLocation
+  { locAddressFull :: Text
+  , locLongitude   :: Double
+  , locLatitude    :: Double
+  } deriving (Show, Generic)
+
+data DisplayInfo = DisplayInfo
+  { diButtonText :: Text
+  , diMessageText :: Text
+  } deriving (Show, Generic)
+
+
+instance ToJSON PointLocation
+instance FromJSON PointLocation
+
+instance ToJSON DisplayInfo
+instance FromJSON DisplayInfo
 
 instance ToJSON DeliveryPoint
 instance FromJSON DeliveryPoint
