@@ -9,9 +9,11 @@ import GHC.Generics (Generic)
 import Servant.API.Generic
 import Data.Text (Text)
 import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
+import Data.Proxy (Proxy (..))
 
 import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo, OrderResponse, OrderRequest)
 import API.WithField (WithField)
+
 
 
 -- This 'data' definition IS our new API ADT.
@@ -46,3 +48,7 @@ data Routes route = Routes
        :> ReqBody '[JSON] OrderRequest
        :> Post '[JSON] (ApiResponse OrderResponse)
   } deriving (Generic)
+
+
+tkaniApiProxy :: Proxy (ToServantApi Routes)
+tkaniApiProxy = genericApi (Proxy :: Proxy Routes)

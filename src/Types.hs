@@ -1,59 +1,90 @@
 {-# LANGUAGE StrictData                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Types
-  ( AppState(..)
-  , AppM(..)
+  ( State(..)
+  , AppM(..),
+  Config (..),
+  SDEKCredentials (..)
   ) where
 
 import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
 import Servant (Handler, ServerError)
-import Control.Monad.Except (MonadError)
+import Control.Monad.Except (MonadError, ExceptT)
 import Hasql.Pool (Pool)
+import Data.Text (Text, pack)
+import Control.Concurrent.STM (TVar)
+import Control.Monad.RWS (RWST, MonadState, withRWST) -- Important
+import Control.Lens
+
 
 -- Katip imports
-import Katip (Katip(..), KatipContext(..), LogEnv, Namespace, LogContexts)
+import Katip
 import Data.Aeson (Value)
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
 
 import API.Types (ProviderInfo)
 
--- | AppState holds all the shared, read-only resources for our application.
-data AppState = AppState
-  { appDBPool :: Pool
-  , appLogEnv :: LogEnv
-  , providers :: [ProviderInfo]
+
+type SdekToken = Text
+
+-- This will be our mutable, thread-safe state.
+-- It holds the SDEK token and its expiry time.
+data State = State
+  { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
   }
 
--- | AppM is our application's custom monad.
-newtype AppM a = AppM { unAppM :: ReaderT AppState Handler a }
-  deriving
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadIO
-    , MonadReader AppState
-    , MonadError ServerError
-    )
+-- | AppState holds all the shared, read-only resources for our application.
+data Config = Config
+  { _appDBPool :: Pool
+  , _appLogEnv :: LogEnv
+  , _providers :: [ProviderInfo]
+  , _sdekCred  :: SDEKCredentials
+  }
 
--- | INSTANCE FOR KATIP LOGGING (Corrected)
+ -- Construct the SdekCreds record, converting String to Text
+data SDEKCredentials = SdekCreds
+  { sdekClientId :: Text
+  , sdekClientSecret :: Text
+  }
+
+makeLenses ''Config
+
+-- The 'AppM' Monad is now an RWST stack over Handler
+-- R: Reader for Config (read-only)
+-- W: Writer for logs (we can use a list of Text for simplicity)
+-- S: State for AppState (read-write)
+newtype AppM a = AppM
+  { unAppM :: RWST Config [Text] (TVar State) (ExceptT ServerError IO) a
+  } deriving
+      ( Functor
+      , Applicative
+      , Monad
+      , MonadIO
+      , MonadReader Config         -- Can read from 'Config'
+      , MonadState (TVar State) -- Can read/write the TVar 'AppState'
+      , MonadError ServerError     -- Can throw Servant errors
+      )
+
+-- | INSTANCE FOR KATIP LOGGING (Corrected for RWST)
 instance Katip AppM where
-  getLogEnv = asks appLogEnv
-  -- --- THE FIX for 'localLogEnv' ---
-  localLogEnv f (AppM m) = AppM (local (\s -> s { appLogEnv = f (appLogEnv s) }) m)
+  getLogEnv = asks _appLogEnv
+  -- We still use a lens to modify OUR OWN Config type. This part is correct.
+  localLogEnv f (AppM m) = AppM $ withRWST (\r s -> (over appLogEnv f r, s)) m
 
--- | INSTANCE FOR KATIP CONTEXT (Corrected)
+-- This is the correct, simple implementation for a monad stack like ours
+-- that does not manage its own separate log context.
 instance KatipContext AppM where
+  -- Get the current context and namespace. Since we don't store them, they are empty.
   getKatipContext   = pure mempty
   getKatipNamespace = pure mempty
-
-  -- --- THE FIX for 'localKatipContext' and 'localKatipNamespace' ---
-  -- Since we don't have a dynamic context, these 'local' functions do nothing.
-  -- They simply run the computation without changing the context.
-  localKatipContext :: (LogContexts -> LogContexts) -> AppM a -> AppM a
+  -- Locally modify the context/namespace for a computation 'm'.
+  -- Because our monad doesn't have a place to store this information,
+  -- we simply run the original computation 'm' without changing anything.
+  -- Katip's internal machinery will handle the rest.
   localKatipContext _ m = m
-
-  localKatipNamespace :: (Namespace -> Namespace) -> AppM a -> AppM a
   localKatipNamespace _ m = m

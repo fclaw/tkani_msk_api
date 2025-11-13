@@ -25,15 +25,18 @@ library:
     - http-api-data
     - katip
     - mtl
+    - lens
     - profunctors
     - servant
     - servant-server
+    - stm
     - template-haskell
     - text
     - transformers
     - tuple-sop
     - wai
     - warp
+    - wreq
     - unix
 
 executables:
@@ -57,8 +60,10 @@ executables:
       - warp
       - wai
       - wai-cors
+      - stm
       - text
       - yaml
+      - tuple-sop
       
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

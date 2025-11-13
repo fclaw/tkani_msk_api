@@ -45,7 +45,7 @@ pkgs.mkShell {
     echo "✅ Entered Nix-based Stack development shell."
     echo "   Using stack provided by Nix. It will manage its own GHC."
     echo "   Available commands: stack, ghcid, hpack, docker, ..."
-    
+
     # Docker socket setup for macOS
     DOCKER_SOCKET_PATH="/var/run/docker.sock"
     if [ -S "$DOCKER_SOCKET_PATH" ]; then

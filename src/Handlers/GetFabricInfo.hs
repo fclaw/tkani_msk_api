@@ -14,7 +14,8 @@ import Data.Text (pack)
 
 import API.Types (FullFabric)
 import API.WithField (WithField)
-import Types (AppM, AppState(appDBPool))
+import Types (AppM, _appDBPool)
+import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, mkError)
 import DB (getFabricInfoById)
 import Data.Bifunctor (first)
@@ -27,7 +28,7 @@ handler fabricId_ = do
   -- 1. Log the incoming request
   $(logTM) InfoS "Request received for fabric info"
   -- 2. Get the database connection pool from our AppState environment
-  dbPool <- asks appDBPool
+  dbPool <- fmap _appDBPool ask
   -- 3. Run the database query inside our AppM monad using liftIO
   $(logTM) DebugS $ "Querying database for fabric ID: " <> fromString (show fabricId_)
   resp <- liftIO $ getFabricInfoById fabricId_ dbPool

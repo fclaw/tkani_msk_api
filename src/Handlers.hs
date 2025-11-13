@@ -7,7 +7,6 @@ import Data.Text (Text)
 import Servant.API.Generic (ToServant)
 import Servant.Server.Generic (AsServerT)
 import Katip (logTM, Severity(..))
-import Servant.API.Generic (fromServant, toServant)
 
 
 import Types (AppM) -- Your custom monad

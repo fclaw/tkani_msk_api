@@ -3,14 +3,13 @@
 
 module Handlers.GetProviders(handler) where
 
-import Control.Monad.Reader (asks)
-
 import API.Types (ProviderInfo (..))
-import Types (AppM, AppState(providers))
+import Types (AppM, _providers)
+import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse)
 
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
 handler :: AppM (ApiResponse [ProviderInfo])
-handler = fmap Right $ asks providers
+handler = fmap (Right . _providers) $ ask

@@ -25,8 +25,10 @@ library
       Handlers.GetProviders
       Handlers.PutNewFabric
       Handlers.PutNewOrder
+      Provider.Sdek
       Text
       TH.RecordToTuple
+      Utils.Http
       Paths_tkani_api
   hs-source-dirs:
       src
@@ -41,10 +43,12 @@ library
     , hasql-transaction
     , http-api-data
     , katip
+    , lens
     , mtl
     , profunctors
     , servant
     , servant-server
+    , stm
     , template-haskell
     , text
     , transformers
@@ -52,6 +56,7 @@ library
     , unix
     , wai
     , warp
+    , wreq
   default-language: Haskell2010
 
 executable tkani-api-exe
@@ -69,8 +74,10 @@ executable tkani-api-exe
     , mtl
     , servant
     , servant-server
+    , stm
     , text
     , tkani-api
+    , tuple-sop
     , wai
     , wai-cors
     , warp
