@@ -18,9 +18,10 @@ module API.Types
    ProviderInfo (..),
    OrderRequest (..),
    OrderStatus (..),
-   OrderResponse (..),
    DisplayInfo (..),
    PointLocation (..),
+   OrderConfirmationDetails (..),
+   defOrderConfirmationDetails,
    mkError) where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
@@ -215,12 +216,15 @@ data OrderStatus
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
 
-data OrderResponse = OrderResponse
-  {
-    orDescription :: Text
-  , orTotalSum :: Double
-  } deriving (Show, Generic)
+-- A record to hold all the necessary information for the final confirmation.
+data OrderConfirmationDetails = OrderConfirmationDetails
+  { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
+  , purchasedItems   :: [(Text, Int)] -- List of (Fabric Name, Quantity/Length)
+  , totalAmount      :: Float  -- e.g., 125.50
+  , paymentLink      :: Text
+  }
 
-instance ToJSON OrderResponse
-instance FromJSON OrderResponse
- 
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
+
+
+defOrderConfirmationDetails = OrderConfirmationDetails mempty [] 0.0 mempty

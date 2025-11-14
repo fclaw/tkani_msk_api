@@ -11,7 +11,7 @@ import Data.Text (Text)
 import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
 import Data.Proxy (Proxy (..))
 
-import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo, OrderResponse, OrderRequest)
+import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo, OrderConfirmationDetails, OrderRequest)
 import API.WithField (WithField)
 
 
@@ -46,7 +46,7 @@ data Routes route = Routes
        :- "order"
        :> "create"
        :> ReqBody '[JSON] OrderRequest
-       :> Post '[JSON] (ApiResponse OrderResponse)
+       :> Post '[JSON] (ApiResponse OrderConfirmationDetails)
   } deriving (Generic)
 
 

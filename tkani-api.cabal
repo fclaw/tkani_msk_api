@@ -32,6 +32,7 @@ library
       TH.Location
       TH.RecordToTuple
       Utils.Http
+      Utils.OrderId
       Paths_tkani_api
   hs-source-dirs:
       src

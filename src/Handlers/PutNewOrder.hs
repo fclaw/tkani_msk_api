@@ -5,14 +5,14 @@ module Handlers.PutNewOrder(handler) where
 
 import Katip (logTM, Severity(..))
 
-import API.Types (OrderRequest (..), OrderResponse (..), ApiResponse)
+import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, defOrderConfirmationDetails)
 import Types (AppM)
 
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: OrderRequest -> AppM (ApiResponse OrderResponse)
+handler :: OrderRequest -> AppM (ApiResponse OrderConfirmationDetails)
 handler newOrderRequest_ = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new order"
-  return $ Right OrderResponse { orDescription = mempty, orTotalSum = 0.0 }
+  return $ Right defOrderConfirmationDetails { paymentLink = "https://www.google.com", totalAmount = 213.89 }
