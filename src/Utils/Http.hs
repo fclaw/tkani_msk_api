@@ -26,6 +26,14 @@ import qualified Data.Text.Encoding     as TE
 import           Servant                (ServerError, err500, errBody)
 import           Control.Monad.Error.Class
 import           Katip
+import           Network.HTTP.Client             (HttpException (..),
+                                                  HttpExceptionContent (..),
+                                                  responseStatus)
+import           Network.HTTP.Types.Status       (statusCode)
+import           Control.Exception               (SomeException, fromException, try)
+import           Control.Monad.IO.Class           (MonadIO, liftIO)
+import           Control.Concurrent (threadDelay)
+
 
 -- A cleaner way to represent query parameters
 type QueryParams = [(Text, Text)]
@@ -48,39 +56,115 @@ addToken Nothing opt = opt
 addToken (Just token) opts = opts & header "Authorization" .~ [TE.encodeUtf8 ("Bearer " <> token)]
 
 
--- | Performs a GET request and decodes the JSON response into the specified type.
---   Usage: result <- getReq @MyResponseType "http://api.example.com/data"
-getReq :: forall a. FromJSON a => String -> QueryParams -> Maybe Text -> IO (Either HttpError a)
-getReq url queryParams maybeToken = do
-  -- Start with default options
-  -- The (.~) operator is from the 'lens' library, used by wreq to set options.
-  -- It reads as "set the 'params' part of 'defaults' to 'queryParams'".
-  let opts = addToken maybeToken (defaults & params .~ queryParams)
-  -- wreq will automatically handle URL encoding for the parameter values.
-  eResponse <- try (getWith opts url) :: IO (Either SomeException (Response LBS.ByteString))
-  return $ perseResp eResponse
+-- | A custom ADT to classify HTTP exceptions for clearer handling.
+data HttpExceptionInfo
+  -- | A transient network error that is safe to retry.
+  = RetryableNetworkError HttpExceptionContent
+  -- | A server-side error (5xx) that is safe to retry. Holds the status code.
+  | RetryableServerError Int
+  -- | A client-side error (4xx) that should NOT be retried. Holds the status code.
+  | ClientError Int
+  -- | Any other type of exception, which we will not retry.
+  | UnclassifiedException SomeException
 
--- | Performs a POST request with a JSON body and decodes the JSON response.
---   Usage: result <- postReq @MyResponseType "http://api.example.com/create" myPayload
-postReq :: forall a b. (FromJSON a, ToJSON b) => String -> b -> Maybe Text -> IO (Either HttpError a)
+
+-- | Classifies a generic SomeException into our specific HttpExceptionInfo ADT.
+classifyException :: SomeException -> HttpExceptionInfo
+classifyException ex =
+  -- fromException gives us the top-level HttpException
+  case fromException ex of
+    -- We match on the main constructor to get the 'content' field.
+    Just (HttpExceptionRequest _ content) ->
+      -- NOW we can analyze the specific reason (the HttpExceptionContent).
+      case content of
+        -- These are the retryable network errors.
+        ConnectionTimeout      -> RetryableNetworkError content
+        ConnectionFailure _    -> RetryableNetworkError content
+        ResponseTimeout        -> RetryableNetworkError content
+        ConnectionClosed       -> RetryableNetworkError content
+
+        -- The StatusCodeException is a constructor for HttpExceptionContent,
+        -- so we correctly match it here in the nested case.
+        StatusCodeException response _ ->
+          let status = statusCode (responseStatus response)
+          in if status >= 500 && status < 600
+               then RetryableServerError status
+               else ClientError status
+
+        -- Any other HttpExceptionContent (like InvalidHeader) is not something we want to retry.
+        _ -> UnclassifiedException ex
+
+    -- Handle other types of HttpException (like InvalidUrlException) or
+    -- a completely different exception type. Neither should be retried.
+    _ -> UnclassifiedException ex
+
+retryWithBackoff
+  :: (KatipContext m, MonadIO m)
+  => Int
+  -> Int
+  -> m (Either SomeException a)
+  -> m (Either SomeException a)
+retryWithBackoff 0 _ action = action
+retryWithBackoff retries delay action = do
+  eResult <- action
+  case eResult of
+    Right result -> pure (Right result) -- Success!
+    Left ex ->
+      -- Use our new classifier!
+      case classifyException ex of
+        RetryableNetworkError content -> do
+          $(logTM) WarningS $ logStr $
+            "Network error (" <> T.pack (show content) <> "), retrying in " <>
+            T.pack (show (delay `div` 1000000)) <> "s... (" <> T.pack (show (retries - 1)) <> " retries left)"
+          liftIO $ threadDelay delay
+          retryWithBackoff (retries - 1) (delay * 2) action
+
+        RetryableServerError status -> do
+          $(logTM) WarningS $ logStr $
+            "Server error (HTTP " <> show status <> "), retrying in " <>
+            show (delay `div` 1000000) <> "s... (" <> show (retries - 1) <> " retries left)"
+          liftIO $ threadDelay delay
+          retryWithBackoff (retries - 1) (delay * 2) action
+
+        -- These are the non-retryable cases.
+        ClientError _               -> pure (Left ex)
+        UnclassifiedException _     -> pure (Left ex)
+
+-- Define retry constants in one place
+maxRetries :: Int
+maxRetries = 3
+
+initialDelay :: Int
+initialDelay = 1000000 -- 1 second
+
+-- | Performs a GET request with retries and decodes the JSON response.
+getReq :: forall a m. (KatipContext m, MonadIO m, FromJSON a) => String -> QueryParams -> Maybe Text -> m (Either HttpError a)
+getReq url queryParams maybeToken = do
+  let opts = addToken maybeToken (defaults & params .~ queryParams)
+  -- The ONLY change is wrapping this line with our retry helper
+  eResponse <- retryWithBackoff maxRetries initialDelay (liftIO $ try (getWith opts url))
+  
+  pure $ perseResp eResponse
+
+-- | Performs a POST request with retries and a JSON body.
+postReq :: forall a b m. (KatipContext m, MonadIO m, FromJSON a, ToJSON b) => String -> b -> Maybe Text -> m (Either HttpError a)
 postReq url body maybeToken = do
   let opts = addToken maybeToken defaults
   let encoded_body = encode body
-  eResponse <- try (postWith opts url encoded_body) :: IO (Either SomeException (Response LBS.ByteString))
-  return $ perseResp eResponse
+  -- The ONLY change is wrapping this line
+  eResponse <- retryWithBackoff maxRetries initialDelay (liftIO $ try (postWith opts url encoded_body))
+  pure $ perseResp eResponse
 
 -- A type alias for form parameters to keep signatures clean
 type FormParams = [FormParam]
 
--- | Performs a POST request with an application/x-www-form-urlencoded body.
---   This is typically used for OAuth2 token requests.
-postFormReq :: forall a. FromJSON a => String -> FormParams -> IO (Either HttpError a)
+-- | Performs a POST request with retries and a form-urlencoded body.
+postFormReq :: forall a m. (KatipContext m, MonadIO m, FromJSON a) => String -> FormParams -> m (Either HttpError a)
 postFormReq url payload = do
-  -- When the payload is of type [FormParam], wreq automatically sets the
-  -- Content-Type to application/x-www-form-urlencoded.
-  eResponse <- try (postWith defaults url payload) :: IO (Either SomeException (Response LBS.ByteString))
-  -- We can reuse our existing response parser!
+  -- The ONLY change is wrapping this line
+  eResponse <- retryWithBackoff maxRetries initialDelay (liftIO $ try (postWith defaults url payload))
   pure $ perseResp eResponse
+
 
 -- | A higher-order function in Continuation-Passing Style to handle the
 --   result of an API call made with our http helpers.

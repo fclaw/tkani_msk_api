@@ -26,7 +26,7 @@ import Text (camelToSnake, recordLabelModifier)
 sdekAuthUrl :: String -> String
 sdekAuthUrl url = "https://" <> url <> "/v2/oauth/token" -- The sandbox URL is correct
 
-internalGetSdekAccessToken :: SDEKCredentials -> Text -> IO (Either HttpError SdekToken)
+internalGetSdekAccessToken :: SDEKCredentials -> Text -> AppM (Either HttpError SdekToken)
 internalGetSdekAccessToken cred url = do
  -- Build the payload as a list of FormParams, NOT a JSON object.
   let payload :: FormParams
@@ -53,7 +53,7 @@ getValidSdekToken = do
     Nothing -> do
       -- Token is missing, fetch a new one
       $(logTM) InfoS "SDEK token is missing or expired. Refreshing..."
-      eToken <- liftIO $ internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)
+      eToken <- internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)
       case eToken of
         Left err -> do
           $(logTM) ErrorS $ logStr ("error during fetching token  " <> pack (show err))

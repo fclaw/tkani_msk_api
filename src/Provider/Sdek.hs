@@ -109,7 +109,7 @@ getDeliveryPoints city = do
   let cityUrl = "https://" <> url <> "/v2/location/cities"
   let cityParams = [("country_codes", "RU"), ("city", city)]
   
-  eCities <- liftIO $ getReq @[SdekCity] cityUrl cityParams (Just ((sdekAccessToken token)))
+  eCities <- getReq @[SdekCity] cityUrl cityParams (Just ((sdekAccessToken token)))
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case
     [] -> do
       $(logTM) InfoS $ logStr $ "SDEK city not found for: " <> city
@@ -123,7 +123,7 @@ getDeliveryPoints city = do
       $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
       let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
       let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-      ePoints <- liftIO $ getReq @[SdekApiPoint] pointsUrl pointsParams (Just ((sdekAccessToken token)))
+      ePoints <- getReq @[SdekApiPoint] pointsUrl pointsParams (Just ((sdekAccessToken token)))
       handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
         -- Transform the result (only runs on success of the second call)
         $(logTM) InfoS $ logStr $ "Successfully fetched " <> T.pack (show (length sdekPoints)) <> " points."

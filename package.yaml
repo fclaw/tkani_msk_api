@@ -42,6 +42,7 @@ library:
     - http-client
     - http-client-tls 
     - exceptions
+    - http-types
 
 executables:
   tkani-api-exe:

@@ -48,6 +48,7 @@ library
     , http-api-data
     , http-client
     , http-client-tls
+    , http-types
     , katip
     , lens
     , mtl
