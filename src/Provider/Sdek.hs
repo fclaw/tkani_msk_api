@@ -16,8 +16,9 @@ import Text (recordLabelModifier)
 import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Control.Monad (forM_)
+import Control.Monad.Reader.Class (ask)
 
-import Types (AppM, sdekAccessToken)
+import Types (AppM, sdekAccessToken, _sdekUrl)
 import API.Types
 import Utils.Http
 import Provider.Sdek.Auth (getValidSdekToken)
@@ -101,10 +102,11 @@ transformSdekPoint sp =
 getDeliveryPoints :: Text -> AppM (ApiResponse [DeliveryPoint])
 getDeliveryPoints city = do
   token <- getValidSdekToken
+  url <- fmap (T.unpack . _sdekUrl) ask 
 
   -- Step 2: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "Fetching SDEK city code for " <> city
-  let cityUrl = "https://api.edu.cdek.ru/v2/location/cities"
+  let cityUrl = "https://" <> url <> "/v2/location/cities"
   let cityParams = [("country_codes", "RU"), ("city", city)]
   
   eCities <- liftIO $ getReq @[SdekCity] cityUrl cityParams (Just ((sdekAccessToken token)))
@@ -119,7 +121,7 @@ getDeliveryPoints city = do
       -- Step 3: Use the city code to fetch the list of delivery points.
       let cityCode = code firstCity
       $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
-      let pointsUrl = "https://api.edu.cdek.ru/v2/deliverypoints"
+      let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
       let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
       ePoints <- liftIO $ getReq @[SdekApiPoint] pointsUrl pointsParams (Just ((sdekAccessToken token)))
       handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do

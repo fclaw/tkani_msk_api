@@ -34,6 +34,9 @@ import Control.Monad.RWS (runRWST)
 import Control.Monad.IO.Class (liftIO)
 import Data.Proxy (Proxy (..))
 import System.IO (stdout)
+import qualified Data.Text.IO as TIO
+import Control.Monad.Catch (onException)
+import Data.Text (Text)
 
 
 import Types (AppM(..))
@@ -43,7 +46,7 @@ import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
 import Types (SDEKCredentials (..), Config (..), State (..))
 import API (tkaniApiProxy)
-
+import Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 
 
 handleProvidersResult (Right providers) go = go providers
@@ -55,7 +58,9 @@ nt :: forall a . Config -> TVar State -> AppM a -> Handler a
 nt config stateTVar appM = do
   -- Run the RWST computation
   -- It gives us the result 'a', the final state 's', and the writer output 'w'
-  result <- liftIO $ runExceptT $ do (a, _, _) <- runRWST (unAppM appM) config stateTVar; return a
+  let shutDownNotice = $(logTM) EmergencyS $ logStr @Text "server is about to being shut down"
+  let runMonadsStack = runRWST (unAppM (appM `onException` shutDownNotice)) config stateTVar;
+  result <- liftIO $ runExceptT $ do (a, _, _) <- runMonadsStack; return a
   -- Handle the result of the ExceptT
   case result of
     Left err -> throwError err -- Propagate Servant errors
@@ -87,12 +92,26 @@ withLogEnv action = do
   --    These will be part of every log message.
   initialLogEnv <- initLogEnv "tkani-api" "production"
 
-  -- 3. Register the scribe with the initial LogEnv.
-  --    The first argument "stdout" is a unique name for this scribe.
-  let finalLogEnv = registerScribe "stdout" handleScribe defaultScribeSettings initialLogEnv
+  -- 3. Register the stdout scribe. We can use defaultScribeSettings.
+  let logEnvWithStdout = registerScribe "stdout" handleScribe defaultScribeSettings initialLogEnv
+
+  -- 4. Attempt to create and register the Telegram scribe.
+  mTelegramConfig <- getTelegramConfig
+  logEnvWithTelegram <- case mTelegramConfig of
+    Nothing -> do
+      TIO.putStrLn "--> TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. Skipping Telegram logger."
+      pure logEnvWithStdout
+    Just config -> do
+      TIO.putStrLn "--> Telegram logger configured. Initializing scribe."
+      -- Create the scribe, passing the minimum severity (e.g., InfoS) directly.
+      -- This severity is now baked into the scribe itself.
+      telegramScribe <- mkTelegramScribe config InfoS V2
+      -- Register it using the default settings.
+      pure $ logEnvWithStdout >>= registerScribe "telegram" telegramScribe defaultScribeSettings
   
-  -- 4. Use 'bracket' to ensure scribes are closed properly, even if an
-  --    exception occurs. This is crucial for resource management.
+  let finalLogEnv = logEnvWithTelegram
+
+  -- 5. Use 'bracket' to ensure scribes are closed properly.
   bracket finalLogEnv closeScribes action
 
 main :: IO ()
@@ -120,13 +139,15 @@ main = withLogEnv $ \logEnv -> do
     -- getEnv reads a String from an env var. It will crash if the var is not set.
     sdekClientId <- fmap pack $ getEnv "SDEK_CLIENT_ID"
     sdekClientSecret <- fmap pack $ getEnv "SDEK_CLIENT_SECRET"
+    sdekUrl <- fmap pack $ getEnv "SDEK_URL"
 
     -- 6. Create the shared AppState
     let appConfig = Config
           { _appDBPool = pool
           , _appLogEnv = logEnv
           , _providers = providers_
-          , _sdekCred = SdekCreds {..}
+          , _sdekCred  = SdekCreds {..}
+          , _sdekUrl   = sdekUrl 
           }
 
     -- 7. Run the server

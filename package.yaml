@@ -13,6 +13,7 @@ library:
     - Handlers
     - Types
     - Config
+    - Logging.Telegram
   dependencies:
     # This list should already be complete
     - aeson
@@ -38,6 +39,9 @@ library:
     - warp
     - wreq
     - unix
+    - http-client
+    - http-client-tls 
+    - exceptions
 
 executables:
   tkani-api-exe:
@@ -64,6 +68,7 @@ executables:
       - text
       - yaml
       - tuple-sop
+      - exceptions
       
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

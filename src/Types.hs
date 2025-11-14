@@ -4,6 +4,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 
 module Types
   ( State(..)
@@ -23,6 +24,7 @@ import Control.Monad.RWS (RWST, MonadState, withRWST) -- Important
 import Control.Lens
 import GHC.Generics (Generic)
 import Data.Aeson.TH
+import Control.Monad.Catch
 
 -- Katip imports
 import Katip
@@ -61,6 +63,7 @@ data Config = Config
   , _appLogEnv :: LogEnv
   , _providers :: [ProviderInfo]
   , _sdekCred  :: SDEKCredentials
+  , _sdekUrl   :: Text
   }
 
  -- Construct the SdekCreds record, converting String to Text
@@ -85,7 +88,10 @@ newtype AppM a = AppM
       , MonadReader Config         -- Can read from 'Config'
       , MonadState (TVar State) -- Can read/write the TVar 'AppState'
       , MonadError ServerError     -- Can throw Servant errors
+      , MonadThrow -- New
+      , MonadCatch -- New
       )
+    via (RWST Config [Text] (TVar State) (ExceptT ServerError IO))
 
 -- | INSTANCE FOR KATIP LOGGING (Corrected for RWST)
 instance Katip AppM where

@@ -13,7 +13,7 @@ import Katip
 import Servant.Server.Internal.ServerError
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.Error.Class
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, unpack)
 import Data.Aeson.TH
 import GHC.Generics (Generic)
 import Network.Wreq (FormParam(..)) -- Import the FormParam builder
@@ -23,11 +23,11 @@ import  Utils.Http (HttpError, FormParams, postFormReq)
 import Text (camelToSnake, recordLabelModifier) 
 
 
-sdekAuthUrl :: String
-sdekAuthUrl = "https://api.edu.cdek.ru/v2/oauth/token" -- The sandbox URL is correct
+sdekAuthUrl :: String -> String
+sdekAuthUrl url = "https://" <> url <> "/v2/oauth/token" -- The sandbox URL is correct
 
-internalGetSdekAccessToken :: SDEKCredentials -> IO (Either HttpError SdekToken)
-internalGetSdekAccessToken cred = do
+internalGetSdekAccessToken :: SDEKCredentials -> Text -> IO (Either HttpError SdekToken)
+internalGetSdekAccessToken cred url = do
  -- Build the payload as a list of FormParams, NOT a JSON object.
   let payload :: FormParams
       payload = [ "grant_type"    := ("client_credentials" :: Text)
@@ -37,7 +37,7 @@ internalGetSdekAccessToken cred = do
   
   -- Call our new, specialized function.
   -- It will return the parsed SdekToken on success.
-  postFormReq @SdekToken sdekAuthUrl payload
+  postFormReq @SdekToken (sdekAuthUrl (unpack url)) payload
 
 -- This is the function we sketched out before, now fully integrated.
 getValidSdekToken :: AppM SdekToken
@@ -53,7 +53,7 @@ getValidSdekToken = do
     Nothing -> do
       -- Token is missing, fetch a new one
       $(logTM) InfoS "SDEK token is missing or expired. Refreshing..."
-      eToken <- liftIO $ internalGetSdekAccessToken (_sdekCred config)
+      eToken <- liftIO $ internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)
       case eToken of
         Left err -> do
           $(logTM) ErrorS $ logStr ("error during fetching token  " <> pack (show err))
