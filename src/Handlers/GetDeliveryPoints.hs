@@ -9,7 +9,7 @@ import Control.Monad.IO.Class (liftIO)
 
 import Types (AppM)
 import API.Types (ApiResponse, Providers (..), DeliveryPoint (..), mkError)
-import Provider.Sdek (getDeliveryPoints)
+import Infrastructure.Services.Sdek (getDeliveryPoints)
 
 
 handler :: Providers -> Maybe Text -> AppM (ApiResponse [DeliveryPoint])

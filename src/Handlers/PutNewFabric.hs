@@ -14,7 +14,7 @@ import API.Types (FabricInfo)
 import Types (AppM, _appDBPool)
 import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, FabricInfo, mkError)
-import DB (putNewFabric)
+import Infrastructure.Database (putNewFabric)
 import Data.Bifunctor (first)
 
 

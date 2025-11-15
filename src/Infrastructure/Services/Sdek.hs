@@ -5,7 +5,7 @@
 {-# LANGUAGE LambdaCase  #-}
 
 
-module Provider.Sdek (getDeliveryPoints) where
+module Infrastructure.Services.Sdek (getDeliveryPoints) where
 
 import Data.Text (Text)
 import Control.Monad.IO.Class
@@ -20,8 +20,8 @@ import Control.Monad.Reader.Class (ask)
 
 import Types (AppM, sdekAccessToken, _sdekUrl)
 import API.Types
-import Utils.Http
-import Provider.Sdek.Auth (getValidSdekToken)
+import Infrastructure.Utils.Http
+import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import TH.Location (currentModule)
 
 
@@ -107,7 +107,12 @@ getDeliveryPoints city = do
   -- Step 2: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "Fetching SDEK city code for " <> city
   let cityUrl = "https://" <> url <> "/v2/location/cities"
-  let cityParams = [("country_codes", "RU"), ("city", city)]
+  let cityParams =
+        [ ("country_codes", "RU")  -- THE FIX: Limit search to Russia
+        , ("city", city)           -- The city name to search for
+        , ("size", "1")            -- Optional but good practice: we only need one result
+        , ("lang", "rus")          -- Optional but good practice: ensure Russian response
+        ]
   
   eCities <- getReq @[SdekCity] cityUrl cityParams (Just ((sdekAccessToken token)))
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case

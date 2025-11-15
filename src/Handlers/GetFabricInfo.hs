@@ -16,7 +16,7 @@ import API.WithField (WithField)
 import Types (AppM, _appDBPool)
 import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, mkError)
-import DB (getFabricInfoById)
+import Infrastructure.Database (getFabricInfoById)
 import Data.Bifunctor (first)
 
 

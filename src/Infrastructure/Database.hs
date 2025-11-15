@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE DataKinds             #-}
 
-module DB
+module Infrastructure.Database
   ( getFabricInfoById
   , putNewFabric
   ) where
@@ -64,26 +64,42 @@ getFabricStatement =
           'pcPriceRub', pc.price_rub,
           'pcInStock', pc.in_stock)
          ) :: jsonb
-         from pre_cuts AS pc
-         where pc.fabric_id = f.id and pc.in_stock = TRUE),
+         from pre_cuts as pc
+         where 
+          pc.fabric_id = f.id and 
+          pc.in_stock = TRUE),
          '[]'::jsonb)) :: jsonb
-    from fabrics AS f
+    from fabrics as f
     where f.id = $1 :: int4
   |]
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
 getFabricInfoById :: Int -> Hasql.Pool -> IO (Either Text FullFabric)
-getFabricInfoById fabricId_ pool = fmap (join . first (pack . show)) $ runTransaction pool Hasql.Read $ fmap (first pack) $ fabricId_ `Hasql.statement` getFabricStatement
+getFabricInfoById fabricId_ pool = 
+  fmap (join . first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      fmap (first pack) $ fabricId_ `Hasql.statement` getFabricStatement
 
 putNewFabricStatement :: Hasql.Statement FabricInfo Int
 putNewFabricStatement = 
   dimap (app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple 'FabricInfo)) fromIntegral
   [TH.singletonStatement|
-    insert into fabrics (description, total_length_m, price_per_meter, available_length_m)
-    values ($1 :: text, $2 :: int4, $3 :: int4, $4 :: float8)
+    insert into fabrics 
+    (description, 
+     total_length_m, 
+     price_per_meter, 
+     available_length_m)
+    values (
+      $1 :: text, 
+      $2 :: int4, 
+      $3 :: int4, 
+      $4 :: float8)
     returning id :: int4
   |]
 
 putNewFabric :: FabricInfo -> Hasql.Pool -> IO (Either Text Int)
-putNewFabric fabricInfo_ pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ fabricInfo_ `Hasql.statement` putNewFabricStatement
+putNewFabric fabricInfo_ pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      fabricInfo_ `Hasql.statement` putNewFabricStatement

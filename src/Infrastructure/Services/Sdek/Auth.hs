@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveGeneric     #-} 
 {-# LANGUAGE TypeApplications     #-}
 
-module Provider.Sdek.Auth (getValidSdekToken) where
+module Infrastructure.Services.Sdek.Auth (getValidSdekToken) where
 
 import Types
 import Control.Monad.State (get)
@@ -19,7 +19,7 @@ import GHC.Generics (Generic)
 import Network.Wreq (FormParam(..)) -- Import the FormParam builder
 
 
-import  Utils.Http (HttpError, FormParams, postFormReq)
+import  Infrastructure.Utils.Http (HttpError, FormParams, postFormReq)
 import Text (camelToSnake, recordLabelModifier) 
 
 

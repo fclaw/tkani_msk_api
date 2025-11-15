@@ -21,7 +21,7 @@ import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
 import Control.Monad (void)
-import Control.Exception (finally, bracket)
+import Control.Exception (finally, bracket, SomeException)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import GHC.IO.Exception (userError)
@@ -35,7 +35,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Proxy (Proxy (..))
 import System.IO (stdout)
 import qualified Data.Text.IO as TIO
-import Control.Monad.Catch (onException)
+import Control.Monad.Catch (catch, throwM)
 import Data.Text (Text)
 
 
@@ -46,7 +46,7 @@ import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
 import Types (SDEKCredentials (..), Config (..), State (..))
 import API (tkaniApiProxy)
-import Logging.Telegram (mkTelegramScribe, getTelegramConfig)
+import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 
 
 handleProvidersResult (Right providers) go = go providers
@@ -58,9 +58,14 @@ nt :: forall a . Config -> TVar State -> AppM a -> Handler a
 nt config stateTVar appM = do
   -- Run the RWST computation
   -- It gives us the result 'a', the final state 's', and the writer output 'w'
-  let shutDownNotice = $(logTM) EmergencyS $ logStr @Text "server is about to being shut down"
-  let runMonadsStack = runRWST (unAppM (appM `onException` shutDownNotice)) config stateTVar;
-  result <- liftIO $ runExceptT $ do (a, _, _) <- runMonadsStack; return a
+    -- Define the handler for a catastrophic, unhandled exception
+  let exceptionHandler (e :: SomeException) = do
+        -- This is where we log the specific error
+        $(logTM) EmergencyS $ logStr $ "FATAL: Unhandled exception reached the top-level handler: " <> show e
+        throwM e
+  let runMonadsStack = runRWST (unAppM (appM `catch` exceptionHandler)) config stateTVar
+  let selRes (a, _, _) = a 
+  result <- liftIO $ runExceptT $ fmap selRes runMonadsStack
   -- Handle the result of the ExceptT
   case result of
     Left err -> throwError err -- Propagate Servant errors

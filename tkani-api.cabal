@@ -17,22 +17,22 @@ library
       Handlers
       Types
       Config
-      Logging.Telegram
+      Infrastructure.Logging.Telegram
   other-modules:
       API.WithField
-      DB
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo
       Handlers.GetProviders
       Handlers.PutNewFabric
       Handlers.PutNewOrder
-      Provider.Sdek
-      Provider.Sdek.Auth
+      Infrastructure.Database
+      Infrastructure.Services.Sdek
+      Infrastructure.Services.Sdek.Auth
+      Infrastructure.Utils.Http
+      Infrastructure.Utils.OrderId
       Text
       TH.Location
       TH.RecordToTuple
-      Utils.Http
-      Utils.OrderId
       Paths_tkani_api
   hs-source-dirs:
       src
@@ -54,14 +54,17 @@ library
     , lens
     , mtl
     , profunctors
+    , random
     , servant
     , servant-server
     , stm
     , template-haskell
     , text
+    , time
     , transformers
     , tuple-sop
     , unix
+    , vector
     , wai
     , warp
     , wreq

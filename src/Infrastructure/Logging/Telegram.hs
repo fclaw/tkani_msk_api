@@ -3,7 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Logging.Telegram (mkTelegramScribe, getTelegramConfig) where
+module Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig) where
 
 
 -- Add these imports at the top of your file

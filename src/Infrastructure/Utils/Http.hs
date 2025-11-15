@@ -2,8 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
 
-module Utils.Http
+module Infrastructure.Utils.Http
   ( getReq,
     postReq,
     postFormReq,
@@ -17,6 +18,8 @@ where
 import           Control.Exception      (SomeException, try)
 import           Control.Lens           ((^.), (.~), (&))
 import           Data.Aeson             (FromJSON, ToJSON, eitherDecode, encode)
+import qualified Data.Aeson             as A
+import           Data.Aeson.KeyMap      as A
 import qualified Data.ByteString.Lazy   as LBS
 import           Data.Text              (Text)
 import qualified Data.Text              as T
@@ -29,10 +32,12 @@ import           Katip
 import           Network.HTTP.Client             (HttpException (..),
                                                   HttpExceptionContent (..),
                                                   responseStatus)
+import qualified Network.HTTP.Client          as HTTP
 import           Network.HTTP.Types.Status       (statusCode)
 import           Control.Exception               (SomeException, fromException, try)
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Concurrent (threadDelay)
+import qualified Data.Vector as V
 
 
 -- A cleaner way to represent query parameters
@@ -58,45 +63,77 @@ addToken (Just token) opts = opts & header "Authorization" .~ [TE.encodeUtf8 ("B
 
 -- | A custom ADT to classify HTTP exceptions for clearer handling.
 data HttpExceptionInfo
-  -- | A transient network error that is safe to retry.
   = RetryableNetworkError HttpExceptionContent
-  -- | A server-side error (5xx) that is safe to retry. Holds the status code.
   | RetryableServerError Int
-  -- | A client-side error (4xx) that should NOT be retried. Holds the status code.
+  -- NEW: This constructor signals a specific, actionable error.
+  | AuthTokenExpired
   | ClientError Int
-  -- | Any other type of exception, which we will not retry.
   | UnclassifiedException SomeException
 
 
 -- | Classifies a generic SomeException into our specific HttpExceptionInfo ADT.
+-- In Infrastructure/Http.hs
+
+-- | Classifies a generic SomeException into our specific HttpExceptionInfo ADT.
 classifyException :: SomeException -> HttpExceptionInfo
 classifyException ex =
-  -- fromException gives us the top-level HttpException
   case fromException ex of
-    -- We match on the main constructor to get the 'content' field.
-    Just (HttpExceptionRequest _ content) ->
-      -- NOW we can analyze the specific reason (the HttpExceptionContent).
-      case content of
-        -- These are the retryable network errors.
-        ConnectionTimeout      -> RetryableNetworkError content
-        ConnectionFailure _    -> RetryableNetworkError content
-        ResponseTimeout        -> RetryableNetworkError content
-        ConnectionClosed       -> RetryableNetworkError content
+    -- We now have a complete pattern match for the outer case.
+    Just httpException ->
+      case httpException of
+        -- This is our primary case for API errors.
+        HttpExceptionRequest _ content ->
+          case content of
+            ConnectionTimeout      -> RetryableNetworkError content
+            ConnectionFailure _    -> RetryableNetworkError content
+            ResponseTimeout        -> RetryableNetworkError content
+            ConnectionClosed       -> RetryableNetworkError content
 
-        -- The StatusCodeException is a constructor for HttpExceptionContent,
-        -- so we correctly match it here in the nested case.
-        StatusCodeException response _ ->
-          let status = statusCode (responseStatus response)
-          in if status >= 500 && status < 600
-               then RetryableServerError status
-               else ClientError status
+            StatusCodeException response body ->
+              let status = statusCode (responseStatus response)
+              in if status == 401 && isSdekTokenExpiredError (LBS.fromStrict body)
+                   then AuthTokenExpired
+                   else if status >= 500 && status < 600
+                          then RetryableServerError status
+                          else ClientError status
 
-        -- Any other HttpExceptionContent (like InvalidHeader) is not something we want to retry.
-        _ -> UnclassifiedException ex
+            -- Catch all OTHER HttpExceptionContent constructors and treat them
+            -- as unclassified. This makes our function total and future-proof.
+            _ -> UnclassifiedException ex
 
-    -- Handle other types of HttpException (like InvalidUrlException) or
-    -- a completely different exception type. Neither should be retried.
-    _ -> UnclassifiedException ex
+        -- NEW: Explicitly handle the other constructor for HttpException.
+        -- An invalid URL is a programming error, not a retryable network error.
+        InvalidUrlException _ _ -> UnclassifiedException ex
+
+    -- If fromException returns Nothing, it wasn't an HttpException at all.
+    Nothing -> UnclassifiedException ex
+
+-- NEW HELPER FUNCTION
+-- This helper inspects the body of a 401 response to see if it's the specific
+-- "token expired" error from SDEK.
+isSdekTokenExpiredError :: LBS.ByteString -> Bool
+isSdekTokenExpiredError body =
+  case A.decode body :: Maybe A.Value of
+    Just (A.Object obj) ->
+      -- This is a bit verbose, but it's a safe way to traverse the JSON.
+      -- You could use lenses for a more concise version.
+      case A.lookup "requests" obj of
+        Just (A.Array requests) ->
+          not (V.null requests) && -- Check if array is not empty
+          case V.head requests of
+            A.Object reqObj ->
+              case A.lookup "errors" reqObj of
+                Just (A.Array errors) ->
+                  not (V.null errors) &&
+                  case V.head errors of
+                    A.Object errObj -> 
+                      A.lookup "code" errObj == 
+                      Just (A.String "v2_token_expired")
+                    _ -> False
+                _ -> False
+            _ -> False
+        _ -> False
+    _ -> False
 
 retryWithBackoff
   :: (KatipContext m, MonadIO m)

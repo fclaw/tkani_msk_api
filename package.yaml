@@ -13,7 +13,7 @@ library:
     - Handlers
     - Types
     - Config
-    - Logging.Telegram
+    - Infrastructure.Logging.Telegram
   dependencies:
     # This list should already be complete
     - aeson
@@ -43,6 +43,9 @@ library:
     - http-client-tls 
     - exceptions
     - http-types
+    - time
+    - random
+    - vector
 
 executables:
   tkani-api-exe:
