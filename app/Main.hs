@@ -61,8 +61,8 @@ whenLeft (Left x) f = f x
 whenLeft _        _ = pure ()
 
 -- This is the "natural transformation" that converts our 'AppM' into a 'Handler'
-nt :: forall a . Config -> TVar State -> AppM a -> Handler a
-nt config stateTVar appM = do
+appToHandler :: forall a . Config -> TVar State -> AppM a -> Handler a
+appToHandler config stateTVar appM = do
   -- Run the RWST computation
   -- It gives us the result 'a', the final state 's', and the writer output 'w'
   -- Define the handler for a catastrophic, unhandled exception
@@ -74,9 +74,9 @@ nt config stateTVar appM = do
   let selRes (a, _, _) = a
   result <- liftIO $ runExceptT $ fmap selRes runMonadsStack
   -- Handle the result of the ExceptT
-  case result of
-    Left err -> throwError err -- Propagate Servant errors
-    Right a  -> pure a         -- Return the successful result
+  whenLeft result throwError -- Propagate Servant errors
+  let Right unwrap = result 
+  return unwrap
 
 
 -- | A helper function to set up and tear down the Katip LogEnv
@@ -189,8 +189,13 @@ main = do
       -- Define our concurrent tasks as a list of IO actions.
       -- Task 1: The Web Server
       let server = 
-           run (configApiPort config) $ simpleCors $ serve tkaniApiProxy $
-             hoistServer tkaniApiProxy (nt appConfig initialState) (toServant apiHandlers)
+           run (configApiPort config) $ 
+             simpleCors $  
+               serve tkaniApiProxy $
+                 hoistServer 
+                   tkaniApiProxy 
+                   (appToHandler appConfig initialState) 
+                   (toServant apiHandlers)
       -- Task 2: The SDEK Polling Worker
       let sdekPoller = do
             res <- runInIO sdekOrderStatusPoller 
@@ -209,4 +214,4 @@ main = do
 
       -- Gracefully cancel all other workers on exit.
       mapM_ (cancel . snd) asyncs
-      putStrLn "Shutdown complete." 
+      putStrLn "Shutdown complete."
