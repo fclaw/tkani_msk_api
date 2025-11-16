@@ -11,7 +11,7 @@ import Control.Monad.Reader (asks)
 import Data.Text (pack)
 
 import API.Types (FabricInfo)
-import Types (AppM, _appDBPool)
+import App (AppM, _appDBPool)
 import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, FabricInfo, mkError)
 import Infrastructure.Database (putNewFabric)

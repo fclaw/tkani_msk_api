@@ -22,6 +22,7 @@ module API.Types
    PointLocation (..),
    OrderConfirmationDetails (..),
    defOrderConfirmationDetails,
+   formatStatus,
    mkError) where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
@@ -189,6 +190,7 @@ data OrderRequest = OrderRequest
     -- Purchase Details (exactly one of these should be Just)
   , orLengthM       :: Maybe Double   -- Length in meters for a custom cut.
   , orPreCutId      :: Maybe Int      -- The ID of the specific pre-cut piece.
+  , orPreCutLengthM :: Maybe Double
 
     -- Customer & Delivery Information
   , orCustomerFullName :: Text       -- Full name as a single string (e.g., "Иванов Иван Иванович").
@@ -208,13 +210,23 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "or" } ''
 data OrderStatus
   = New                 -- Order created by the bot, awaiting payment.
   | Paid                -- Payment received, awaiting fulfillment.
-  | PreparedForDelivery -- Order packed, label printed, awaiting courier pickup.
   | OnRoute             -- Courier has picked up the package, it's in transit.
   | Delivered           -- Customer has received the package.
+  | Completed
+  | Cancelled
   deriving (Show, Eq, Read, Bounded, Enum, Generic)
 
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
+
+formatStatus :: OrderStatus -> Text
+formatStatus New = "⏳ ОЖИДАЕТ ОПЛАТЫ"
+formatStatus Paid = "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
+formatStatus OnRoute = "🚚 В ПУТИ"
+formatStatus Delivered = "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧИ"
+formatStatus Completed = "🏁 ЗАВЕРШЁН"
+formatStatus Cancelled = "❌ ОТМЕНЁН"
+
 
 -- A record to hold all the necessary information for the final confirmation.
 data OrderConfirmationDetails = OrderConfirmationDetails

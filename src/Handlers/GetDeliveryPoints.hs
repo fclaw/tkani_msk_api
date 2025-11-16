@@ -7,7 +7,7 @@ import Data.Text (Text)
 import Control.Monad.IO.Class (liftIO)
 
 
-import Types (AppM)
+import App (AppM)
 import API.Types (ApiResponse, Providers (..), DeliveryPoint (..), mkError)
 import Infrastructure.Services.Sdek (getDeliveryPoints)
 

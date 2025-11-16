@@ -15,10 +15,10 @@ import Data.Aeson.TH
 import Text (recordLabelModifier)
 import GHC.Generics (Generic)
 import qualified Data.Text as T
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 import Control.Monad.Reader.Class (ask)
 
-import Types (AppM, sdekAccessToken, _sdekUrl)
+import App (AppM, sdekAccessToken, _sdekUrl)
 import API.Types
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
@@ -101,10 +101,8 @@ transformSdekPoint sp =
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [DeliveryPoint])
 getDeliveryPoints city = do
-  token <- getValidSdekToken
-  url <- fmap (T.unpack . _sdekUrl) ask 
-
-  -- Step 2: Find the SDEK city code.
+  url <- fmap (T.unpack . _sdekUrl) ask
+  -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "Fetching SDEK city code for " <> city
   let cityUrl = "https://" <> url <> "/v2/location/cities"
   let cityParams =
@@ -114,7 +112,10 @@ getDeliveryPoints city = do
         , ("lang", "rus")          -- Optional but good practice: ensure Russian response
         ]
   
-  eCities <- getReq @[SdekCity] cityUrl cityParams (Just ((sdekAccessToken token)))
+  let maxRetries = 3
+  let initialDelay = 1000000
+  let cityReq = getValidSdekToken >>= (_getReq' cityUrl cityParams . Just . sdekAccessToken)
+  eCities <- makeRequestWithRetries @[SdekCity] (Just (void $ getValidSdekToken)) cityReq
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case
     [] -> do
       $(logTM) InfoS $ logStr $ "SDEK city not found for: " <> city
@@ -128,7 +129,8 @@ getDeliveryPoints city = do
       $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
       let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
       let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-      ePoints <- getReq @[SdekApiPoint] pointsUrl pointsParams (Just ((sdekAccessToken token)))
+      let pointsReq = getValidSdekToken >>= (_getReq' pointsUrl pointsParams . Just . sdekAccessToken)
+      ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
       handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
         -- Transform the result (only runs on success of the second call)
         $(logTM) InfoS $ logStr $ "Successfully fetched " <> T.pack (show (length sdekPoints)) <> " points."

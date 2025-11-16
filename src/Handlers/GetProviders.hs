@@ -4,7 +4,7 @@
 module Handlers.GetProviders(handler) where
 
 import API.Types (ProviderInfo (..))
-import Types (AppM, _providers)
+import App (AppM, _providers)
 import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse)
 

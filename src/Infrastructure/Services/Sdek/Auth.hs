@@ -5,7 +5,7 @@
 
 module Infrastructure.Services.Sdek.Auth (getValidSdekToken) where
 
-import Types
+import App
 import Control.Monad.State (get)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.STM (atomically, readTVar, writeTVar)

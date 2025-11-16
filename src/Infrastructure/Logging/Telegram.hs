@@ -23,8 +23,7 @@ import           System.IO (stderr)
 import           Control.Monad (when, void) -- void is useful with wreq
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Exception (catch, SomeException)
-import           Network.HTTP.Client (newManager)
-import           Network.HTTP.Client.TLS (tlsManagerSettings) 
+import           Network.HTTP.Client (Manager)
 
 -- | Data type to hold our Telegram configuration.
 data TelegramConfig = TelegramConfig
@@ -90,11 +89,8 @@ formatTelegramMessage item = T.unlines
 
 -- | The main function that constructs our Scribe for Telegram.
 --   (This is the ONLY function you need to replace)
-mkTelegramScribe :: TelegramConfig -> Severity -> Verbosity -> IO Scribe
-mkTelegramScribe config minSeverity verbosity = do
-  -- Step 2: Create a new TLS-enabled manager using our custom settings.
-  -- This is where the magic from 'http-client-tls' happens.
-  tlsManager <- newManager tlsManagerSettings
+mkTelegramScribe :: Manager -> TelegramConfig -> Severity -> Verbosity -> IO Scribe
+mkTelegramScribe tlsManager config minSeverity verbosity = do
   let pushLog item = do
         -- Only send logs that are at or above the configured minimum severity
         isPerm <- permitItem minSeverity item

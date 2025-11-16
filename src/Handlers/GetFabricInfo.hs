@@ -13,7 +13,7 @@ import Data.Text (pack)
 
 import API.Types (FullFabric)
 import API.WithField (WithField)
-import Types (AppM, _appDBPool)
+import App (AppM, _appDBPool)
 import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, mkError)
 import Infrastructure.Database (getFabricInfoById)

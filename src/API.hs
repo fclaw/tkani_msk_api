@@ -41,7 +41,7 @@ data Routes route = Routes
        :: route
        :- "providers"
        :> Get '[JSON] (ApiResponse [ProviderInfo])
-  , _putNewOrder
+  , _placeNewOrder
        :: route
        :- "order"
        :> "create"

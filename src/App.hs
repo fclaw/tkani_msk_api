@@ -5,13 +5,16 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
-module Types
+module App
   ( State(..)
   , AppM(..),
   Config (..),
   SdekToken (..),
-  SDEKCredentials (..)
+  SDEKCredentials (..),
+  currentTime,
+  render
   ) where
 
 import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
@@ -25,14 +28,20 @@ import Control.Lens
 import GHC.Generics (Generic)
 import Data.Aeson.TH
 import Control.Monad.Catch
+import Control.Monad.Time
+import Network.HTTP.Client (Manager)
+import Language.Haskell.TH (loc_module, location)
+import qualified Data.Text as T
+import qualified Data.HashMap.Strict as HM
 
 -- Katip imports
 import Katip
 import Data.Aeson (Value)
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
-import Text (recordLabelModifier) 
+import Text (recordLabelModifier)
 import API.Types (ProviderInfo)
+import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 
 
 -- "access_token": "string",
@@ -51,6 +60,19 @@ data SdekToken = SdekToken
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sdek" } ''SdekToken)
 
+
+-- The magical rendering function
+render :: (MonadReader Config m, MonadIO m) => Text -> TemplateData -> m Text
+render currentModule templateData = do
+  tplMap <- asks configTemplateMap
+  case HM.lookup currentModule tplMap of
+    Nothing ->
+      -- This will be a compile-time or runtime error depending on usage,
+      -- but it clearly signals a missing template.
+      error $ "Template not found for module: " ++ T.unpack currentModule
+    Just template ->
+      pure $ renderTemplate template templateData
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
@@ -64,6 +86,10 @@ data Config = Config
   , _providers :: [ProviderInfo]
   , _sdekCred  :: SDEKCredentials
   , _sdekUrl   :: Text
+  , _configBotToken :: Text
+  , _orderChatId :: Text
+  , _configHttpManager :: Manager
+  , configTemplateMap :: TemplateMap
   }
 
  -- Construct the SdekCreds record, converting String to Text
@@ -90,6 +116,7 @@ newtype AppM a = AppM
       , MonadError ServerError     -- Can throw Servant errors
       , MonadThrow -- New
       , MonadCatch -- New
+      , MonadTime
       )
     via (RWST Config [Text] (TVar State) (ExceptT ServerError IO))
 

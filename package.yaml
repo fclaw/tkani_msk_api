@@ -11,9 +11,10 @@ library:
     - API
     - API.Types
     - Handlers
-    - Types
+    - App
     - Config
     - Infrastructure.Logging.Telegram
+    - Infrastructure.Templating
   dependencies:
     # This list should already be complete
     - aeson
@@ -46,6 +47,10 @@ library:
     - time
     - random
     - vector
+    - monad-time
+    - unordered-containers
+    - directory
+    - filepath
 
 executables:
   tkani-api-exe:
@@ -73,7 +78,10 @@ executables:
       - yaml
       - tuple-sop
       - exceptions
-      
+      - http-client
+      - http-client-tls
+      - unordered-containers      
+
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes
       - hasql
