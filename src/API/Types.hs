@@ -209,6 +209,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "or" } ''
 -- | Represents the lifecycle stages of an order.
 data OrderStatus
   = New                 -- Order created by the bot, awaiting payment.
+  | Registered          -- order is registered in a delivery provider
   | Paid                -- Payment received, awaiting fulfillment.
   | OnRoute             -- Courier has picked up the package, it's in transit.
   | Delivered           -- Customer has received the package.
@@ -219,13 +220,32 @@ data OrderStatus
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
 
+-- | Converts an OrderStatus into a human-readable, formatted Russian Text
+--   suitable for an internal notification channel.
 formatStatus :: OrderStatus -> Text
-formatStatus New = "⏳ ОЖИДАЕТ ОПЛАТЫ"
-formatStatus Paid = "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
-formatStatus OnRoute = "🚚 В ПУТИ"
-formatStatus Delivered = "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧИ"
-formatStatus Completed = "🏁 ЗАВЕРШЁН"
-formatStatus Cancelled = "❌ ОТМЕНЁН"
+formatStatus status = case status of
+  -- The initial state after the /order/create call, but BEFORE payment.
+  New       -> "⏳ ОЖИДАЕТ ОПЛАТЫ"
+
+  -- Payment is confirmed via Tinkoff webhook. Time to pick and pack.
+  Paid      -> "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
+
+  -- After packing, the order has been successfully registered with SDEK (via API),
+  -- and a tracking number has been generated. Ready for courier pickup.
+  Registered -> "📝 ЗАРЕГИСТРИРОВАН В СЛУЖБЕ ДОСТАВКИ"
+
+  -- The courier has scanned the package. It is now in transit.
+  OnRoute   -> "🚚 В ПУТИ"
+
+  -- SDEK reports that the package has arrived at the final delivery point.
+  Delivered -> "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧI"
+
+  -- The customer has physically picked up the order. The transaction is fully complete.
+  -- This status might be set manually or via another SDEK webhook.
+  Completed -> "🏁 ЗАВЕРШЁН (ВЫДАН КЛИЕНТУ)"
+  
+  -- The order was cancelled.
+  Cancelled -> "❌ ОТМЕНЁН"
 
 
 -- A record to hold all the necessary information for the final confirmation.

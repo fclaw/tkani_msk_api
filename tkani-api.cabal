@@ -19,6 +19,7 @@ library
       Config
       Infrastructure.Logging.Telegram
       Infrastructure.Templating
+      Workers.SdekOrderStatusPoller
   other-modules:
       API.WithField
       Handlers.GetDeliveryPoints
@@ -40,6 +41,7 @@ library
       src
   build-depends:
       aeson
+    , async
     , base >=4.18 && <5
     , bytestring
     , containers
@@ -56,6 +58,8 @@ library
     , http-types
     , katip
     , lens
+    , lifted-async
+    , monad-control
     , monad-time
     , mtl
     , profunctors
@@ -67,6 +71,7 @@ library
     , text
     , time
     , transformers
+    , transformers-base
     , tuple-sop
     , unix
     , unordered-containers
@@ -84,13 +89,15 @@ executable tkani-api-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.18 && <5
+      async
+    , base >=4.18 && <5
     , exceptions
     , hasql
     , hasql-pool
     , http-client
     , http-client-tls
     , katip
+    , lifted-async
     , mtl
     , servant
     , servant-server

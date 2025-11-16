@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Main where
 
@@ -37,53 +38,45 @@ import System.IO (stdout)
 import qualified Data.Text.IO as TIO
 import Control.Monad.Catch (catch, throwM)
 import Data.Text (Text)
+import Data.List (find)
 import Network.HTTP.Client (newManager, Manager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
-
+import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
-import App (AppM(..), SDEKCredentials (..), Config (..), State (..))
+import App (AppM(..), SDEKCredentials (..), Config (..), State (..), runAppM)
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
+import Workers.SdekOrderStatusPoller (sdekOrderStatusPoller)
 
 
 handleProvidersResult (Right providers) go = go providers
 handleProvidersResult (Left error) _ = throwError $ userError ("cannot open providers.yaml: " <> prettyPrintParseException error)
 
-handleResult (Right ok) go = go ok
-handleResult (Left err) _ = throwError $ userError $ show err
-
+whenLeft :: Applicative m => Either a b -> (a -> m ()) -> m ()
+whenLeft (Left x) f = f x
+whenLeft _        _ = pure ()
 
 -- This is the "natural transformation" that converts our 'AppM' into a 'Handler'
 nt :: forall a . Config -> TVar State -> AppM a -> Handler a
 nt config stateTVar appM = do
   -- Run the RWST computation
   -- It gives us the result 'a', the final state 's', and the writer output 'w'
-    -- Define the handler for a catastrophic, unhandled exception
+  -- Define the handler for a catastrophic, unhandled exception
   let exceptionHandler (e :: SomeException) = do
-        -- This is where we log the specific error
-        $(logTM) EmergencyS $ logStr $ "FATAL: Unhandled exception reached the top-level handler: " <> show e
-        throwM e
+       -- This is where we log the specific error
+       $(logTM) EmergencyS $ logStr $ "FATAL: Unhandled exception reached the top-level handler: " <> show e
+       throwM e
   let runMonadsStack = runRWST (unAppM (appM `catch` exceptionHandler)) config stateTVar
-  let selRes (a, _, _) = a 
+  let selRes (a, _, _) = a
   result <- liftIO $ runExceptT $ fmap selRes runMonadsStack
   -- Handle the result of the ExceptT
   case result of
     Left err -> throwError err -- Propagate Servant errors
     Right a  -> pure a         -- Return the successful result
-
--- The app function now needs to create the initial state TVar in IO
-runApp :: Config -> IO Application
-runApp config = do
-  -- Create the initial mutable state in an IO transaction
-  initialState <- newTVarIO $ State { _sdekToken = Nothing }
-  -- Define the server with the hoisted handlers
-  let server = hoistServer tkaniApiProxy (nt config initialState) (toServant apiHandlers)
-  -- simpleCors is middleware, it should wrap the application
-  pure $ simpleCors $ serve tkaniApiProxy server
 
 
 -- | A helper function to set up and tear down the Katip LogEnv
@@ -122,6 +115,24 @@ withLogEnv tlsManager action = do
 
   -- 5. Use 'bracket' to ensure scribes are closed properly.
   bracket finalLogEnv closeScribes action
+
+
+-- | A helper that waits for any of a list of named async tasks to finish.
+--   It correctly captures both successful results and exceptions.
+waitAnyNamed :: [(String, Async a)] -> IO (String, Either SomeException a)
+waitAnyNamed namedAsyncs = do
+  -- Use waitAnyCatch, which is designed for this exact purpose.
+  -- Its signature is: [Async a] -> IO (Async a, Either SomeException a)
+  (finishedAsync, eitherResult) <- waitAnyCatch (map snd namedAsyncs)
+  -- Find the name associated with the finished async handle
+  case find (\(_, a) -> asyncThreadId a == asyncThreadId finishedAsync) namedAsyncs of
+    Just (name, _) ->
+      -- Return the found name and the 'Either' result directly.
+      pure (name, eitherResult)
+    Nothing ->
+      -- This fallback should ideally never be reached.
+      pure ("<unknown>", eitherResult)
+
 
 main :: IO ()
 main = do
@@ -170,9 +181,32 @@ main = do
             , configTemplateMap = tplMap
             }
 
-      -- 7. Run the server
-      let port = configApiPort config -- <-- From config
-      putStrLn $ "Starting server on port " <> show port
-      -- 8. run server and clean up resources on shutdown
-      app <- runApp appConfig
-      run port app `finally` (Pool.release pool >> closeScribes logEnv)
+      initialState <- newTVarIO $ State { _sdekToken = Nothing }
+
+      -- Create the runner function that bridges AppM and IO.
+      let runInIO :: forall a. AppM a -> IO (Either ServerError a)
+          runInIO = runAppM appConfig initialState
+      -- Define our concurrent tasks as a list of IO actions.
+      -- Task 1: The Web Server
+      let server = 
+           run (configApiPort config) $ simpleCors $ serve tkaniApiProxy $
+             hoistServer tkaniApiProxy (nt appConfig initialState) (toServant apiHandlers)
+      -- Task 2: The SDEK Polling Worker
+      let sdekPoller = do
+            res <- runInIO sdekOrderStatusPoller 
+            whenLeft res $ \e ->
+              error $ "SDEK Poller failed with a servant error: " ++ show e
+      let tasks :: [(String, IO ())]
+          tasks = [("Web Server", server), ( "SDEK Poller", sdekPoller)]
+
+      putStrLn "Spawning concurrent workers..."
+      asyncs <- mapM (\(name, action) -> (name,) <$> async action) tasks
+      putStrLn "All workers started. Waiting for any worker to exit."
+
+      -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
+      (taskName, _) <- waitAnyNamed asyncs
+      putStrLn $ "Worker '" ++ taskName ++ "' finished unexpectedly. Shutting down."
+
+      -- Gracefully cancel all other workers on exit.
+      mapM_ (cancel . snd) asyncs
+      putStrLn "Shutdown complete." 

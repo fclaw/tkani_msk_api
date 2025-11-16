@@ -6,6 +6,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE MultiParamTypeClasses       #-}
+{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module App
   ( State(..)
@@ -14,7 +17,8 @@ module App
   SdekToken (..),
   SDEKCredentials (..),
   currentTime,
-  render
+  render,
+  runAppM
   ) where
 
 import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
@@ -33,6 +37,11 @@ import Network.HTTP.Client (Manager)
 import Language.Haskell.TH (loc_module, location)
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as HM
+import Control.Monad.Trans.Control
+import Control.Monad.Base
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Except (runExceptT)
+import Control.Monad.RWS (runRWST)
 
 -- Katip imports
 import Katip
@@ -120,6 +129,30 @@ newtype AppM a = AppM
       )
     via (RWST Config [Text] (TVar State) (ExceptT ServerError IO))
 
+-- === MANUAL INSTANCES for MonadBaseControl ===
+
+-- INSTANCE 1: MonadBase IO AppM
+-- This instance teaches the compiler how to get from the base monad (IO)
+-- into our AppM stack. It's the superclass required by MonadBaseControl.
+instance MonadBase IO AppM where
+    -- Lifting from the base is just lifting from IO.
+    liftBase = liftIO
+
+-- INSTANCE 2: MonadBaseControl IO AppM
+-- This is the core instance. It teaches the compiler how to "unlift" AppM
+-- back down to IO, run an action, and restore the monadic state.
+instance MonadBaseControl IO AppM where
+    -- The state of the monadic computation is the same as the state of the inner stack.
+    type StM AppM a = StM (RWST Config [Text] (TVar State) (ExceptT ServerError IO)) a
+
+    -- How to lift an action that operates in the base monad.
+    -- We are delegating this to the instance for RWST, just wrapping/unwrapping our newtype.
+    liftBaseWith f = AppM $ liftBaseWith $ \runInBase -> f (runInBase . unAppM)
+
+    -- How to restore the monadic state.
+    -- Again, we just delegate to the underlying RWST instance.
+    restoreM = AppM . restoreM
+
 -- | INSTANCE FOR KATIP LOGGING (Corrected for RWST)
 instance Katip AppM where
   getLogEnv = asks _appLogEnv
@@ -138,3 +171,10 @@ instance KatipContext AppM where
   -- Katip's internal machinery will handle the rest.
   localKatipContext _ m = m
   localKatipNamespace _ m = m
+
+  -- ADD THIS RUNNER FUNCTION: This is our bridge from AppM to IO
+-- It will be used by main to run the workers.
+runAppM :: Config -> TVar State -> AppM a -> IO (Either ServerError a)
+runAppM config stateTVar appM =
+  -- Unwind the monad stack to get to the base IO.
+  runExceptT . fmap (\(a, _, _) -> a) $ runRWST (unAppM appM) config stateTVar

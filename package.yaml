@@ -15,9 +15,11 @@ library:
     - Config
     - Infrastructure.Logging.Telegram
     - Infrastructure.Templating
+    - Workers.SdekOrderStatusPoller
   dependencies:
     # This list should already be complete
     - aeson
+    - async
     - bytestring
     - containers
     - hasql
@@ -51,6 +53,9 @@ library:
     - unordered-containers
     - directory
     - filepath
+    - lifted-async
+    - monad-control
+    - transformers-base
 
 executables:
   tkani-api-exe:
@@ -67,6 +72,8 @@ executables:
       - tkani-api
 
       # It directly uses these packages in Main.hs
+      - async
+      - lifted-async
       - mtl
       - servant
       - servant-server
