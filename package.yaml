@@ -57,6 +57,7 @@ library:
     - lifted-async
     - monad-control
     - transformers-base
+    - uuid
 
 executables:
   tkani-api-exe:

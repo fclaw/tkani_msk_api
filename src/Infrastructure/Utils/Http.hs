@@ -74,6 +74,7 @@ import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Concurrent (threadDelay)
 import qualified Data.Vector as V
 import qualified Control.Monad.Catch as Catch
+import qualified Data.ByteString.Char8 as BS8 -- For header values
 
 
 -- A cleaner way to represent query parameters
@@ -255,7 +256,14 @@ _getReq' url queryParams maybeToken = do
 
 _postReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => String -> b -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
 _postReq' url body maybeToken = do
-  let opts = addToken maybeToken defaults
+
+  -- Start with the default options
+  let baseOpts = defaults
+        -- THE FIX: Explicitly set the Content-Type header to "application/json".
+        -- The value must be a ByteString.
+        & header "Content-Type" .~ [BS8.pack "application/json"]
+
+  let opts = addToken maybeToken baseOpts
   let encoded_body = encode body
   liftIO $ try (postWith opts url encoded_body)
 

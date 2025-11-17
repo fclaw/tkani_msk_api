@@ -78,6 +78,7 @@ library
     , tuple-sop
     , unix
     , unordered-containers
+    , uuid
     , vector
     , wai
     , warp
