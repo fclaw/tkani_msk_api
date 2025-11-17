@@ -30,7 +30,9 @@ library
       Infrastructure.Database
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
+      Infrastructure.Services.Sdek.CachedDeliveryPoints
       Infrastructure.Services.Telegram
+      Infrastructure.Services.Yandex.Types
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId
       Text
@@ -42,6 +44,7 @@ library
   build-depends:
       aeson
     , async
+    , async-extra
     , base >=4.18 && <5
     , bytestring
     , containers

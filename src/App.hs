@@ -6,9 +6,11 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE MultiParamTypeClasses       #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 module App
   ( State(..)
@@ -16,6 +18,7 @@ module App
   Config (..),
   SdekToken (..),
   SDEKCredentials (..),
+  MetroCity (..),
   currentTime,
   render,
   runAppM
@@ -42,15 +45,18 @@ import Control.Monad.Base
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.RWS (runRWST)
+import Data.Time (UTCTime)
+import qualified Data.HashSet as HS
 
 -- Katip imports
 import Katip
-import Data.Aeson (Value)
+import Data.Aeson (Value, FromJSON, parseJSON, withObject, (.:))
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
 import Text (recordLabelModifier)
-import API.Types (ProviderInfo)
+import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
+import API.WithField (WithField)
 
 
 -- "access_token": "string",
@@ -69,6 +75,10 @@ data SdekToken = SdekToken
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sdek" } ''SdekToken)
 
+type CityName = Int
+type CachedPoints = (UTCTime, [WithField "dpMetros" [Text] DeliveryPoint]) -- (Timestamp of when it was cached, The data)
+type PointCache = HM.HashMap CityName CachedPoints
+
 
 -- The magical rendering function
 render :: (MonadReader Config m, MonadIO m) => Text -> TemplateData -> m Text
@@ -86,6 +96,7 @@ render currentModule templateData = do
 -- It holds the SDEK token and its expiry time.
 data State = State
   { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
+  , _pointCache :: PointCache
   }
 
 -- | AppState holds all the shared, read-only resources for our application.
@@ -99,7 +110,14 @@ data Config = Config
   , _orderChatId :: Text
   , _configHttpManager :: Manager
   , configTemplateMap :: TemplateMap
+  , _configYandexApiKey :: Text
+  , _metroCityCodes :: HS.HashSet Int
   }
+
+-- A helper type for parsing the YAML
+newtype MetroCity = MetroCity { code :: Int }
+instance FromJSON MetroCity where
+  parseJSON = withObject "MetroCity" $ \v -> MetroCity <$> v .: "code"
 
  -- Construct the SdekCreds record, converting String to Text
 data SDEKCredentials = SdekCreds

@@ -1,0 +1,14 @@
+# A list of SDEK city codes for cities that have a metro system.
+# The SDEK city code for a city can be found via the /v2/location/cities endpoint.
+# This is a curated list.
+- code: 44   # Москва
+- code: 137  # Санкт-Петербург
+- code: 157  # Нижний Новгород
+- code: 172  # Новосибирск
+- code: 232  # Самара
+- code: 261  # Екатеринбург
+- code: 270  # Казань
+- code: 1045 # Челябинск (has a "metrotram", but worth including for search)
+- code: 1475 # Омск (metro is under construction/frozen, but might have related points)
+- code: 546  # Волгоград (has a "metrotram")
+# Add any other cities as needed.

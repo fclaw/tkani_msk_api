@@ -42,19 +42,20 @@ import Data.List (find)
 import Network.HTTP.Client (newManager, Manager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
+import qualified Data.HashSet as HS
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
-import App (AppM(..), SDEKCredentials (..), Config (..), State (..), runAppM)
+import App (AppM(..), SDEKCredentials (..), Config (..), State (..), MetroCity (..), runAppM)
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (sdekOrderStatusPoller)
 
 
-handleProvidersResult (Right providers) go = go providers
-handleProvidersResult (Left error) _ = throwError $ userError ("cannot open providers.yaml: " <> prettyPrintParseException error)
+handleYamlResult (Right providers) go = go providers
+handleYamlResult (Left error) _ = throwError $ userError ("cannot open yaml: " <> prettyPrintParseException error)
 
 whenLeft :: Applicative m => Either a b -> (a -> m ()) -> m ()
 whenLeft (Left x) f = f x
@@ -140,8 +141,10 @@ main = do
   -- This is where the magic from 'http-client-tls' happens.
   tlsManager <- newManager tlsManagerSettings
   withLogEnv tlsManager $ \logEnv -> do
-    providersResult <- decodeFileEither @[ProviderInfo] "providers.yaml"
-    handleProvidersResult providersResult $ \providers_ -> do
+    eProviders <- decodeFileEither @[ProviderInfo] "providers.yaml"
+    eMetroCities <- decodeFileEither @[MetroCity] "data/metro_cities.yaml"
+    let res = (,) <$> eProviders <*> eMetroCities
+    handleYamlResult res $ \(providers, cities) -> do
       tplMap <- loadTemplatesFromDirectory "templates"
 
       -- 2. Load configuration from environment variables
@@ -167,21 +170,24 @@ main = do
       sdekUrl <- fmap pack $ getEnv "SDEK_URL"
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
       orderChatId <- fmap pack $ getEnv "ORDER_CHAT_ID"
+      yandexApiKey <- pack <$> getEnv "YANDEX_API_KEY"
 
       -- 6. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool
             , _appLogEnv = logEnv
-            , _providers = providers_
+            , _providers = providers
             , _sdekCred  = SdekCreds {..}
             , _sdekUrl   = sdekUrl
             , _configBotToken = orderBotToken
             , _orderChatId = orderChatId
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
+            , _configYandexApiKey = yandexApiKey
+            , _metroCityCodes = HS.fromList (map code cities)
             }
 
-      initialState <- newTVarIO $ State { _sdekToken = Nothing }
+      initialState <- newTVarIO $ State { _sdekToken = Nothing, _pointCache = mempty }
 
       -- Create the runner function that bridges AppM and IO.
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)

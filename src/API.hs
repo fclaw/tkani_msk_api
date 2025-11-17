@@ -36,7 +36,7 @@ data Routes route = Routes
        :> Capture "provider" Providers 
        :> "delivery-points" 
        :> QueryParam "city" Text 
-       :> Get '[JSON] (ApiResponse [DeliveryPoint])
+       :> Get '[JSON] (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
   , _getProviders
        :: route
        :- "providers"

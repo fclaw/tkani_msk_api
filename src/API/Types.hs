@@ -133,7 +133,6 @@ instance ToHttpApiData Providers where
     case provider of
       SDEK     -> "sdek"
 
-    
 data DeliveryPoint = DeliveryPoint
   {   dpCode            :: Text
     , dpName            :: Text
@@ -251,12 +250,10 @@ formatStatus status = case status of
 -- A record to hold all the necessary information for the final confirmation.
 data OrderConfirmationDetails = OrderConfirmationDetails
   { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
-  , purchasedItems   :: [(Text, Int)] -- List of (Fabric Name, Quantity/Length)
-  , totalAmount      :: Float  -- e.g., 125.50
   , paymentLink      :: Text
   }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
 
 
-defOrderConfirmationDetails = OrderConfirmationDetails mempty [] 0.0 mempty
+defOrderConfirmationDetails = OrderConfirmationDetails mempty mempty

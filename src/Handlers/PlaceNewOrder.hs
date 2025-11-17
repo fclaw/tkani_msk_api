@@ -10,13 +10,13 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Time (formatTime, defaultTimeLocale, LocalTime)
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import qualified Data.Text as T
-import  Data.Text (Text)
+import Data.Text (Text)
 import Data.Maybe
 import Data.Bifunctor (first)
 import Data.Traversable (for)
 import Control.Monad (join)
 import Control.Applicative (asum)
-import  Data.HashMap.Strict  (HashMap)
+import Data.HashMap.Strict  (HashMap)
 import qualified Data.HashMap.Strict as HM
 
 
@@ -45,7 +45,7 @@ handler newOrderRequest_ = do
     -- Log the success for visibility in your main logs.
     $(logTM) InfoS $ "Successfully sent new order notification for " <> logStr orderId_
     $(logTM) InfoS $ "Telegram message id " <> logStr (show messageId)
-    return $ Right defOrderConfirmationDetails { orderId = orderId_, paymentLink = "https://www.google.com", totalAmount = 213.89 }
+    return $ Right defOrderConfirmationDetails { orderId = orderId_, paymentLink = "https://www.google.com" }
   return $ first mkError $ join resp
 
 

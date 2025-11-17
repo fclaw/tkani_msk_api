@@ -45,7 +45,8 @@ getValidSdekToken = do
   stateTVar <- get -- From MonadState
   config <- ask -- From MonadReader
   -- Atomically check the current token
-  maybeToken <- liftIO $ atomically $ _sdekToken <$> readTVar stateTVar
+  state <- liftIO $ atomically $ readTVar stateTVar
+  let maybeToken = _sdekToken state
   case maybeToken of
     -- TODO: Add expiry check here in a real app
     Just validToken -> pure validToken
@@ -60,5 +61,5 @@ getValidSdekToken = do
           throwError err500 { errBody = "SDEK auth failed" }
         Right newToken -> do
           -- Update the shared state with the new token
-          liftIO $ atomically $ writeTVar stateTVar (State { _sdekToken = Just newToken })
+          liftIO $ atomically $ writeTVar stateTVar (state { _sdekToken = Just newToken })
           pure newToken

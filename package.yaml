@@ -20,6 +20,7 @@ library:
     # This list should already be complete
     - aeson
     - async
+    - async-extra
     - bytestring
     - containers
     - hasql

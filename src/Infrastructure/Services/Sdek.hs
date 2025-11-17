@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE LambdaCase  #-}
+{-# LANGUAGE DataKinds  #-}
 
 
 module Infrastructure.Services.Sdek (getDeliveryPoints) where
@@ -17,12 +18,18 @@ import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Control.Monad (forM_, void)
 import Control.Monad.Reader.Class (ask)
+import Control.Monad.State.Class (get)
+import Control.Concurrent.STM (atomically, readTVar)
+import Data.Time (UTCTime, diffUTCTime)
+import qualified Data.HashMap.Strict as HM
 
-import App (AppM, sdekAccessToken, _sdekUrl)
+import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime)
 import API.Types
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import TH.Location (currentModule)
+import API.WithField (WithField (..))
+import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
 
 
 -- | Internal data type to decode the city search response from SDEK.
@@ -38,68 +45,7 @@ instance FromJSON SdekCity where
     -- We then wrap the resulting Int in our SdekCity constructor.
     pure $ SdekCity cityCode
 
-
--- | Internal data type to decode the full delivery points response from SDEK.
--- We only define the fields we are interested in.
-data SdekApiPoint = SdekApiPoint
-  { sdekApiPointCode     :: Text
-  , sdekApiPointName     :: Text
-  , sdekApiPointWorkTime :: Text
-  , sdekApiPointIsDressingRoom :: Bool
-  , sdekApiPointLocation :: SdekApiLocation
-  } deriving (Show, Generic)
-
-data SdekApiLocation = SdekApiLocation
-  { address_full :: Text
-  , longitude    :: Double
-  , latitude     :: Double
-  } deriving (Show, Generic)
-
-instance FromJSON SdekApiLocation
-instance ToJSON SdekApiLocation
-
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sdekApiPoint" } ''SdekApiPoint)
-
-
-takeEnd :: Int -> [a] -> [a]
-takeEnd i xs
-    | i <= 0 = []
-    | otherwise = f xs (drop i xs)
-    where f (x:xs) (y:ys) = f xs ys
-          f xs _ = xs
-
--- | A pure function that transforms the SDEK-specific data structure
---   into our clean, internal 'DeliveryPoint' ADT.
-transformSdekPoint :: SdekApiPoint -> DeliveryPoint
-transformSdekPoint sp =
-  let
-    shortAddress = (T.intercalate ", " . takeEnd 2 . T.splitOn ", " . address_full . sdekApiPointLocation) sp
-    buttonText = sdekApiPointName sp <> " - " <> shortAddress
-    fittingRoomText = if sdekApiPointIsDressingRoom sp then "\n👕 Есть примерочная" else mempty
-    messageText = T.unlines
-      [ "📍 **Пункт СДЭК '" <> sdekApiPointName sp <> "'**"
-      , "**Адрес:** " <> address_full (sdekApiPointLocation sp)
-      , "**Часы работы:** " <> sdekApiPointWorkTime sp
-      , fittingRoomText
-      ]
-  in
-  DeliveryPoint
-    { dpCode            = "sdek_" <> sdekApiPointCode sp
-    , dpName            = sdekApiPointName sp
-    , dpWorkTime        = sdekApiPointWorkTime sp
-    , dpHasDressingRoom = sdekApiPointIsDressingRoom sp
-    , dpLocation        = PointLocation
-        { locAddressFull = (address_full . sdekApiPointLocation) sp
-        , locLongitude   = (longitude . sdekApiPointLocation) sp
-        , locLatitude    = (latitude . sdekApiPointLocation) sp
-        }
-    , dpDisplay = DisplayInfo
-        { diButtonText  = buttonText
-        , diMessageText = messageText
-        }
-    }
-
-getDeliveryPoints :: Text -> AppM (ApiResponse [DeliveryPoint])
+getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
 getDeliveryPoints city = do
   url <- fmap (T.unpack . _sdekUrl) ask
   -- Step 1: Find the SDEK city code.
@@ -111,9 +57,6 @@ getDeliveryPoints city = do
         , ("size", "1")            -- Optional but good practice: we only need one result
         , ("lang", "rus")          -- Optional but good practice: ensure Russian response
         ]
-  
-  let maxRetries = 3
-  let initialDelay = 1000000
   let cityReq = getValidSdekToken >>= (_getReq' cityUrl cityParams . Just . sdekAccessToken)
   eCities <- makeRequestWithRetries @[SdekCity] (Just (void $ getValidSdekToken)) cityReq
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case
@@ -124,16 +67,21 @@ getDeliveryPoints city = do
       $(logTM) InfoS $ logStr $ "SDEK city not found (no exact match): " <> city
       pure $ Right []
     (firstCity:_) -> do
-      -- Step 3: Use the city code to fetch the list of delivery points.
-      let cityCode = code firstCity
-      $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
-      let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
-      let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-      let pointsReq = getValidSdekToken >>= (_getReq' pointsUrl pointsParams . Just . sdekAccessToken)
-      ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
-      handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
-        -- Transform the result (only runs on success of the second call)
-        $(logTM) InfoS $ logStr $ "Successfully fetched " <> T.pack (show (length sdekPoints)) <> " points."
-        let points = map transformSdekPoint sdekPoints
-        forM_ points $ \point -> $(logTM) DebugS $ logStr $ "Successfully fetched point: " <> T.pack (show point)
-        pure $ Right $ points
+        stateTVar <- get
+        now <- currentTime
+        -- Read the current cache content atomically
+        currentCache <- fmap _pointCache $ liftIO $ atomically $ readTVar stateTVar
+        -- Check if a valid, fresh entry exists
+        case HM.lookup (code firstCity) currentCache of
+          Just (timestamp, cachedPoints) | isFresh now timestamp -> do
+            -- CACHE HIT
+            $(logTM) InfoS $ "Cache hit for city: " <> ls city
+            return $ Right cachedPoints
+          _ -> do
+            $(logTM) InfoS $ "Cache miss for city: " <> ls city <> ". Fetching from APIs..."
+            storeDeliveryPoints $ code firstCity
+
+
+-- A helper to define what "fresh" means (e.g., 6 hours)
+isFresh :: UTCTime -> UTCTime -> Bool
+isFresh now prev = let sixHours = 6 * 60 * 60 in diffUTCTime now prev < sixHours
