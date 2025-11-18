@@ -187,7 +187,13 @@ main = do
             , _metroCityCodes = HS.fromList (map code cities)
             }
 
-      initialState <- newTVarIO $ State { _sdekToken = Nothing, _pointCache = mempty }
+      let state = 
+           State 
+           { _sdekToken = Nothing
+           , _pointCache = mempty
+           , _sdekPromises = mempty 
+           }
+      initialState <- newTVarIO state
 
       -- Create the runner function that bridges AppM and IO.
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)

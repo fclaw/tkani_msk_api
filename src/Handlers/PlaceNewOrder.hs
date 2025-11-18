@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Handlers.PlaceNewOrder(handler) where
 
@@ -16,37 +17,70 @@ import Data.Bifunctor (first)
 import Data.Traversable (for)
 import Control.Monad (join, when)
 import Control.Applicative (asum)
-import Data.HashMap.Strict  (HashMap)
+import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Control.Monad.Trans.Except
 import Data.Either (isLeft)
+import qualified Data.UUID as UUID
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.State.Class (get)
+import Control.Monad.Reader.Class (ask)
+import Control.Concurrent (newEmptyMVar, takeMVar)
+import Control.Concurrent.STM (modifyTVar', atomically)
+import System.Timeout (timeout)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, defOrderConfirmationDetails, formatStatus, OrderStatus (New), mkError)
-import App (AppM, currentTime, render)
+import App (AppM, currentTime, render, _sdekPromises, _appDBPool)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse)
 import TH.Location (currentModule)
 import qualified Infrastructure.Services.Sdek as Sdek
+import qualified Infrastructure.Services.Sdek.Types as Sdek
+import Infrastructure.Database (getFinalOrderItemPrice)
+
 
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
-  -- | SdekConfirmationTimeout                -- The poller took too long to get a final status
-  -- | SdekConfirmationInvalid [Sdek.SdekError] -- The poller got an INVALID final status
+  | SdekConfirmationTimeout                -- The poller took too long to get a final status
+  | SdekConfirmationInvalid [Sdek.SdekError] -- The poller got an INVALID final status
   -- | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
-  -- | DatabaseInsertFailed     Pool.UsageError -- Could not save the final order
+  | DatabaseInsertFailed  Text -- Could not save the final order
   -- | NotificationSendFailed   Telegram.TelegramError -- (Optional) if you consider this a critical failure
   deriving (Show)
 
 
 wrap action error = withExceptT error (ExceptT action)
 
+sec :: Int
+sec = 1000000
+
 placeOrder :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
-placeOrder OrderRequest {..} = do 
-   -- 1. Register with SDEK (assuming this function returns Either SdekError ...)
-  sdekAcceptance <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest orCustomerFullName orCustomerPhone)) SdekRegistrationFailed
+placeOrder orderRequest@OrderRequest {..} = do
+
+  pool <- fmap _appDBPool $ lift ask
+  -- fetch total price for a given fabric
+  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) DatabaseInsertFailed
+   -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
+  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice
+  trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
   orderId_ <- liftIO generateOrderId
+  lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
+
+  -- STEP B: Create and register the "promise" MVar
+  promiseMVar <- liftIO newEmptyMVar
+  stateTVar <- lift get
+  liftIO $ atomically $ modifyTVar' stateTVar $
+    \s -> s { _sdekPromises = HM.insert trackingUuid promiseMVar (_sdekPromises s) }
+
+  -- STEP C: BLOCK and wait for the poller to fulfill the promise.
+  -- We add a 30-second timeout to prevent the request from hanging forever.
+  let thirtySeconds = 30 * sec
+  let maybeToEither (Just v) = Right v
+      maybeToEither Nothing = Left ()
+  mFinalResult <- wrap (liftIO (fmap maybeToEither (timeout thirtySeconds (takeMVar promiseMVar)))) (const SdekConfirmationTimeout)
+
   return defOrderConfirmationDetails { orderId = orderId_}
 
 

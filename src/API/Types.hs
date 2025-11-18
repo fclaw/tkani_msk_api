@@ -103,6 +103,7 @@ data FabricInfo = FabricInfo
   , fiPricePerMeter      :: Int    -- In kopecks/cents
     -- Inventory Status
   , fiAvailableLengthM   :: Double -- Amount available for "cut-to-order"
+  , fiArticle            :: Text
     -- List of associated pre-cuts for this fabric.
   , fiPreCuts            :: Maybe [WithField "pcId" Int PreCut]
   } deriving (Show, Generic)
@@ -185,6 +186,9 @@ instance FromJSON ProviderInfo where
 data OrderRequest = OrderRequest
   { -- Core Product Information
     orFabricId      :: Int          -- The ID of the fabric being ordered. REQUIRED.
+
+  , orFabricName   :: Text
+  , orArticle      :: Text
 
     -- Purchase Details (exactly one of these should be Just)
   , orLengthM       :: Maybe Double   -- Length in meters for a custom cut.

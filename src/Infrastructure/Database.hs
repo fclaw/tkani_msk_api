@@ -9,6 +9,7 @@
 module Infrastructure.Database
   ( getFabricInfoById
   , putNewFabric
+  , getFinalOrderItemPrice
   ) where
 
 
@@ -23,6 +24,7 @@ import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join)
 import Data.Tuple.Ops (initT, app2, app3)
+import Data.Int (Int64)
 
 
 import API.Types (FabricInfo(..), PreCut(..), FullFabric) -- Your data types
@@ -56,6 +58,7 @@ getFabricStatement =
       'fiPricePerMeter', f.price_per_meter,
       'fiAvailableLengthM', f.available_length_m,
       'fiIsSold', f.is_sold,
+      'fiArticle', f.article,
       'fiPreCuts', coalesce((
         select jsonb_agg(
           json_build_object(
@@ -89,12 +92,14 @@ putNewFabricStatement =
     (description, 
      total_length_m, 
      price_per_meter, 
-     available_length_m)
+     available_length_m,
+     article)
     values (
       $1 :: text, 
       $2 :: int4, 
       $3 :: int4, 
-      $4 :: float8)
+      $4 :: float8,
+      $5 :: text)
     returning id :: int4
   |]
 
@@ -103,3 +108,33 @@ putNewFabric fabricInfo_ pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       fabricInfo_ `Hasql.statement` putNewFabricStatement
+
+
+getFinalOrderItemPriceStatement :: Hasql.Statement (Int64, Maybe Int64, Maybe Double) Double
+getFinalOrderItemPriceStatement = 
+  [TH.singletonStatement|
+    select
+      (case
+        when $2 :: int8? is not null then
+          (select pc.price_rub
+           from pre_cuts pc
+           where pc.id = $2 :: int8? and pc.fabric_id = $1 :: int8)
+        when $2 :: int8? is not null and $3 :: float8? is not null then
+          (select f.price_per_meter * $3 :: float8?
+           from fabrics f
+           where f.id = $1 :: int8)
+        else 0.0
+      end) :: float8
+    from fabrics
+    where id = $1 :: int8
+  |]
+
+-- | Fetches the final, calculated price for a fabric order item.
+--   The entire calculation (per-meter vs. fixed price) is handled by the SQL query.
+--   Returns 'Nothing' if the fabric or pre-cut is not found.
+getFinalOrderItemPrice :: Int -> Maybe Int -> Maybe Double -> Hasql.Pool -> IO (Either Text Double)
+getFinalOrderItemPrice fabricId preCutId lengthM pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      params `Hasql.statement` getFinalOrderItemPriceStatement
+  where params = (fromIntegral fabricId, fmap fromIntegral preCutId, lengthM)

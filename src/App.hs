@@ -47,6 +47,8 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.RWS (runRWST)
 import Data.Time (UTCTime)
 import qualified Data.HashSet as HS
+import Control.Concurrent (MVar)
+import Data.UUID (UUID)
 
 -- Katip imports
 import Katip
@@ -57,6 +59,7 @@ import Text (recordLabelModifier)
 import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
+import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 
 
 -- "access_token": "string",
@@ -92,11 +95,22 @@ render currentModule templateData = do
     Just template ->
       pure $ renderTemplate template templateData
 
+
+-- A type to represent the final result from the poller.
+data SdekFinalResult = 
+       SdekResultSuccessful SdekConfirmation 
+     | SdekResultInvalid [SdekError]
+  deriving (Show)
+
+-- The map from SDEK's tracking UUID to the MVar "promise".
+type SdekPromiseMap = HM.HashMap UUID (MVar SdekFinalResult)
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
   { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
   , _pointCache :: PointCache
+  , _sdekPromises :: SdekPromiseMap
   }
 
 -- | AppState holds all the shared, read-only resources for our application.
