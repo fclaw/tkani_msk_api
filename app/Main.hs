@@ -168,6 +168,8 @@ main = do
       sdekClientId <- fmap pack $ getEnv "SDEK_CLIENT_ID"
       sdekClientSecret <- fmap pack $ getEnv "SDEK_CLIENT_SECRET"
       sdekUrl <- fmap pack $ getEnv "SDEK_URL"
+      sdekTariffCode <- fmap (read @Int) $ getEnv "SDEK_TARIFF_CODE" 
+      sdekShipmentPoint <- fmap pack $ getEnv "SDEK_SHIPMENT_POINT" 
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
       orderChatId <- fmap pack $ getEnv "ORDER_CHAT_ID"
       yandexApiKey <- pack <$> getEnv "YANDEX_API_KEY"
@@ -179,6 +181,8 @@ main = do
             , _providers = providers
             , _sdekCred  = SdekCreds {..}
             , _sdekUrl   = sdekUrl
+            , _sdekTariffCode = sdekTariffCode
+            , _sdekShipmentPoint = sdekShipmentPoint
             , _configBotToken = orderBotToken
             , _orderChatId = orderChatId
             , _configHttpManager = tlsManager

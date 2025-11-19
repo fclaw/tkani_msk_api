@@ -12,6 +12,7 @@ module Infrastructure.Services.Sdek
        , registerOrder
        , makeMinimalOrderRequestData
        , buildMinimalOderRequest
+       , getOrderStatus
        ) where
 
 import Data.Text (Text)
@@ -25,6 +26,7 @@ import Control.Concurrent.STM (atomically, readTVar)
 import Data.Time (UTCTime, diffUTCTime)
 import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
+import qualified Data.UUID as UUID
 
 import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime)
 import API.Types
@@ -109,6 +111,9 @@ data MinimalOrderRequestData = MinimalOrderRequestData
     --   Note: This should be the code *without* any "sdek_" prefix.
     --   Source: User selection from the paginated list of delivery points.
   , mordDeliveryPointCode :: Text
+
+  , mordTariffCode :: Int
+  , mordShipmentPoint :: Text
   }
 
 
@@ -122,8 +127,8 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> Double -> MinimalOrderRequestData
-makeMinimalOrderRequestData OrderRequest {..} fabricPrice =
+makeMinimalOrderRequestData :: OrderRequest -> Double -> Int -> Text -> MinimalOrderRequestData
+makeMinimalOrderRequestData OrderRequest {..} fabricPrice tariffCode shipmentPoint =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
@@ -131,6 +136,8 @@ makeMinimalOrderRequestData OrderRequest {..} fabricPrice =
   , mordWareKey = orArticle
   , mordFabricPrice = fabricPrice
   , mordDeliveryPointCode = fromMaybe orDeliveryPointId (T.stripPrefix "sdek_" orDeliveryPointId)
+  , mordTariffCode = tariffCode
+  , mordShipmentPoint = shipmentPoint
   }
 
 -- | Builds the minimal SdekOrderRequest payload needed to register an order.
@@ -148,10 +155,10 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
     item = SdekPackageItem
       { pkiName = mordFabricName -- A generic name is fine for your manual workflow
       , pkiWareKey = mordWareKey -- Use your internal fabric ID
-      , pkiPayment = SdekPayment { payValue = mordFabricPrice }
+      , pkiPayment = SdekPayment { payValue = 100 }
       , pkiWeight = 500 -- A sensible default weight in grams
       , pkiAmount = 1   -- It's one "item" (one piece of fabric)
-      , pkiCost = 1
+      , pkiCost = round mordFabricPrice
       }
 
     -- 3. Create a default package payload
@@ -166,11 +173,12 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
     -- 3. Assemble the final request
     SdekOrderRequest
       { -- Hardcode the tariff for now if you only offer one type of delivery
-        sorTariffCode = 137 -- e.g., "Посылка склад-ПВЗ"
+        sorTariffCode = mordTariffCode -- e.g., "Посылка склад-ПВЗ"
       , sorRecipient = recipient
       , sorPackages = [package]
-      , sorShipmentPoint = "shipment_point"
+      , sorShipmentPoint = mordShipmentPoint
       , sorDeliveryPoint = mordDeliveryPointCode
+      , sorServices = [SdekService INSURANCE (Just (T.pack (show (mordFabricPrice + 1))))]
       }
 
 
@@ -211,3 +219,13 @@ registerOrder order = do
             { seCode = "UNEXPECTED_STATE"
             , seMessage = "SDEK returned an unexpected initial state: " <> T.pack (show otherState)
             }
+
+
+getOrderStatus :: UUID -> AppM (Either SdekError SdekOrderStatusResponse)
+getOrderStatus uuid = do
+  $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
+  url <- fmap (T.unpack . _sdekUrl) ask
+  let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
+  let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
+  eOrders <- makeRequestWithRetries @SdekOrderStatusResponse (Just (void $ getValidSdekToken)) ordersReq
+  handleApiResponse @_ @SdekOrderStatusResponse $(currentModule) eOrders $ pure . Right

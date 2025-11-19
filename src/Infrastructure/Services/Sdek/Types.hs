@@ -82,13 +82,28 @@ data SdekPackage = SdekPackage
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pkg" } ''SdekPackage)
 
--- SdekLocation needs to be used for both from and to.
--- It now primarily uses the address, not the city code.
-data SdekLocation = SdekLocation
-  { locAddress :: Text -- The full address of the sender/receiver PVZ.
+-- | ================================================================
+-- | The 'services' array for SDEK Order and Calculator requests
+-- | ================================================================
+
+-- | A sum type (enum) for known SDEK service codes for better type safety.
+data SdekServiceCode
+  = INSURANCE    -- Страхование
+  | NONE
+  -- Add other service codes here as you need them
+  deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { sumEncoding = UntaggedValue } ''SdekServiceCode)
+
+-- | Represents a single service object. The 'code' determines the meaning of 'parameter'.
+--   We define separate "smart constructors" for clarity instead of using the raw type.
+data SdekService = SdekService
+  { ssCode      :: SdekServiceCode -- Use a safe enum type for the service code
+  , ssParameter :: Maybe Text      -- Parameter is a string in some cases, a number in others. We'll handle this.
   } deriving (Show, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "loc" } ''SdekLocation)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ss" } ''SdekService)
+
 
 -- This is the main record you will construct. It contains only the fields
 -- SDEK requires to get an order into their system for later manual editing.
@@ -98,6 +113,7 @@ data SdekOrderRequest = SdekOrderRequest
   , sorPackages   :: [SdekPackage]  -- REQUIRED: Minimal package info.
   , sorShipmentPoint :: Text           -- REQUIRED: The code of the PVZ you are shipping FROM.
   , sorDeliveryPoint :: Text           -- REQUIRED: The code of the PVZ the customer chose.
+  , sorServices      :: [SdekService]
   } deriving (Show, Generic)
 
 -- This instance converts Haskell's camelCase to SDEK's snake_case.
@@ -183,3 +199,41 @@ data SdekConfirmation = SdekConfirmation { scStatus :: SdekRequestState }
   deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sc" } ''SdekConfirmation)
+
+-- | ================================================================
+-- | The Order Information RESPONSE (`GET /v2/orders/{uuid}`)
+-- | This is the data structure our polling worker needs.
+-- | ================================================================
+
+-- | The top-level response. We care about the final tracking number and the request statuses.
+data SdekOrderStatusResponse = SdekOrderStatusResponse
+  { sosrCdekNumber :: Maybe Text           -- The official 'cdek_number', present on SUCCESSFUL
+  , sosrRequests   :: [SdekPollingStatus]  -- The array of request statuses
+  } deriving (Show, Generic)
+
+instance FromJSON SdekOrderStatusResponse where
+  parseJSON = withObject "SdekOrderStatusResponse" $ \o -> do
+    entity <- o .: "entity"
+    SdekOrderStatusResponse
+      <$> entity .:? "cdek_number" -- Optional field
+      <*> o      .: "requests"
+
+-- | Represents the status of the original request that we are polling.
+data SdekPollingStatus = SdekPollingStatus
+  { spsRequestUuid :: UUID
+  , spsState       :: SdekRequestState -- Use our existing safe enum!
+  , spsErrors      :: [SdekError]
+  } deriving (Show, Generic)
+
+instance FromJSON SdekPollingStatus where
+  parseJSON = withObject "SdekPollingStatus" $ \o ->
+    SdekPollingStatus
+      <$> (o .: "request_uuid" >>= parseUuid)
+      <*> o .: "state"
+      <*> o .:? "errors" .!= []
+    where
+      errorMsg = ("Invalid UUID format in 'entity.uuid': " <>) . T.unpack
+      parseUuid rawUuidText =
+        case fromText rawUuidText of
+          Nothing -> fail $ errorMsg rawUuidText
+          Just uuid -> pure uuid

@@ -10,9 +10,8 @@ import Control.Monad.IO.Class (liftIO)
 
 import App (AppM)
 
-
 sdekOrderStatusPoller :: AppM ()
 sdekOrderStatusPoller = forever $ do
-      -- Run the core logic within our application's monad to get access to the DB, logger, etc.
+  -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   liftIO $ threadDelay (5 * 60 * 1000000)

@@ -4,3 +4,4 @@
 1.create_tables 2025-11-12T06:39:13Z System Administrator <root@Sonny.local> # Create initial fabrics and pre_cuts tables
 2.create_tables 2025-11-15T13:11:12Z System Administrator <root@Sonny.local> # order
 3.alter_table 2025-11-18T10:38:15Z System Administrator <root@Sonny.local> # fabrics
+4.alter_table 2025-11-18T13:19:36Z System Administrator <root@Sonny.local> # orders

@@ -98,7 +98,7 @@ render currentModule templateData = do
 
 -- A type to represent the final result from the poller.
 data SdekFinalResult = 
-       SdekResultSuccessful SdekConfirmation 
+       SdekResultSuccessful SdekConfirmation
      | SdekResultInvalid [SdekError]
   deriving (Show)
 
@@ -120,6 +120,8 @@ data Config = Config
   , _providers :: [ProviderInfo]
   , _sdekCred  :: SDEKCredentials
   , _sdekUrl   :: Text
+  , _sdekTariffCode :: Int
+  , _sdekShipmentPoint :: Text
   , _configBotToken :: Text
   , _orderChatId :: Text
   , _configHttpManager :: Manager

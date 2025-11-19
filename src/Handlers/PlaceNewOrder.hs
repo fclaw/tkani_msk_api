@@ -15,7 +15,7 @@ import Data.Text (Text)
 import Data.Maybe
 import Data.Bifunctor (first)
 import Data.Traversable (for)
-import Control.Monad (join, when)
+import Control.Monad (join, when, void)
 import Control.Applicative (asum)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -25,28 +25,28 @@ import qualified Data.UUID as UUID
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.State.Class (get)
 import Control.Monad.Reader.Class (ask)
-import Control.Concurrent (newEmptyMVar, takeMVar)
-import Control.Concurrent.STM (modifyTVar', atomically)
 import System.Timeout (timeout)
+import Control.Concurrent (threadDelay)
+import Data.List (find)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, defOrderConfirmationDetails, formatStatus, OrderStatus (New), mkError)
-import App (AppM, currentTime, render, _sdekPromises, _appDBPool)
+import App (AppM, currentTime, render, Config (..), runAppM)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse)
 import TH.Location (currentModule)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import Infrastructure.Database (getFinalOrderItemPrice)
-
+import Infrastructure.Services.Tinkoff as Tinkoff
 
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
-  | SdekConfirmationInvalid [Sdek.SdekError] -- The poller got an INVALID final status
-  -- | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
-  | DatabaseInsertFailed  Text -- Could not save the final order
+  | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
+  | DatabaseFailed Text -- Could not save the final order
+  | SdekPollerError Text
   -- | NotificationSendFailed   Telegram.TelegramError -- (Optional) if you consider this a critical failure
   deriving (Show)
 
@@ -59,30 +59,71 @@ sec = 1000000
 placeOrder :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
 placeOrder orderRequest@OrderRequest {..} = do
 
-  pool <- fmap _appDBPool $ lift ask
+  cfg <- lift ask
+  st <- lift get
+  let pool = _appDBPool cfg
+  let tariffCode = _sdekTariffCode cfg
+  let shipmentPoint = _sdekShipmentPoint cfg
   -- fetch total price for a given fabric
-  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) DatabaseInsertFailed
+  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) DatabaseFailed
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice
+  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice tariffCode shipmentPoint
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
   orderId_ <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
 
-  -- STEP B: Create and register the "promise" MVar
-  promiseMVar <- liftIO newEmptyMVar
-  stateTVar <- lift get
-  liftIO $ atomically $ modifyTVar' stateTVar $
-    \s -> s { _sdekPromises = HM.insert trackingUuid promiseMVar (_sdekPromises s) }
-
-  -- STEP C: BLOCK and wait for the poller to fulfill the promise.
-  -- We add a 30-second timeout to prevent the request from hanging forever.
+  -- This is the action for our background poller thread.
   let thirtySeconds = 30 * sec
+  let pollerAction = pollForSingleOrder cfg st trackingUuid
+  -- We add a 30-second timeout to prevent the request from hanging forever.
   let maybeToEither (Just v) = Right v
       maybeToEither Nothing = Left ()
-  mFinalResult <- wrap (liftIO (fmap maybeToEither (timeout thirtySeconds (takeMVar promiseMVar)))) (const SdekConfirmationTimeout)
+  lift $ $(logTM) InfoS $ "poller tries calling sdek for the final confirmation"
+  ePollerRes <- wrap (liftIO (fmap maybeToEither (timeout thirtySeconds pollerAction))) (const SdekConfirmationTimeout)
+  trackingNumber <- except $ (first SdekPollerError) ePollerRes
+  
+  -- STEP B. Generate the payment link 
+  paymentLink <- wrap Tinkoff.generatePaymentLink TinkoffPaymentLinkFailed
+
+  -- STEP C. Save the order in database
+
+  -- STEP D. Notify the telegram channel
 
   return defOrderConfirmationDetails { orderId = orderId_}
 
+pollForSingleOrder cfg st uuid = do 
+  eRes <- runAppM cfg st (Sdek.getOrderStatus uuid)
+  case eRes of
+    Left err -> pure $ Left (T.pack (show err))
+    Right (Right resp) -> do
+      case Sdek.sosrRequests resp of
+        [] -> do
+          let errMsg = Sdek.SdekError "UNEXPECTED_RESPONSE" "SDEK status response did not contain our request UUID."
+          runAppM cfg st $ $(logTM) ErrorS $ logStr $ "Polling error for " <> UUID.toText uuid <> ": " <> Sdek.seMessage errMsg
+          pure $ Left (T.pack (show [errMsg]))
+        (reqStatus : _) ->
+          case Sdek.spsState reqStatus of
+            Sdek.Accepted -> do
+              -- The order is still processing. Wait and recurse.
+              runAppM cfg st $ $(logTM) DebugS $ logStr $ "Polling " <> UUID.toText uuid <> ": Status is still ACCEPTED. Retrying..."
+              threadDelay (3 * 1000000) -- Wait 3 seconds
+              pollForSingleOrder cfg st uuid
+            Sdek.Invalid -> do
+              -- FINAL STATE: SDEK rejected the order.
+              let errors = Sdek.spsErrors reqStatus
+              runAppM cfg st $ $(logTM) WarningS $ logStr $ "Polling " <> UUID.toText uuid <> " resulted in INVALID state. Errors: " <> T.pack (show errors)
+              -- Return the error result, which stops the loop.
+              pure $ Left (T.pack (show errors))
+            Sdek.Successful -> do
+              -- FINAL STATE: SDEK accepted the order!
+              let trackingNumber = fromJust $ Sdek.sosrCdekNumber resp -- As you noted
+              runAppM cfg st $ $(logTM) InfoS $ logStr $ "Polling " <> UUID.toText uuid <> " resulted in SUCCESSFUL state. Tracking number: " <> trackingNumber
+              pure $ Right trackingNumber
+            other -> do
+              let errMsg = Sdek.SdekError "UNEXPECTED_STATE" ("SDEK returned an unexpected final status: " <> T.pack (show other))
+              runAppM cfg st $ $(logTM) ErrorS $ logStr $ "Polling error for " <> UUID.toText uuid <> ": " <> Sdek.seMessage errMsg
+              pure $ Left (T.pack (show [errMsg]))
+    Right (Left err) -> pure $ Left (T.pack (show err))  
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.

@@ -33,6 +33,8 @@ library
       Infrastructure.Services.Sdek.CachedDeliveryPoints
       Infrastructure.Services.Sdek.Types
       Infrastructure.Services.Telegram
+      Infrastructure.Services.Tinkoff
+      Infrastructure.Services.Tinkoff.Types
       Infrastructure.Services.Yandex.Types
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId

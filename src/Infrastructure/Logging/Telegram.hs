@@ -24,6 +24,7 @@ import           Control.Monad (when, void) -- void is useful with wreq
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Exception (catch, SomeException)
 import           Network.HTTP.Client (Manager)
+import Data.Time (formatTime, defaultTimeLocale)
 
 -- | Data type to hold our Telegram configuration.
 data TelegramConfig = TelegramConfig
@@ -54,37 +55,46 @@ severityToEmoji EmergencyS= "🆘"
 -- | Formats a log item into a clear, Markdown-formatted Telegram message.
 --   (This is the corrected version)
 formatTelegramMessage :: LogItem a => Item a -> T.Text
-formatTelegramMessage item = T.unlines
-  [ T.concat [ severityToEmoji severity, " *", T.pack (show severity), "* @ `", hostname, "`" ]
-  , ""
-  -- We now put App, Env, and Namespace inside their own code blocks.
-  -- This means they NEVER need to be escaped.
-  , T.concat [ "*App:* `", app, "`", " \\(*Env:* `", env, "`", "\\)" ]
-  , T.concat [ "*Namespace:* `", ns, "`"]
-  , ""
-  , "```"
-  , logStr
-  , "```"
-  , if A.null payload then mempty else T.concat ["\n*Context:*\n```json\n", context, "\n```"]
-  ]
-  where
-    toText = T.pack . show
-    severity = _itemSeverity item
-    -- Texts that will NOT be inside code blocks MUST be escaped
-    hostname = toText $ _itemHost item
-    app      = T.intercalate "." $ unNamespace $ _itemApp item
-    env      = getEnvironment $ _itemEnv item
-    ns       = T.intercalate "." $ unNamespace $ _itemNamespace item
-    logStr   = TL.toStrict $ TLB.toLazyText $ unLogStr $ _itemMessage item
-    -- 1. Use the idiomatic katip function to get the payload as a JSON Object.
-    --    This works for ANY 'a' that has a 'LogItem a' instance.
-    payload :: A.Object
-    payload = payloadObject V2 (_itemPayload item)
+formatTelegramMessage item =
+  let 
+      -- Format the UTC time directly from the item's timestamp
+      -- Format: #t2023_11_19_103055Z (The 'Z' indicates UTC)
+      timestampTag = T.pack $ formatTime defaultTimeLocale "\\#t%Y\\_%m\\_%d" (_itemTime item)
+      mainMessage = T.unlines
+        [ T.concat [ severityToEmoji severity, " *", T.pack (show severity), "* @ `", hostname, "`" ]
+        , ""
+        -- We now put App, Env, and Namespace inside their own code blocks.
+        -- This means they NEVER need to be escaped.
+        , T.concat [ "*App:* `", app, "`", " \\(*Env:* `", env, "`", "\\)" ]
+        , T.concat [ "*Namespace:* `", ns, "`"]
+        , ""
+        , "```"
+        , logStr
+        , "```"
+        , if A.null payload then mempty else T.concat ["\n*Context:*\n```json\n", context, "\n```"]
+        ]
+        where
+          toText = T.pack . show
+          severity = _itemSeverity item
+          -- Texts that will NOT be inside code blocks MUST be escaped
+          hostname = toText $ _itemHost item
+          app      = T.intercalate "." $ unNamespace $ _itemApp item
+          env      = getEnvironment $ _itemEnv item
+          ns       = T.intercalate "." $ unNamespace $ _itemNamespace item
+          logStr   = TL.toStrict $ TLB.toLazyText $ unLogStr $ _itemMessage item
+          -- 1. Use the idiomatic katip function to get the payload as a JSON Object.
+          --    This works for ANY 'a' that has a 'LogItem a' instance.
+          payload :: A.Object
+          payload = payloadObject V2 (_itemPayload item)
 
-    -- 2. Now, encode the resulting 'A.Object'. This is always safe
-    --    and produces a clean JSON string.
-    context :: T.Text
-    context = TL.toStrict $ TLE.decodeUtf8 $ A.encode payload
+          -- 2. Now, encode the resulting 'A.Object'. This is always safe
+          --    and produces a clean JSON string.
+          context :: T.Text
+          context = TL.toStrict $ TLE.decodeUtf8 $ A.encode payload
+  in
+    -- Append the tag. The tag itself does not need Markdown escaping
+    -- because hashtags are valid in plain text.
+    mainMessage <> timestampTag
 
 
 -- | The main function that constructs our Scribe for Telegram.
