@@ -32,6 +32,7 @@ import Control.Concurrent (threadDelay)
 import Data.List (find)
 import Data.Coerce (coerce)
 import Data.Int (Int64)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
@@ -50,7 +51,7 @@ data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
   | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
-  | DatabaseFailed (Maybe MessageIdResponse, Text) -- Could not save the final order
+  | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
   deriving (Show)
@@ -61,8 +62,8 @@ wrap action error = withExceptT error (ExceptT action)
 sec :: Int
 sec = 1000000
 
-placeOrder :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
-placeOrder orderRequest@OrderRequest {..} = do
+placeOrder :: OrderRequest -> MVar MessageIdResponse -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
+placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
 
   cfg <- lift ask
   st <- lift get
@@ -70,7 +71,7 @@ placeOrder orderRequest@OrderRequest {..} = do
   let tariffCode = _sdekTariffCode cfg
   let shipmentPoint = _sdekShipmentPoint cfg
   -- fetch total price for a given fabric
-  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) $ DatabaseFailed . (Nothing,)
+  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) DatabaseFailed
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
   let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice tariffCode shipmentPoint
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
@@ -92,14 +93,15 @@ placeOrder orderRequest@OrderRequest {..} = do
 
   -- STEP C. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
+  liftIO $ telegramIdVar `putMVar` telegramMsgId
 
   -- STEP D. Save the order in database
   let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
-  void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed . (Just telegramMsgId,)
+  void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed
 
   return OrderConfirmationDetails {..}
 
-pollForSingleOrder cfg st uuid = do 
+pollForSingleOrder cfg st uuid = do
   eRes <- runAppM cfg st (Sdek.getOrderStatus uuid)
   case eRes of
     Left err -> pure $ Left (T.pack (show err))
@@ -140,8 +142,9 @@ handler newOrderRequest@OrderRequest {..} = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new order"
   $(logTM) InfoS "Handling new order request..."
+  telegramIdVar <- liftIO newEmptyMVar
   -- 1. Run the core business logic.
-  eResult <- runExceptT (placeOrder newOrderRequest)
+  eResult <- runExceptT (placeOrder newOrderRequest telegramIdVar)
   -- 2. Pattern match on the result to build the final API response.
   case eResult of
     -- THE SUCCESS CASE
@@ -154,10 +157,8 @@ handler newOrderRequest@OrderRequest {..} = do
       -- Log the specific internal error
       $(logTM) ErrorS $ "Failed to place order: " <> ls (show err)
       -- Return a user-friendly, generic failure response
-      case err of
-         DatabaseFailed (mMessageId, _) -> 
-           for_ (fmap coerce mMessageId) $ deleteMessage
-         _ -> pure ()
+      mMessageId <- liftIO $ tryTakeMVar telegramIdVar
+      for_ (fmap coerce mMessageId) deleteMessage
       return $ Left $ mkError "Failed to place order. See server logs for details."  
 
 
