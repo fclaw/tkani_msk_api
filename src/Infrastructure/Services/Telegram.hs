@@ -7,13 +7,12 @@
 
 module Infrastructure.Services.Telegram
   ( sendOrEditTelegramMessage
+  , deleteMessage
   , TelegramError(..)
   , MessageIdResponse (..)
   )
 where
 
--- (Assuming your AppM and Config are defined in App)
-import           App (Config(..), AppM)
 
 -- Standard & Third-Party Imports
 import           Control.Exception       (SomeException, try)
@@ -29,12 +28,19 @@ import           Katip
 import qualified Data.ByteString.Lazy as LBS
 import           GHC.Generics
 import           Data.Aeson.KeyMap       as A
+import           Data.Aeson.TH
+import Data.Maybe (fromMaybe)
+
+-- (Assuming your AppM and Config are defined in App)
+import           App (Config(..), AppM)
+import           Text (recordLabelModifier)
 
 
 -- Custom Error Type for better error handling
 data TelegramError
   = ApiRequestFailed SomeException
   | JSONError T.Text
+  | TelegramApiError Text           -- ^ Telegram returned ok:false with an error description
   deriving (Show)
 
 
@@ -43,6 +49,10 @@ newtype MessageIdResponse = MessageIdResponse { message_id :: Int }
   deriving (Show, Generic)
 instance A.FromJSON MessageIdResponse where
   parseJSON = A.withObject "Message" $ \o -> fmap MessageIdResponse (o A..: "result" >>= (A..: "message_id"))
+
+-- A simple wrapper around 'try' for better type inference if needed.
+try' :: IO a -> IO (Either SomeException a)
+try' = try
 
 -- | Sends a text message to a specified Telegram chat (channel or user).
 --   This function is designed to be called from within your AppM monad.
@@ -97,6 +107,57 @@ sendOrEditTelegramMessage context messageText mMessageId = do
       $(logTM) ErrorS $ "CRITICAL: Failed to send a notification for " <> ls context <> ". Error: " <> ls (show err)
       pure $ Left (ApiRequestFailed err)
 
--- A simple wrapper around 'try' for better type inference if needed.
-try' :: IO a -> IO (Either SomeException a)
-try' = try
+
+-- | Represents a generic response from the Telegram API.
+--   We parameterize it by 'a' which will be the type of the 'result' field.
+data TelegramResponse a = TelegramResponse
+  { trOk          :: Bool
+  , trDescription :: Maybe Text
+  , trResult      :: Maybe a
+  } deriving (Show, Generic)
+
+-- | Automatically derive a FromJSON instance to parse the response.
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tr" } ''TelegramResponse)
+
+
+deleteMessage :: Int -> AppM (Either TelegramError ())
+deleteMessage messageId = do
+  -- 1. Get the necessary config from our application environment
+  botToken <- fmap _configBotToken ask
+  chat <- fmap _orderChatId ask
+  httpManager <- fmap _configHttpManager ask
+
+  -- 2. Construct the API URL for the 'deleteMessage' endpoint
+  let url = "https://api.telegram.org/bot" <> T.unpack botToken <> "/deleteMessage"
+
+  -- 3. The JSON payload required by the endpoint
+  let payload = A.Object $ A.fromList
+        [ "chat_id"    A..= chat
+        , "message_id" A..= messageId
+        ]
+
+  -- 4. Perform the API call using the shared HTTP manager, wrapped in an exception handler
+  eResult <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+
+  -- 5. Handle the result, distinguishing between network, parsing, and API errors
+  case eResult of
+    -- The network request itself failed (e.g., timeout)
+    Left err -> do
+      $(logTM) ErrorS $ "CRITICAL: Failed to delete Telegram message " <> ls (show messageId) <> ". Error: " <> ls (show err)
+      pure $ Left (ApiRequestFailed err)
+
+    -- The network request succeeded, now we inspect the response
+    Right response -> do
+      -- Attempt to parse the response body. For 'deleteMessage', the 'result' is just a boolean.
+      let apiResponse = A.eitherDecode @(TelegramResponse Bool) (response ^. responseBody)
+      
+      pure $ case apiResponse of
+        -- The response was not valid JSON or didn't match our data type
+        Left parseError ->
+          Left $ JSONError (T.pack parseError)
+        
+        -- We successfully parsed the response, now check the 'ok' field
+        Right tgResp ->
+          if trOk tgResp
+            then Right () -- Success!
+            else Left $ TelegramApiError (fromMaybe "Unknown API error" (trDescription tgResp))
