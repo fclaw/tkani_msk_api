@@ -28,6 +28,7 @@ library
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
       Infrastructure.Database
+      Infrastructure.Database.Types
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedDeliveryPoints

@@ -10,6 +10,8 @@ module Infrastructure.Database
   ( getFabricInfoById
   , putNewFabric
   , getFinalOrderItemPrice
+  , placeNewOrder
+  , module Types
   ) where
 
 
@@ -30,6 +32,8 @@ import Data.Int (Int64)
 import API.Types (FabricInfo(..), PreCut(..), FullFabric) -- Your data types
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
+import qualified Infrastructure.Database.Types as Types
+import Infrastructure.Database.Types (Order (..))
 
 
 --------------------------------------------------------------------------------
@@ -86,7 +90,7 @@ getFabricInfoById fabricId_ pool =
 
 putNewFabricStatement :: Hasql.Statement FabricInfo Int
 putNewFabricStatement = 
-  dimap (app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple 'FabricInfo)) fromIntegral
+  dimap (app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple ''FabricInfo)) fromIntegral
   [TH.singletonStatement|
     insert into fabrics 
     (description, 
@@ -132,9 +136,55 @@ getFinalOrderItemPriceStatement =
 -- | Fetches the final, calculated price for a fabric order item.
 --   The entire calculation (per-meter vs. fixed price) is handled by the SQL query.
 --   Returns 'Nothing' if the fabric or pre-cut is not found.
-getFinalOrderItemPrice :: Int -> Maybe Int -> Maybe Double -> Hasql.Pool -> IO (Either Text Double)
+getFinalOrderItemPrice :: Int64 -> Maybe Int64 -> Maybe Double -> Hasql.Pool -> IO (Either Text Double)
 getFinalOrderItemPrice fabricId preCutId lengthM pool = 
-  fmap (first (pack . show)) $ 
+  fmap (first (pack . show)) $
     runTransaction pool Hasql.Write $ 
       params `Hasql.statement` getFinalOrderItemPriceStatement
   where params = (fromIntegral fabricId, fmap fromIntegral preCutId, lengthM)
+
+
+placeNewOrderStatement :: Hasql.Statement Order ()
+placeNewOrderStatement = 
+  dimap $(recordToTuple ''Order) (const ())
+  [TH.singletonStatement|
+    insert into orders (
+      id,
+      fabric_id,
+      length_m,
+      pre_cut_id,
+      customer_full_name,
+      customer_phone,
+      delivery_provider_id,
+      delivery_point_id,
+      telegram_url,
+      sdek_request_uuid,
+      sdek_tracking_number,
+      internal_notification_message_id,
+      created_at,
+      updated_at,
+      status
+    ) values (
+      $1 :: text, 
+      $2 :: int8, 
+      $3 :: float8?, 
+      $4 :: int8?,
+      $5 :: text,
+      $6 :: text,
+      $7 :: text,
+      $8 :: text,
+      $9 :: text,
+      $10 :: uuid,
+      $11 :: text,
+      $12 :: int8,
+      now(),
+      now(),
+      'registered'
+      ) returning id :: text
+  |]
+
+placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text ())
+placeNewOrder order pool =
+  fmap (first (pack . show)) $
+    runTransaction pool Hasql.Write $ 
+      order `Hasql.statement` placeNewOrderStatement

@@ -28,16 +28,19 @@ import Control.Monad.Reader.Class (ask)
 import System.Timeout (timeout)
 import Control.Concurrent (threadDelay)
 import Data.List (find)
+import Data.Coerce (coerce)
+import Data.Int (Int64)
 
 
-import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, defOrderConfirmationDetails, formatStatus, OrderStatus (New), mkError)
+import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
 import App (AppM, currentTime, render, Config (..), runAppM)
 import Infrastructure.Utils.OrderId (generateOrderId)
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
-import Infrastructure.Database (getFinalOrderItemPrice)
+import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder)
+import qualified Infrastructure.Database as DB
 import Infrastructure.Services.Tinkoff as Tinkoff
 
 
@@ -47,7 +50,7 @@ data PlaceOrderError
   | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
-  -- | NotificationSendFailed   Telegram.TelegramError -- (Optional) if you consider this a critical failure
+  | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
   deriving (Show)
 
 
@@ -69,7 +72,7 @@ placeOrder orderRequest@OrderRequest {..} = do
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
   let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice tariffCode shipmentPoint
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
-  orderId_ <- liftIO generateOrderId
+  orderId <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
 
   -- This is the action for our background poller thread.
@@ -85,11 +88,14 @@ placeOrder orderRequest@OrderRequest {..} = do
   -- STEP B. Generate the payment link 
   paymentLink <- wrap Tinkoff.generatePaymentLink TinkoffPaymentLinkFailed
 
-  -- STEP C. Save the order in database
+  -- STEP C. Notify the telegram channel
+  telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
 
-  -- STEP D. Notify the telegram channel
+  -- STEP D. Save the order in database
+  let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
+  void $ wrap (liftIO (placeNewOrder dbOrder pool)) DatabaseFailed
 
-  return defOrderConfirmationDetails { orderId = orderId_}
+  return OrderConfirmationDetails {..}
 
 pollForSingleOrder cfg st uuid = do 
   eRes <- runAppM cfg st (Sdek.getOrderStatus uuid)
@@ -140,8 +146,6 @@ handler newOrderRequest@OrderRequest {..} = do
     -- THE SUCCESS CASE
     Right newOrder -> do
       $(logTM) InfoS $ "Order placed successfully: " <> ls (orderId newOrder)
-      -- After the DB commit, send the internal notification. This is a side effect.
-      notifyOrdersChannel newOrderRequest (orderId newOrder)
       -- Return the successful response payload for the bot
       return $ Right newOrder
     -- THE FAILURE CASES
@@ -149,21 +153,17 @@ handler newOrderRequest@OrderRequest {..} = do
       -- Log the specific internal error
       $(logTM) ErrorS $ "Failed to place order: " <> ls (show err)
       -- Return a user-friendly, generic failure response
-      return $ Left $ mkError "Failed to place order. See server logs for details."
-      -- You can get more specific here if you want. For example:
-      -- Left (SdekRegistrationFailed _) -> pure $ ApiFailure "Delivery provider error."
-      -- Left (TinkoffPaymentLinkFailed _) -> pure $ ApiFailure "Payment system error."   
+      return $ Left $ mkError "Failed to place order. See server logs for details."  
 
 
-notifyOrdersChannel :: OrderRequest -> Text -> AppM ()
+notifyOrdersChannel :: OrderRequest -> Text -> AppM (Either T.Text MessageIdResponse)
 notifyOrdersChannel order orderId = do
   tm <- currentTime
   tz <- liftIO getCurrentTimeZone
   let localTime = utcToLocalTime tz tm
   -- Automatically finds and renders 'templates/Handlers/PlaceNewOrder.tpl'
   messageText <- render $currentModule $ buildTemplateData order localTime orderId
-  eResult <- fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText Nothing
-  when(isLeft eResult) $ $(logTM) ErrorS $ "failed to deliver an order to telegram"      
+  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText Nothing
 
 -- | Escapes characters within a URL that can conflict with MarkdownV2 link parsing.
 --   Primarily, we only need to worry about the closing parenthesis.
@@ -208,5 +208,23 @@ buildTemplateData order localTime orderId =
       , ("deliveryProvider", T.pack $ show $ orDeliveryProviderId order)
       , ("deliveryPoint", orDeliveryPointId order)
       -- You might pass the status in, or hardcode it in the calling function
-      , ("status", formatStatus New)
+      , ("status", formatStatus Registered)
       ]
+
+
+mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
+mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
+  DB.Order 
+  { DB._orderId = orderId
+  , DB._orderFabricId = orFabricId
+  , DB._orderLengthM = orPreCutLengthM
+  , DB._orderPreCutId = orPreCutId
+  , DB._orderCustomerFullName = orCustomerFullName
+  , DB._orderCustomerPhone = orCustomerPhone
+  , DB._orderDeliveryProviderId = T.pack (show orDeliveryProviderId)
+  , DB._orderDeliveryPointId = orDeliveryPointId
+  , DB._orderTelegramUrl = orTelegramUrl
+  , DB._orderSdekRequestUuid = trackingUuid
+  , DB._orderSdekTrackingNumber = trackingNumber
+  , DB._orderInternalNotificationMessageId = fromIntegral @Int @Int64 (coerce telegramMsgId)
+  }

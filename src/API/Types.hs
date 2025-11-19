@@ -21,7 +21,6 @@ module API.Types
    DisplayInfo (..),
    PointLocation (..),
    OrderConfirmationDetails (..),
-   defOrderConfirmationDetails,
    formatStatus,
    mkError) where
 
@@ -33,6 +32,7 @@ import GHC.Generics (Generic)
 import Data.Text (pack)
 import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
 import Data.Aeson.TH
+import Data.Int (Int64)
 
 import API.WithField (WithField)
 import Text (camelToSnake, recordLabelModifier) 
@@ -185,14 +185,14 @@ instance FromJSON ProviderInfo where
 -- This is the data structure your bot will build and send to the API.
 data OrderRequest = OrderRequest
   { -- Core Product Information
-    orFabricId      :: Int          -- The ID of the fabric being ordered. REQUIRED.
+    orFabricId      :: Int64          -- The ID of the fabric being ordered. REQUIRED.
 
   , orFabricName   :: Text
   , orArticle      :: Text
 
     -- Purchase Details (exactly one of these should be Just)
   , orLengthM       :: Maybe Double   -- Length in meters for a custom cut.
-  , orPreCutId      :: Maybe Int      -- The ID of the specific pre-cut piece.
+  , orPreCutId      :: Maybe Int64      -- The ID of the specific pre-cut piece.
   , orPreCutLengthM :: Maybe Double
 
     -- Customer & Delivery Information
@@ -211,8 +211,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "or" } ''
 
 -- | Represents the lifecycle stages of an order.
 data OrderStatus
-  = New                 -- Order created by the bot, awaiting payment.
-  | Registered          -- order is registered in a delivery provider
+  = Registered          -- order is registered in a delivery provider
   | Paid                -- Payment received, awaiting fulfillment.
   | OnRoute             -- Courier has picked up the package, it's in transit.
   | Delivered           -- Customer has received the package.
@@ -227,15 +226,12 @@ $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderSta
 --   suitable for an internal notification channel.
 formatStatus :: OrderStatus -> Text
 formatStatus status = case status of
-  -- The initial state after the /order/create call, but BEFORE payment.
-  New       -> "⏳ ОЖИДАЕТ ОПЛАТЫ"
-
-  -- Payment is confirmed via Tinkoff webhook. Time to pick and pack.
-  Paid      -> "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
-
   -- After packing, the order has been successfully registered with SDEK (via API),
   -- and a tracking number has been generated. Ready for courier pickup.
   Registered -> "📝 ЗАРЕГИСТРИРОВАН В СЛУЖБЕ ДОСТАВКИ"
+
+  -- Payment is confirmed via Tinkoff webhook. Time to pick and pack.
+  Paid      -> "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
 
   -- The courier has scanned the package. It is now in transit.
   OnRoute   -> "🚚 В ПУТИ"
@@ -258,6 +254,3 @@ data OrderConfirmationDetails = OrderConfirmationDetails
   }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
-
-
-defOrderConfirmationDetails = OrderConfirmationDetails mempty mempty

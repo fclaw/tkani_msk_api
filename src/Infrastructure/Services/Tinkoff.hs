@@ -9,4 +9,4 @@ import Infrastructure.Services.Tinkoff.Types as Types
 
 
 generatePaymentLink :: AppM (Either TinkoffError Text)
-generatePaymentLink = return $ Right "....."
+generatePaymentLink = return $ Right "https://google.com"
