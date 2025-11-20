@@ -21,6 +21,7 @@ module API.Types
    DisplayInfo (..),
    PointLocation (..),
    OrderConfirmationDetails (..),
+   SetTelegramMessageRequest (..),
    formatStatus,
    mkError) where
 
@@ -204,6 +205,7 @@ data OrderRequest = OrderRequest
 
    -- link to telegram where the fabric image and description is situated
   , orTelegramUrl :: Text
+  , orChatId      :: Int64
   } deriving (Show, Generic)
 
 -- We'll need ToJSON/FromJSON instances for this to be sent over the API
@@ -254,3 +256,13 @@ data OrderConfirmationDetails = OrderConfirmationDetails
   }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
+
+-- | Request payload to link a sent Telegram message ID to an Order
+data SetTelegramMessageRequest = 
+  SetTelegramMessageRequest
+  { setOrderId   :: Text    -- Matches "order_id"
+  , setChatId    :: Int64   -- Matches "chat_id" (Must be Int64)
+  , setMessageId :: Int     -- Matches "message_id"
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "set" } ''SetTelegramMessageRequest)

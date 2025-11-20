@@ -10,10 +10,11 @@ import Servant.API.Generic
 import Data.Text (Text)
 import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
 import Data.Proxy (Proxy (..))
+import Data.Int (Int64)
 
-import API.Types (FabricInfo, FullFabric, ApiResponse, Providers, DeliveryPoint, ProviderInfo, OrderConfirmationDetails, OrderRequest)
+
+import API.Types
 import API.WithField (WithField)
-
 
 
 -- This 'data' definition IS our new API ADT.
@@ -24,15 +25,15 @@ data Routes route = Routes
        :: route 
        :- "fabric" 
        :> ReqBody '[JSON] FabricInfo 
-       :> Post '[JSON] (ApiResponse Int)
+       :> Post '[JSON] (ApiResponse Int64)
   , _getFabricInfo 
        :: route 
        :- "fabric" 
-       :> Capture "id" Int 
+       :> Capture "id" Int64
        :> Get '[JSON] (ApiResponse FullFabric)
   , _getDeliveryPoints
        :: route 
-       :- "providers" 
+       :- "providers"
        :> Capture "provider" Providers 
        :> "delivery-points" 
        :> QueryParam "city" Text 
@@ -47,6 +48,12 @@ data Routes route = Routes
        :> "create"
        :> ReqBody '[JSON] OrderRequest
        :> Post '[JSON] (ApiResponse OrderConfirmationDetails)
+  , _setTelegramMessage
+       :: route
+       :- "order"
+       :> "set_telegram_message"
+       :> ReqBody '[JSON] SetTelegramMessageRequest
+       :> Post '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

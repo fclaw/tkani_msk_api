@@ -11,6 +11,8 @@ module Infrastructure.Database
   , putNewFabric
   , getFinalOrderItemPrice
   , placeNewOrder
+  , setTelegramMessage
+  , getChatDetails
   , module Types
   ) where
 
@@ -20,7 +22,7 @@ import qualified Hasql.Transaction as Hasql
 import qualified Hasql.Transaction.Sessions as Hasql
 import qualified Hasql.Statement as Hasql
 import qualified Hasql.TH as TH
-import Data.Profunctor.Unsafe (dimap, lmap)
+import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
@@ -29,7 +31,7 @@ import Data.Tuple.Ops (initT, app2, app3)
 import Data.Int (Int64)
 
 
-import API.Types (FabricInfo(..), PreCut(..), FullFabric) -- Your data types
+import API.Types (FabricInfo(..), PreCut(..), FullFabric, SetTelegramMessageRequest (..)) -- Your data types
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
@@ -51,7 +53,7 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
-getFabricStatement :: Hasql.Statement Int (Either String FullFabric)
+getFabricStatement :: Hasql.Statement Int64 (Either String FullFabric)
 getFabricStatement =
   dimap fromIntegral (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
   [TH.maybeStatement|
@@ -77,18 +79,18 @@ getFabricStatement =
           pc.in_stock = TRUE),
          '[]'::jsonb)) :: jsonb
     from fabrics as f
-    where f.id = $1 :: int4
+    where f.id = $1 :: int8
   |]
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
-getFabricInfoById :: Int -> Hasql.Pool -> IO (Either Text FullFabric)
+getFabricInfoById :: Int64 -> Hasql.Pool -> IO (Either Text FullFabric)
 getFabricInfoById fabricId_ pool = 
   fmap (join . first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
       fmap (first pack) $ fabricId_ `Hasql.statement` getFabricStatement
 
-putNewFabricStatement :: Hasql.Statement FabricInfo Int
+putNewFabricStatement :: Hasql.Statement FabricInfo Int64
 putNewFabricStatement = 
   dimap (app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple ''FabricInfo)) fromIntegral
   [TH.singletonStatement|
@@ -104,10 +106,10 @@ putNewFabricStatement =
       $3 :: int4, 
       $4 :: float8,
       $5 :: text)
-    returning id :: int4
+    returning id :: int8
   |]
 
-putNewFabric :: FabricInfo -> Hasql.Pool -> IO (Either Text Int)
+putNewFabric :: FabricInfo -> Hasql.Pool -> IO (Either Text Int64)
 putNewFabric fabricInfo_ pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
@@ -184,7 +186,22 @@ placeNewOrderStatement =
   |]
 
 placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text ())
-placeNewOrder order pool =
-  fmap (first (pack . show)) $
-    runTransaction pool Hasql.Write $ 
-      order `Hasql.statement` placeNewOrderStatement
+placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
+
+
+setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
+setTelegramMessageStatement =
+   lmap (app3 fromIntegral . $(recordToTuple ''SetTelegramMessageRequest))
+   [TH.rowsAffectedStatement| 
+     insert into order_telegram_bindings 
+     (order_id, chat_id, message_id) 
+     values ($1 :: text, $2 :: int8, $3 :: int4) |]
+
+setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> IO (Either Text Int64)
+setTelegramMessage message pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
+
+getChatDetailsStatement :: Hasql.Statement Text (Maybe Int)
+getChatDetailsStatement = rmap (fmap fromIntegral) [TH.maybeStatement| select message_id :: int from order_telegram_bindings where order_id = $1 :: text |]
+
+getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int))
+getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ orderId `Hasql.statement` getChatDetailsStatement

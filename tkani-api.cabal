@@ -20,6 +20,7 @@ library
       Infrastructure.Logging.Telegram
       Infrastructure.Templating
       Workers.SdekOrderStatusPoller
+      Workers.TinkoffPaymentStatusPoller
   other-modules:
       API.WithField
       Handlers.GetDeliveryPoints
@@ -27,6 +28,7 @@ library
       Handlers.GetProviders
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
+      Handlers.SetTelegramMessage
       Infrastructure.Database
       Infrastructure.Database.Types
       Infrastructure.Services.Sdek
@@ -99,6 +101,7 @@ executable tkani-api-exe
   build-depends:
       async
     , base >=4.18 && <5
+    , containers
     , exceptions
     , hasql
     , hasql-pool

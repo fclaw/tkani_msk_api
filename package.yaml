@@ -16,6 +16,7 @@ library:
     - Infrastructure.Logging.Telegram
     - Infrastructure.Templating
     - Workers.SdekOrderStatusPoller
+    - Workers.TinkoffPaymentStatusPoller
   dependencies:
     # This list should already be complete
     - aeson
@@ -89,7 +90,8 @@ executables:
       - exceptions
       - http-client
       - http-client-tls
-      - unordered-containers      
+      - unordered-containers
+      - containers   
 
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

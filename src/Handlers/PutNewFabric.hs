@@ -7,8 +7,8 @@ import Data.Text (Text, unpack)
 import Katip (logTM, Severity(..))
 import GHC.Exts (fromString)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (asks)
 import Data.Text (pack)
+import Data.Int (Int64)
 
 import API.Types (FabricInfo)
 import App (AppM, _appDBPool)
@@ -20,7 +20,7 @@ import Data.Bifunctor (first)
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: FabricInfo -> AppM (ApiResponse Int)
+handler :: FabricInfo -> AppM (ApiResponse Int64)
 handler newFabricInfo_ = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new fabric"

@@ -19,6 +19,7 @@ module App
   SdekToken (..),
   SDEKCredentials (..),
   MetroCity (..),
+  ChatKey (..),
   currentTime,
   render,
   runAppM
@@ -29,8 +30,8 @@ import Servant (Handler, ServerError)
 import Control.Monad.Except (MonadError, ExceptT)
 import Hasql.Pool (Pool)
 import Data.Text (Text, pack)
-import Control.Concurrent.STM (TVar)
-import Control.Monad.RWS (RWST, MonadState, withRWST) -- Important
+import Control.Concurrent.STM (TVar, TChan)
+import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
 import Control.Lens
 import GHC.Generics (Generic)
 import Data.Aeson.TH
@@ -40,6 +41,7 @@ import Network.HTTP.Client (Manager)
 import Language.Haskell.TH (loc_module, location)
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as M
 import Control.Monad.Trans.Control
 import Control.Monad.Base
 import Control.Monad.IO.Class (liftIO)
@@ -60,6 +62,7 @@ import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
+import Infrastructure.Services.Tinkoff.Types (PaymentDetails)
 
 
 -- "access_token": "string",
@@ -111,7 +114,13 @@ data State = State
   { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
   , _pointCache :: PointCache
   , _sdekPromises :: SdekPromiseMap
+  , _tinkoffPaymentChan :: TChan PaymentDetails
   }
+
+
+data ChatKey = ORDER | CONCIERGE deriving (Show, Ord, Eq)
+
+type Bots = M.Map ChatKey (Text, Int)
 
 -- | AppState holds all the shared, read-only resources for our application.
 data Config = Config
@@ -122,8 +131,7 @@ data Config = Config
   , _sdekUrl   :: Text
   , _sdekTariffCode :: Int
   , _sdekShipmentPoint :: Text
-  , _configBotToken :: Text
-  , _orderChatId :: Text
+  , _bots              :: Bots
   , _configHttpManager :: Manager
   , configTemplateMap :: TemplateMap
   , _configYandexApiKey :: Text

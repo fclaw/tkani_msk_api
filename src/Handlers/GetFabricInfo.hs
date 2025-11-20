@@ -9,6 +9,7 @@ import Katip (logTM, Severity(..))
 import GHC.Exts (fromString)
 import Control.Monad.IO.Class (liftIO)
 import Data.Text (pack)
+import Data.Int (Int64)
 
 
 import API.Types (FullFabric)
@@ -22,13 +23,13 @@ import Data.Bifunctor (first)
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: Int -> AppM (ApiResponse FullFabric)
-handler fabricId_ = do
+handler :: Int64 -> AppM (ApiResponse FullFabric)
+handler fabricId = do
   -- 1. Log the incoming request
   $(logTM) InfoS "Request received for fabric info"
   -- 2. Get the database connection pool from our AppState environment
   dbPool <- fmap _appDBPool ask
   -- 3. Run the database query inside our AppM monad using liftIO
-  $(logTM) DebugS $ "Querying database for fabric ID: " <> fromString (show fabricId_)
-  resp <- liftIO $ getFabricInfoById fabricId_ dbPool
+  $(logTM) DebugS $ "Querying database for fabric ID: " <> fromString (show fabricId)
+  resp <- liftIO $ getFabricInfoById fabricId dbPool
   return $ first mkError resp

@@ -29,7 +29,7 @@ import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
 import System.Environment (getEnv)
 import Data.Text (pack)
-import Control.Concurrent.STM (TVar, atomically, newTVarIO)
+import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.RWS (runRWST)
 import Control.Monad.IO.Class (liftIO)
@@ -43,15 +43,17 @@ import Network.HTTP.Client (newManager, Manager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
 import qualified Data.HashSet as HS
+import qualified Data.Map.Strict as M
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
-import App (AppM(..), SDEKCredentials (..), Config (..), State (..), MetroCity (..), runAppM)
+import App (AppM(..), SDEKCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
-import Workers.SdekOrderStatusPoller (sdekOrderStatusPoller)
+import Workers.SdekOrderStatusPoller (orderStatusPoller)
+import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 
 
 handleYamlResult (Right providers) go = go providers
@@ -171,9 +173,11 @@ main = do
       sdekTariffCode <- fmap (read @Int) $ getEnv "SDEK_TARIFF_CODE" 
       sdekShipmentPoint <- fmap pack $ getEnv "SDEK_SHIPMENT_POINT" 
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
-      orderChatId <- fmap pack $ getEnv "ORDER_CHAT_ID"
+      conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
+      conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
+      orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
       yandexApiKey <- pack <$> getEnv "YANDEX_API_KEY"
-
+      
       -- 6. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool
@@ -183,19 +187,23 @@ main = do
             , _sdekUrl   = sdekUrl
             , _sdekTariffCode = sdekTariffCode
             , _sdekShipmentPoint = sdekShipmentPoint
-            , _configBotToken = orderBotToken
-            , _orderChatId = orderChatId
+            , _bots = 
+                M.fromList
+                  [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
+                   (ORDER, (orderBotToken, orderChatId))]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
             , _configYandexApiKey = yandexApiKey
             , _metroCityCodes = HS.fromList (map code cities)
             }
 
-      let state = 
+      tchan <- newTChanIO
+      let state =
            State 
            { _sdekToken = Nothing
            , _pointCache = mempty
-           , _sdekPromises = mempty 
+           , _sdekPromises = mempty
+           , _tinkoffPaymentChan = tchan
            }
       initialState <- newTVarIO state
 
@@ -214,11 +222,18 @@ main = do
                    (toServant apiHandlers)
       -- Task 2: The SDEK Polling Worker
       let sdekPoller = do
-            res <- runInIO sdekOrderStatusPoller 
-            whenLeft res $ \e ->
-              error $ "SDEK Poller failed with a servant error: " ++ show e
+            res <- runInIO orderStatusPoller 
+            whenLeft res $ \e -> error $ "SDEK Poller failed with a servant error: " ++ show e
+       -- Task 2: The Tinkoff Polling Worker
+      let tinkoffPoller = do
+            res <- runInIO paymentStatusPoller 
+            whenLeft res $ \e -> error $ "Tinkoff Poller failed with a servant error: " ++ show e
       let tasks :: [(String, IO ())]
-          tasks = [("Web Server", server), ( "SDEK Poller", sdekPoller)]
+          tasks = 
+            [ ("Web Server", server)
+            , ("SDEK Poller", sdekPoller)
+            , ("Tinkoff Poller", tinkoffPoller)
+            ]
 
       putStrLn "Spawning concurrent workers..."
       asyncs <- mapM (\(name, action) -> (name,) <$> async action) tasks

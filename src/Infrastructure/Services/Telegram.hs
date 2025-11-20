@@ -29,10 +29,13 @@ import qualified Data.ByteString.Lazy as LBS
 import           GHC.Generics
 import           Data.Aeson.KeyMap       as A
 import           Data.Aeson.TH
-import Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe)
+import           Data.Int (Int64)
+import qualified Data.Map.Strict         as M
+import           Data.Traversable        (for)   
 
 -- (Assuming your AppM and Config are defined in App)
-import           App (Config(..), AppM)
+import           App (Config(..), AppM, ChatKey)
 import           Text (recordLabelModifier)
 
 
@@ -41,6 +44,7 @@ data TelegramError
   = ApiRequestFailed SomeException
   | JSONError T.Text
   | TelegramApiError Text           -- ^ Telegram returned ok:false with an error description
+  | BotNotFound
   deriving (Show)
 
 
@@ -65,47 +69,50 @@ try' = try
 sendOrEditTelegramMessage
   :: Text                         -- ^ The message text, pre-formatted with MarkdownV2
   -> Text
-  -> Maybe Int                    -- ^ The target chat_id
+  -> ChatKey                      -- ^ The target chat
+  -> Maybe Int                    -- ^ The target message_id
   -> AppM (Either TelegramError MessageIdResponse)
-sendOrEditTelegramMessage context messageText mMessageId = do
+sendOrEditTelegramMessage context messageText chatKey mMessageId = do
   -- 1. Get the necessary config from our application environment
-  botToken <- fmap _configBotToken ask
-  chat <- fmap _orderChatId ask
-  httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  res <- for botsInfo $ \(bot, chat) -> do
+    httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+    let (endpoint, messageIdField) =
+          case mMessageId of
+            -- If we have no messageId, we use the 'sendMessage' endpoint
+            Nothing -> ("sendMessage", A.fromList [])
+            -- If we have a messageId, we use 'editMessageText' and add the field
+            Just msgId -> ("editMessageText", A.fromList ["message_id" A..= msgId])
 
-  let (endpoint, messageIdField) =
-        case mMessageId of
-          -- If we have no messageId, we use the 'sendMessage' endpoint
-          Nothing -> ("sendMessage", A.fromList [])
-          -- If we have a messageId, we use 'editMessageText' and add the field
-          Just msgId -> ("editMessageText", A.fromList ["message_id" A..= msgId])
+    -- 2. Construct the API URL
+    let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/" <> endpoint
 
-  -- 2. Construct the API URL
-  let url = "https://api.telegram.org/bot" <> T.unpack botToken <> "/" <> endpoint
+    -- 3. The JSON payload for the sendMessage endpoint
+    let basePayload = A.fromList
+          [ "chat_id"    A..= chat
+          , "text"       A..= messageText
+          , "parse_mode" A..= T.pack "MarkdownV2"
+          ]
 
-  -- 3. The JSON payload for the sendMessage endpoint
-  let basePayload = A.fromList
-       [ "chat_id"    A..= chat
-       , "text"       A..= messageText
-       , "parse_mode" A..= T.pack "MarkdownV2"
-       ]
+          -- Combine the base payload with the conditional message_id field
+    let payload = A.Object $ basePayload `A.union` messageIdField
 
-        -- Combine the base payload with the conditional message_id field
-  let payload = A.Object $ basePayload `A.union` messageIdField
+    -- 4. Perform the API call using the shared HTTP manager.
+    --    'liftIO' is used to run the IO action inside our AppM stack.
+    --    'try' will catch any network exceptions.
+    eResult <- liftIO $ try' $  postWith (defaults & manager .~ Right httpManager) url payload
 
-  -- 4. Perform the API call using the shared HTTP manager.
-  --    'liftIO' is used to run the IO action inside our AppM stack.
-  --    'try' will catch any network exceptions.
-  eResult <- liftIO $ try' $  postWith (defaults & manager .~ Right httpManager) url payload
-
-  -- 5. Wrap the result in our custom error type for clean handling.
-  case eResult of
-    Right response -> do 
-      let mRes = A.eitherDecode @MessageIdResponse (response ^. responseBody)
-      return $ either (Left . JSONError . T.pack . show) Right mRes
-    Left err  -> do 
-      $(logTM) ErrorS $ "CRITICAL: Failed to send a notification for " <> ls context <> ". Error: " <> ls (show err)
-      pure $ Left (ApiRequestFailed err)
+    -- 5. Wrap the result in our custom error type for clean handling.
+    case eResult of
+      Right response -> do 
+        let mRes = A.eitherDecode @MessageIdResponse (response ^. responseBody)
+        return $ either (Left . JSONError . T.pack . show) Right mRes
+      Left err  -> do 
+        $(logTM) ErrorS $ "CRITICAL: Failed to send a notification for " <> ls context <> ". Error: " <> ls (show err)
+        pure $ Left (ApiRequestFailed err)
+    
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ res;
 
 
 -- | Represents a generic response from the Telegram API.
@@ -120,44 +127,46 @@ data TelegramResponse a = TelegramResponse
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tr" } ''TelegramResponse)
 
 
-deleteMessage :: Int -> AppM (Either TelegramError ())
-deleteMessage messageId = do
+deleteMessage :: Int -> ChatKey -> AppM (Either TelegramError ())
+deleteMessage messageId chatKey = do
   -- 1. Get the necessary config from our application environment
-  botToken <- fmap _configBotToken ask
-  chat <- fmap _orderChatId ask
-  httpManager <- fmap _configHttpManager ask
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  res <- for botsInfo $ \(bot, chat) -> do
+    httpManager <- fmap _configHttpManager ask
+    -- 2. Construct the API URL for the 'deleteMessage' endpoint
+    let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/deleteMessage"
 
-  -- 2. Construct the API URL for the 'deleteMessage' endpoint
-  let url = "https://api.telegram.org/bot" <> T.unpack botToken <> "/deleteMessage"
+    -- 3. The JSON payload required by the endpoint
+    let payload = A.Object $ A.fromList
+          [ "chat_id"    A..= chat
+          , "message_id" A..= messageId
+          ]
 
-  -- 3. The JSON payload required by the endpoint
-  let payload = A.Object $ A.fromList
-        [ "chat_id"    A..= chat
-        , "message_id" A..= messageId
-        ]
+    -- 4. Perform the API call using the shared HTTP manager, wrapped in an exception handler
+    eResult <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
 
-  -- 4. Perform the API call using the shared HTTP manager, wrapped in an exception handler
-  eResult <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+    -- 5. Handle the result, distinguishing between network, parsing, and API errors
+    case eResult of
+      -- The network request itself failed (e.g., timeout)
+      Left err -> do
+        $(logTM) ErrorS $ "CRITICAL: Failed to delete Telegram message " <> ls (show messageId) <> ". Error: " <> ls (show err)
+        pure $ Left (ApiRequestFailed err)
 
-  -- 5. Handle the result, distinguishing between network, parsing, and API errors
-  case eResult of
-    -- The network request itself failed (e.g., timeout)
-    Left err -> do
-      $(logTM) ErrorS $ "CRITICAL: Failed to delete Telegram message " <> ls (show messageId) <> ". Error: " <> ls (show err)
-      pure $ Left (ApiRequestFailed err)
-
-    -- The network request succeeded, now we inspect the response
-    Right response -> do
-      -- Attempt to parse the response body. For 'deleteMessage', the 'result' is just a boolean.
-      let apiResponse = A.eitherDecode @(TelegramResponse Bool) (response ^. responseBody)
-      
-      pure $ case apiResponse of
-        -- The response was not valid JSON or didn't match our data type
-        Left parseError ->
-          Left $ JSONError (T.pack parseError)
+      -- The network request succeeded, now we inspect the response
+      Right response -> do
+        -- Attempt to parse the response body. For 'deleteMessage', the 'result' is just a boolean.
+        let apiResponse = A.eitherDecode @(TelegramResponse Bool) (response ^. responseBody)
         
-        -- We successfully parsed the response, now check the 'ok' field
-        Right tgResp ->
-          if trOk tgResp
-            then Right () -- Success!
-            else Left $ TelegramApiError (fromMaybe "Unknown API error" (trDescription tgResp))
+        pure $ case apiResponse of
+          -- The response was not valid JSON or didn't match our data type
+          Left parseError ->
+            Left $ JSONError (T.pack parseError)
+          
+          -- We successfully parsed the response, now check the 'ok' field
+          Right tgResp ->
+            if trOk tgResp
+              then Right () -- Success!
+              else Left $ TelegramApiError (fromMaybe "Unknown API error" (trDescription tgResp))
+
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ res;    

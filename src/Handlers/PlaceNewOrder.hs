@@ -33,10 +33,11 @@ import Data.List (find)
 import Data.Coerce (coerce)
 import Data.Int (Int64)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
+import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, currentTime, render, Config (..), runAppM)
+import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER))
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -44,13 +45,12 @@ import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder)
 import qualified Infrastructure.Database as DB
-import Infrastructure.Services.Tinkoff as Tinkoff
-
+import qualified Infrastructure.Services.Tinkoff as Tinkoff
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
-  | TinkoffPaymentLinkFailed Tinkoff.TinkoffError -- Failed to create a payment link
+  | TinkoffPaymentLinkFailed Tinkoff.ApiError -- Failed to create a payment link
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
@@ -88,8 +88,12 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   ePollerRes <- wrap (liftIO (fmap maybeToEither (timeout thirtySeconds pollerAction))) (const SdekConfirmationTimeout)
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
   
-  -- STEP B. Generate the payment link 
-  paymentLink <- wrap Tinkoff.generatePaymentLink TinkoffPaymentLinkFailed
+  -- STEP B. Generate the payment link
+  let orderDetails = Tinkoff.OrderDetails 0
+  (paymentLink, paymentId) <- wrap (Tinkoff.initiateTinkoffPayment orderDetails) TinkoffPaymentLinkFailed
+  -- forward paymentId to the poller
+  let paymentDetails = Tinkoff.PaymentDetails paymentId orderId
+  liftIO $ atomically $ readTVar st >>= ((`writeTChan` paymentDetails) . _tinkoffPaymentChan)
 
   -- STEP C. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
@@ -158,7 +162,7 @@ handler newOrderRequest@OrderRequest {..} = do
       $(logTM) ErrorS $ "Failed to place order: " <> ls (show err)
       -- Return a user-friendly, generic failure response
       mMessageId <- liftIO $ tryTakeMVar telegramIdVar
-      for_ (fmap coerce mMessageId) deleteMessage
+      for_ (fmap coerce mMessageId) (flip deleteMessage ORDER)
       return $ Left $ mkError "Failed to place order. See server logs for details."  
 
 
@@ -169,7 +173,7 @@ notifyOrdersChannel order orderId = do
   let localTime = utcToLocalTime tz tm
   -- Automatically finds and renders 'templates/Handlers/PlaceNewOrder.tpl'
   messageText <- render $currentModule $ buildTemplateData order localTime orderId
-  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText Nothing
+  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText ORDER Nothing
 
 -- | Escapes characters within a URL that can conflict with MarkdownV2 link parsing.
 --   Primarily, we only need to worry about the closing parenthesis.
