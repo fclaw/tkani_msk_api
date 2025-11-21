@@ -20,7 +20,6 @@ import API.Types (ApiResponse, mkError)
 import Infrastructure.Database (getFabricInfoById)
 import Data.Bifunctor (first)
 
-
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
 handler :: Int64 -> AppM (ApiResponse FullFabric)

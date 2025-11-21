@@ -23,6 +23,7 @@ library
       Workers.TinkoffPaymentStatusPoller
   other-modules:
       API.WithField
+      Domain.Inventory
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo
       Handlers.GetProviders
@@ -68,6 +69,7 @@ library
     , katip
     , lens
     , lifted-async
+    , lifted-base
     , monad-control
     , monad-time
     , mtl

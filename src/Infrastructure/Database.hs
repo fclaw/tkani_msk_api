@@ -35,7 +35,8 @@ import API.Types (FabricInfo(..), PreCut(..), FullFabric, SetTelegramMessageRequ
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
-import Infrastructure.Database.Types (Order (..))
+import Infrastructure.Database.Types as Types
+
 
 
 --------------------------------------------------------------------------------
@@ -150,6 +151,7 @@ placeNewOrderStatement :: Hasql.Statement Order ()
 placeNewOrderStatement = 
   dimap $(recordToTuple ''Order) (const ())
   [TH.singletonStatement|
+   with new_order as (
     insert into orders (
       id,
       fabric_id,
@@ -182,12 +184,15 @@ placeNewOrderStatement =
       now(),
       now(),
       'registered'
-      ) returning id :: text
+      ) returning id :: text)
+    insert into order_fabric_bindings
+    (fabric_id, order_id, length_m, pre_cut) 
+    values ($2 :: int8, (select id :: text from new_order), $3 :: float8?, $4 :: int8?)
+    returning (select id from new_order) :: text
   |]
 
 placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text ())
 placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
-
 
 setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
 setTelegramMessageStatement =
@@ -204,4 +209,4 @@ getChatDetailsStatement :: Hasql.Statement Text (Maybe Int)
 getChatDetailsStatement = rmap (fmap fromIntegral) [TH.maybeStatement| select message_id :: int from order_telegram_bindings where order_id = $1 :: text |]
 
 getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int))
-getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ orderId `Hasql.statement` getChatDetailsStatement
+getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement

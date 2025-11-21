@@ -94,7 +94,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   -- forward paymentId to the poller
   let paymentDetails = Tinkoff.PaymentDetails paymentId orderId
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` paymentDetails) . _tinkoffPaymentChan)
-
+   
   -- STEP C. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
   liftIO $ telegramIdVar `putMVar` telegramMsgId
