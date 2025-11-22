@@ -30,6 +30,7 @@ library
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
       Handlers.SetTelegramMessage
+      Handlers.TrackOrder
       Infrastructure.Database
       Infrastructure.Database.Types
       Infrastructure.Services.Sdek

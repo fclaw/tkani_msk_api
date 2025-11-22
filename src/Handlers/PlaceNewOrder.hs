@@ -46,6 +46,8 @@ import qualified Infrastructure.Services.Sdek.Types as Sdek
 import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder)
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
+import Text (encodeToText)
+
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
@@ -231,7 +233,7 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   , DB._orderPreCutId = orPreCutId
   , DB._orderCustomerFullName = orCustomerFullName
   , DB._orderCustomerPhone = orCustomerPhone
-  , DB._orderDeliveryProviderId = T.pack (show orDeliveryProviderId)
+  , DB._orderDeliveryProviderId = encodeToText orDeliveryProviderId
   , DB._orderDeliveryPointId = orDeliveryPointId
   , DB._orderTelegramUrl = orTelegramUrl
   , DB._orderSdekRequestUuid = trackingUuid

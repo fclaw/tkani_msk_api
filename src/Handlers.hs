@@ -17,6 +17,7 @@ import qualified Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified Handlers.GetProviders as GetProviders
 import qualified Handlers.PlaceNewOrder as PlaceNewOrder
 import qualified Handlers.SetTelegramMessage as SetTelegramMessage
+import qualified Handlers.TrackOrder as TrackOrder
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -28,4 +29,5 @@ apiHandlers = Routes
   , _getProviders = GetProviders.handler
   , _placeNewOrder = PlaceNewOrder.handler
   , _setTelegramMessage = SetTelegramMessage.handler
+  , _trackOrder = TrackOrder.handler
   }

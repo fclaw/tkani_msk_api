@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Text (camelToSnake, recordLabelModifier, encodeToText) where
 
 import Data.Char (toLower, isUpper)
@@ -5,6 +7,7 @@ import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
 import Data.Aeson (ToJSON, encode)
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as TE
 
@@ -26,4 +29,4 @@ recordLabelModifier prefix fieldName =
 
 -- | Converts any ToJSON instance directly to Strict Text
 encodeToText :: ToJSON a => a -> Text
-encodeToText val = LT.toStrict (TE.decodeUtf8 (encode val))
+encodeToText val = T.replace "\"" "" $ LT.toStrict (TE.decodeUtf8 (encode val))

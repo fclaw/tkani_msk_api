@@ -54,6 +54,12 @@ data Routes route = Routes
        :> "set_telegram_message"
        :> ReqBody '[JSON] SetTelegramMessageRequest
        :> Post '[JSON] (ApiResponse ())
+  , _trackOrder
+       :: route
+       :- "order"
+       :> "track"
+       :> QueryParam "query" Text
+       :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
   } deriving (Generic)
 
 

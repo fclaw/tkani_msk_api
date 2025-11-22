@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE TupleSections         #-}
 
 module Infrastructure.Database
   ( getFabricInfoById
@@ -16,6 +17,7 @@ module Infrastructure.Database
   , updateOrderStatus
   , adjustFabric
   , runTransaction
+  , fetchOrderStatus
   , module Types
   ) where
 
@@ -35,7 +37,15 @@ import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
 
 
-import API.Types (FabricInfo(..), PreCut(..), FullFabric, SetTelegramMessageRequest (..), OrderStatus, statusToSQL) -- Your data types
+import API.Types 
+       ( FabricInfo(..)
+       , PreCut(..)
+       , FullFabric
+       , SetTelegramMessageRequest (..)
+       , OrderStatus
+       , Providers
+       , statusToSQL
+       ) -- Your data types
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
@@ -325,3 +335,27 @@ adjustFabric =
             'rem_length', f.available_length_m :: float8
         ) :: jsonb
   |]
+
+fetchOrderStatus :: Text -> Hasql.Pool -> IO (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
+fetchOrderStatus query pool = fmap (join . first (pack . show)) $ runTransaction pool Hasql.Read $ query `Hasql.statement` fetchOrderStatusStatement
+
+
+fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
+fetchOrderStatusStatement =
+  rmap (sequence . fmap (first pack) . fmap convert)
+  [TH.maybeStatement|
+    SELECT 
+      to_jsonb(CAST(status AS text)) :: jsonb,
+      id :: text,
+      sdek_tracking_number :: text,
+      to_jsonb(delivery_provider_id) :: jsonb
+    FROM orders
+    WHERE
+      id = $1 :: text OR
+      sdek_tracking_number = $1 :: text
+  |]
+  where
+    convert (jsonStatus, orderId, trackingN, jsonProvider) = do
+      status <- convertFromJson @OrderStatus jsonStatus
+      provider <- convertFromJson @Providers jsonProvider
+      return (status, orderId, trackingN, provider)

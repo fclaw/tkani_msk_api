@@ -22,6 +22,7 @@ module API.Types
    PointLocation (..),
    OrderConfirmationDetails (..),
    SetTelegramMessageRequest (..),
+   TrackOrder (..),
    formatStatus,
    statusToSQL,
    mkError) where
@@ -263,7 +264,8 @@ formatStatus status = case status of
 data OrderConfirmationDetails = OrderConfirmationDetails
   { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
   , paymentLink      :: Text
-  }
+  , trackingNumber   :: Text -- delivery provider tracking number   
+  } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
 
@@ -276,3 +278,13 @@ data SetTelegramMessageRequest =
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "set" } ''SetTelegramMessageRequest)
+
+data TrackOrder =
+     TrackOrder 
+     { toStatus :: Text
+     , toOrderId :: Text
+     , toTrackingNumber :: Text
+     , toProvider :: Providers
+     } deriving (Show, Generic)
+     
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "to" } ''TrackOrder)
