@@ -1,4 +1,4 @@
--- Verify tkani-api:1.create_tables on pg
+-- Verify tkani-api:00001.add_table on pg
 
 BEGIN;
 

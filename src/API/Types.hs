@@ -23,6 +23,7 @@ module API.Types
    OrderConfirmationDetails (..),
    SetTelegramMessageRequest (..),
    formatStatus,
+   statusToSQL,
    mkError) where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
@@ -221,8 +222,17 @@ data OrderStatus
   | Cancelled
   deriving (Show, Eq, Read, Bounded, Enum, Generic)
 
-
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
+
+statusToSQL :: OrderStatus -> Text
+statusToSQL s = case s of
+    Registered -> "registered"
+    Paid       -> "paid"      -- Match your Postgres enum string EXACTLY
+    OnRoute    -> "on_route"
+    Delivered  -> "delivered"
+    Completed  -> "completed"
+    Cancelled  -> "cancelled"
+    -- etc...
 
 -- | Converts an OrderStatus into a human-readable, formatted Russian Text
 --   suitable for an internal notification channel.

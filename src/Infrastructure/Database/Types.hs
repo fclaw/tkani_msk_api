@@ -55,3 +55,14 @@ data Order = Order
 makeLenses ''Order
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "_order" } ''Order)
+
+data AdjustFabric = 
+     AdjustFabric
+     { afName :: Text
+     , afArticle :: Text
+     , afIsSold :: Bool
+     , afIsPreCutReq :: Bool
+     , afRemLength :: Double
+     } deriving (Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "af" } ''AdjustFabric)

@@ -173,7 +173,7 @@ notifyOrdersChannel order orderId = do
   let localTime = utcToLocalTime tz tm
   -- Automatically finds and renders 'templates/Handlers/PlaceNewOrder.tpl'
   messageText <- render $currentModule $ buildTemplateData order localTime orderId
-  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText ORDER Nothing
+  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText ORDER Nothing Nothing
 
 -- | Escapes characters within a URL that can conflict with MarkdownV2 link parsing.
 --   Primarily, we only need to worry about the closing parenthesis.

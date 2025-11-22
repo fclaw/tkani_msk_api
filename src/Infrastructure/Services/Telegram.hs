@@ -29,10 +29,10 @@ import qualified Data.ByteString.Lazy as LBS
 import           GHC.Generics
 import           Data.Aeson.KeyMap       as A
 import           Data.Aeson.TH
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, catMaybes)
 import           Data.Int (Int64)
 import qualified Data.Map.Strict         as M
-import           Data.Traversable        (for)   
+import           Data.Traversable        (for)
 
 -- (Assuming your AppM and Config are defined in App)
 import           App (Config(..), AppM, ChatKey)
@@ -71,8 +71,9 @@ sendOrEditTelegramMessage
   -> Text
   -> ChatKey                      -- ^ The target chat
   -> Maybe Int                    -- ^ The target message_id
+  -> Maybe Int
   -> AppM (Either TelegramError MessageIdResponse)
-sendOrEditTelegramMessage context messageText chatKey mMessageId = do
+sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId = do
   -- 1. Get the necessary config from our application environment
   bots <- fmap _bots ask
   let botsInfo = M.lookup chatKey bots
@@ -89,14 +90,15 @@ sendOrEditTelegramMessage context messageText chatKey mMessageId = do
     let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/" <> endpoint
 
     -- 3. The JSON payload for the sendMessage endpoint
-    let basePayload = A.fromList
-          [ "chat_id"    A..= chat
-          , "text"       A..= messageText
-          , "parse_mode" A..= T.pack "MarkdownV2"
+    let basePayload =
+          [ Just ("chat_id"    A..= chat)
+          , Just ("text"       A..= messageText)
+          , Just ("parse_mode" A..= T.pack "MarkdownV2")
+          , ("reply_to_message_id" A..=) <$> mbReplyId
           ]
 
           -- Combine the base payload with the conditional message_id field
-    let payload = A.Object $ basePayload `A.union` messageIdField
+    let payload = A.Object $ A.fromList ((catMaybes basePayload)) `A.union` messageIdField
 
     -- 4. Perform the API call using the shared HTTP manager.
     --    'liftIO' is used to run the IO action inside our AppM stack.

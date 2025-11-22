@@ -1,8 +1,12 @@
-module Text (camelToSnake, recordLabelModifier) where
+module Text (camelToSnake, recordLabelModifier, encodeToText) where
 
 import Data.Char (toLower, isUpper)
 import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
+import Data.Aeson (ToJSON, encode)
+import Data.Text (Text)
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.Encoding as TE
 
 camelToSnake :: String -> String
 camelToSnake [] = []
@@ -19,3 +23,7 @@ recordLabelModifier :: String -> String -> String
 recordLabelModifier prefix fieldName =
   let withoutPrefix = fromMaybe fieldName (stripPrefix prefix fieldName)
   in camelToSnake withoutPrefix
+
+-- | Converts any ToJSON instance directly to Strict Text
+encodeToText :: ToJSON a => a -> Text
+encodeToText val = LT.toStrict (TE.decodeUtf8 (encode val))

@@ -177,6 +177,7 @@ main = do
       conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
       yandexApiKey <- pack <$> getEnv "YANDEX_API_KEY"
+      thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
       
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -187,7 +188,7 @@ main = do
             , _sdekUrl   = sdekUrl
             , _sdekTariffCode = sdekTariffCode
             , _sdekShipmentPoint = sdekShipmentPoint
-            , _bots = 
+            , _bots =
                 M.fromList
                   [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
                    (ORDER, (orderBotToken, orderChatId))]
@@ -195,6 +196,7 @@ main = do
             , configTemplateMap = tplMap
             , _configYandexApiKey = yandexApiKey
             , _metroCityCodes = HS.fromList (map code cities)
+            , _thresholdMetres = thresholdMetres
             }
 
       tchan <- newTChanIO

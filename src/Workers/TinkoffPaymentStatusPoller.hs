@@ -20,13 +20,13 @@ import Data.Time.Clock (UTCTime, diffUTCTime, NominalDiffTime)
 import System.Timeout.Lifted (timeout)
 import Data.Function (fix)
 import Data.Maybe (isNothing)
-import Data.Either (isLeft)
+import Data.Either (isLeft, fromLeft)
 import qualified Data.HashMap.Strict as HM
 import Data.Time (formatTime, defaultTimeLocale)
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Data.Foldable (for_)
 
-import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (CONCIERGE), render)
+import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render)
 import Infrastructure.Services.Tinkoff (PaymentDetails (..), checkTinkoffPaymentStatus, Status (..))
 import Infrastructure.Database (getChatDetails)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
@@ -54,6 +54,9 @@ paymentStatusPoller = do
 
 workerLogic :: PaymentDetails -> AppM ()
 workerLogic PaymentDetails {..} = do
+
+  liftIO $ threadDelay (30 * 1000000)
+
   startTime <- currentTime
 
   -- 3. Set the hard limit (20 minutes = 1200 seconds)
@@ -80,9 +83,12 @@ workerLogic PaymentDetails {..} = do
           currentTime >>= finalizeTelegram orderId "Success"
           eInventoryResult <- adjustInventoryForOrder orderId
           for_ eInventoryResult $ \case
-            StockOK -> return ()
-            FabricSoldOut _ -> return ()
-          when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show eInventoryResult
+            StockOK msgId -> replyMessage msgId
+            FabricSoldOutOrPrecut msgId renderMessage -> do 
+              msg <- renderMessage
+              notifyMessage msg
+              replyMessage msgId
+          when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------
         -- 2. HARD FAILURE (Card Declined / Reversed) (Stop Polling)
@@ -145,5 +151,14 @@ finalizeTelegram orderId suffix tm = do
   let pool = _appDBPool cfg
   eMessageId <- liftIO $ getChatDetails orderId pool
   for_ eMessageId $ \messageId ->
-    void $ sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE messageId
+    void $ sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE messageId Nothing
   when(isLeft eMessageId) $ $(logTM) ErrorS $ ls $ "error while fetching chat details " <> pack (show eMessageId)
+
+
+notifyMessage :: Text -> AppM ()
+notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing
+
+replyMessage :: Int -> AppM ()
+replyMessage msgId = do 
+  message <- render ($currentModule <> ".Paid") mempty
+  void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId)

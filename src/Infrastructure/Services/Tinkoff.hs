@@ -81,4 +81,4 @@ checkTinkoffPaymentStatus
   -> AppM (Either ApiError Status)          -- ^ The status string from the API, or an error.
 checkTinkoffPaymentStatus paymentId = do
   -- ... function implementation goes here ...
-  return $ Right Processing
+  return $ Right Confirmed

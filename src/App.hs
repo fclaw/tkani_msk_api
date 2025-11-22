@@ -136,6 +136,7 @@ data Config = Config
   , configTemplateMap :: TemplateMap
   , _configYandexApiKey :: Text
   , _metroCityCodes :: HS.HashSet Int
+  , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
   }
 
 -- A helper type for parsing the YAML

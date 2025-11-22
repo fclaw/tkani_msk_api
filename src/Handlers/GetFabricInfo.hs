@@ -14,9 +14,9 @@ import Data.Int (Int64)
 
 import API.Types (FullFabric)
 import API.WithField (WithField)
-import App (AppM, _appDBPool)
+import App (AppM, _appDBPool, _thresholdMetres)
 import Control.Monad.Reader.Class (ask)
-import API.Types (ApiResponse, mkError)
+import API.Types (ApiResponse, mkError, errorCode)
 import Infrastructure.Database (getFabricInfoById)
 import Data.Bifunctor (first)
 
@@ -27,8 +27,14 @@ handler fabricId = do
   -- 1. Log the incoming request
   $(logTM) InfoS "Request received for fabric info"
   -- 2. Get the database connection pool from our AppState environment
-  dbPool <- fmap _appDBPool ask
+  cfg <- ask
+  let pool = _appDBPool cfg
+  let thresholdMetres =  _thresholdMetres cfg
   -- 3. Run the database query inside our AppM monad using liftIO
   $(logTM) DebugS $ "Querying database for fabric ID: " <> fromString (show fabricId)
-  resp <- liftIO $ getFabricInfoById fabricId dbPool
-  return $ first mkError resp
+  eResp <- liftIO $ getFabricInfoById fabricId thresholdMetres pool
+  liftIO $ print eResp
+  return $ case eResp of 
+    Right (Right fabricInfo) -> Right fabricInfo
+    Right (Left err) -> Left $ (mkError err) { errorCode = "404" }
+    Left err -> Left $ mkError err
