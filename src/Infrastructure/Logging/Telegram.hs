@@ -5,8 +5,6 @@
 
 module Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig) where
 
-
--- Add these imports at the top of your file
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Aeson as A
@@ -16,22 +14,26 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import qualified Data.Text.Lazy as TL
 import           Katip
 import           Katip.Core (getEnvironment, unLogStr)
-import           Network.Wreq         -- <-- Changed from Network.HTTP.Req
-import           Control.Lens ((&), (.~)) -- <-- New import for lens operators
+import           Network.Wreq
+import           Control.Lens ((&), (.~))
 import           System.Environment (lookupEnv)
 import           System.IO (stderr)
-import           Control.Monad (when, void) -- void is useful with wreq
+import           Control.Monad (when, void, forever, replicateM)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Exception (catch, SomeException)
 import           Network.HTTP.Client (Manager)
-import Data.Time (formatTime, defaultTimeLocale)
+import           Data.Time (formatTime, defaultTimeLocale)
+
+-- New Imports for Concurrency / Batching
+import           Control.Concurrent.STM
+import           Control.Concurrent.Async (async, link)
+import           Control.Concurrent (threadDelay)
 
 -- | Data type to hold our Telegram configuration.
 data TelegramConfig = TelegramConfig
   { tcToken   :: T.Text -- ^ Your bot token
   , tcChatId  :: T.Text -- ^ The destination channel/chat ID
   } deriving Show
-
 
 -- | Reads config from environment variables. Returns Nothing if not found.
 getTelegramConfig :: IO (Maybe TelegramConfig)
@@ -40,7 +42,6 @@ getTelegramConfig = do
   mChatId <- lookupEnv "TELEGRAM_CHAT_ID"
   pure $ TelegramConfig <$> (T.pack <$> mToken) <*> (T.pack <$> mChatId)
 
--- | A helper to get a nice emoji for the log level.
 severityToEmoji :: Severity -> T.Text
 severityToEmoji DebugS    = "⚙️"
 severityToEmoji InfoS     = "✅"
@@ -52,19 +53,13 @@ severityToEmoji AlertS    = "📢"
 severityToEmoji EmergencyS= "🆘"
 
 -- | Formats a log item into a clear, Markdown-formatted Telegram message.
--- | Formats a log item into a clear, Markdown-formatted Telegram message.
---   (This is the corrected version)
 formatTelegramMessage :: LogItem a => Item a -> T.Text
 formatTelegramMessage item =
   let 
-      -- Format the UTC time directly from the item's timestamp
-      -- Format: #t2023_11_19_103055Z (The 'Z' indicates UTC)
       timestampTag = T.pack $ formatTime defaultTimeLocale "\\#t%Y\\_%m\\_%d" (_itemTime item)
       mainMessage = T.unlines
         [ T.concat [ severityToEmoji severity, " *", T.pack (show severity), "* @ `", hostname, "`" ]
         , ""
-        -- We now put App, Env, and Namespace inside their own code blocks.
-        -- This means they NEVER need to be escaped.
         , T.concat [ "*App:* `", app, "`", " \\(*Env:* `", env, "`", "\\)" ]
         , T.concat [ "*Namespace:* `", ns, "`"]
         , ""
@@ -76,67 +71,107 @@ formatTelegramMessage item =
         where
           toText = T.pack . show
           severity = _itemSeverity item
-          -- Texts that will NOT be inside code blocks MUST be escaped
           hostname = toText $ _itemHost item
           app      = T.intercalate "." $ unNamespace $ _itemApp item
           env      = getEnvironment $ _itemEnv item
           ns       = T.intercalate "." $ unNamespace $ _itemNamespace item
           logStr   = TL.toStrict $ TLB.toLazyText $ unLogStr $ _itemMessage item
-          -- 1. Use the idiomatic katip function to get the payload as a JSON Object.
-          --    This works for ANY 'a' that has a 'LogItem a' instance.
           payload :: A.Object
           payload = payloadObject V2 (_itemPayload item)
-
-          -- 2. Now, encode the resulting 'A.Object'. This is always safe
-          --    and produces a clean JSON string.
           context :: T.Text
           context = TL.toStrict $ TLE.decodeUtf8 $ A.encode payload
   in
-    -- Append the tag. The tag itself does not need Markdown escaping
-    -- because hashtags are valid in plain text.
     mainMessage <> timestampTag
 
+-- | The worker logic that runs in the background.
+--   It waits for at least one message, then grabs up to 4 more immediately if available.
+telegramBatchWorker :: Manager -> TelegramConfig -> TQueue T.Text -> IO ()
+telegramBatchWorker tlsManager config queue = forever $ do
+    
+    -- 1. Block until we get at least one log message
+    firstMsg <- atomically $ readTQueue queue
+    
+    -- 2. Try to grab up to 4 more messages currently in the queue (Batch size = 5)
+    --    This is non-blocking. If queue is empty, 'rest' is [].
+    rest <- atomically $ flushUpTo 1 queue
 
--- | The main function that constructs our Scribe for Telegram.
---   (This is the ONLY function you need to replace)
-mkTelegramScribe :: Manager -> TelegramConfig -> Severity -> Verbosity -> IO Scribe
-mkTelegramScribe tlsManager config minSeverity verbosity = do
-  let pushLog item = do
-        -- Only send logs that are at or above the configured minimum severity
-        isPerm <- permitItem minSeverity item
-        when isPerm $
-          send (formatTelegramMessage item)
-            `catch` handleHttpException
- 
-      -- HTTP request logic (using wreq)
-      send message = do
-        let payload = A.object
-              [ "chat_id"    A..= tcChatId config
-              , "text"       A..= message
-              , "parse_mode" A..= T.pack "MarkdownV2"
-              ]
-            
-            -- Set a 10-second timeout for the request
-            opts = defaults & manager .~ Right tlsManager
-            url = "https://api.telegram.org/bot" ++ T.unpack (tcToken config) ++ "/sendMessage"
+    let batch = firstMsg : rest
+    
+    -- 3. Combine messages. 
+    --    We separate them with a horizontal rule "---" to keep them readable in one Telegram block.
+    -- FIX IS HERE:
+    -- We must escape every dash using a backslash: \-
+    -- OR use a different separator (like emojis) that doesn't need escaping.
+    
+    -- Option A: Escaped Dashes (Valid MarkdownV2)
+    let separator = "\n\n\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n\n"
+    
+    -- Option B: Emojis (Easier to read, no escaping needed) -> Recommended
+    -- let separator = "\n\n〰️〰️〰️〰️〰️〰️〰️〰️\n\n"
 
-        -- Use `postWith` from wreq. We use `void` to ignore the response body.
-        void $ postWith opts url payload
+    let finalMessage = T.intercalate separator batch
+
+    sendToTelegram tlsManager config finalMessage
+
+-- | Helper to take N items from TQueue non-blocking
+flushUpTo :: Int -> TQueue a -> STM [a]
+flushUpTo 0 _ = return []
+flushUpTo n q = do
+    isEmpty <- isEmptyTQueue q
+    if isEmpty 
+        then return [] 
+        else do
+            x <- readTQueue q
+            xs <- flushUpTo (n - 1) q
+            return (x : xs)
+
+-- | Helper to perform the HTTP request
+sendToTelegram :: Manager -> TelegramConfig -> T.Text -> IO ()
+sendToTelegram mgr cfg msg = do
+    let payload = A.object
+          [ "chat_id"    A..= tcChatId cfg
+          , "text"       A..= msg
+          , "parse_mode" A..= T.pack "MarkdownV2"
+          ]
         
-        TIO.putStrLn "--> Logged to Telegram"
+        opts = defaults & manager .~ Right mgr
+        url = "https://api.telegram.org/bot" ++ T.unpack (tcToken cfg) ++ "/sendMessage"
 
-      -- Gracefully handle network errors so they don't crash the app
+    -- Perform request inside try/catch
+    (void $ postWith opts url payload) `catch` handleHttpException
+
+    where
       handleHttpException :: SomeException -> IO ()
       handleHttpException e = TIO.hPutStrLn stderr $ T.pack $
-        "!! FAILED to send log to Telegram: " <> show e
+        "!! FAILED to send batch log to Telegram: " <> show e
 
-  -- The final Scribe record, now matching the definition in your image.
+
+-- | The main function that constructs our Scribe for Telegram with Batching.
+mkTelegramScribe :: Manager -> TelegramConfig -> Severity -> Verbosity -> IO Scribe
+mkTelegramScribe tlsManager config minSeverity verbosity = do
+  
+  -- 1. Create a thread-safe queue
+  queue <- newTQueueIO
+
+  -- 2. Spawn a background worker thread
+  --    'link' ensures that if the worker crashes, the exception bubbles up (useful for debugging),
+  --    though our worker handles its own HTTP exceptions.
+  workerAsync <- async (telegramBatchWorker tlsManager config queue)
+  link workerAsync
+
+  -- 3. Define the push logic (Main Thread)
+  --    This is now very fast: it just formats the text and adds to queue (STM).
+  let pushLog item = do
+        isPerm <- permitItem minSeverity item
+        when isPerm $ do
+          let txt = formatTelegramMessage item
+          atomically $ writeTQueue queue txt
+
+  -- 4. Return the Scribe
   pure $ Scribe
-    { -- Corresponds to: liPush :: Item a -> IO ()
-      liPush = pushLog
-    -- Corresponds to: scribeFinalizer :: IO ()
+    { liPush = pushLog
+    -- Ideally, we should wait for the queue to drain here, but for simplicity 
+    -- we assume app shutdown kills the worker.
     , scribeFinalizer = pure ()
-    -- Corresponds to: scribePermitItem :: !PermitFunc
-    -- We build the filtering function directly inside the scribe.
     , scribePermitItem = permitItem minSeverity
     }

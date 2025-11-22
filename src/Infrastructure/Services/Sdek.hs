@@ -17,7 +17,7 @@ module Infrastructure.Services.Sdek
        ) where
 
 import Data.Text (Text)
-import Control.Monad.IO.Class
+import Control.Monad.IO.Class (liftIO)
 import Katip
 import qualified Data.Text as T
 import Control.Monad (forM_, void, when)

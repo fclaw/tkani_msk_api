@@ -17,6 +17,7 @@ library:
     - Infrastructure.Templating
     - Workers.SdekOrderStatusPoller
     - Workers.TinkoffPaymentStatusPoller
+    - Infrastructure.Services.Overpass
   dependencies:
     # This list should already be complete
     - aeson

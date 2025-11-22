@@ -17,19 +17,13 @@ import Data.Aeson.TH
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Katip
-import Control.Monad (forM, void)
-import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent.Async.Extra (mapConcurrentlyBounded)
-import Data.Bifunctor (first)
-import Control.Monad.Error.Class (throwError)
-import Servant.Server.Internal.ServerError (err500)
-import Data.Foldable (for_)
-import Data.Traversable (for)
+import Control.Monad (void)
 import qualified Data.HashMap.Strict as HM
-import Control.Concurrent.STM (atomically, modifyTVar')
 import Data.HashSet (member)
+import Control.Monad.IO.Class (liftIO)
+import Control.Concurrent.STM (atomically, readTVar)
 
-import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _configYandexApiKey, _pointCache, currentTime, _metroCityCodes)
+import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations)
 import API.Types (DeliveryPoint, ApiResponse)
 import API.WithField (WithField)
 import Text (recordLabelModifier)
@@ -38,7 +32,8 @@ import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import Infrastructure.Utils.Http
 import TH.Location (currentModule)
 import API.WithField (WithField (..))
-import Infrastructure.Services.Yandex.Types
+import Infrastructure.Services.Overpass.Types (MetroStation)
+import Infrastructure.Services.Overpass.Geo (findNearestMetros)
 
 
 -- | Internal data type to decode the full delivery points response from SDEK.
@@ -121,34 +116,23 @@ storeDeliveryPoints cityCode = do
     if cityCode `member` metroCities && 
        length sdekPoints > max_pints_threshold
     then do
-          let fun = (fmap (first (T.pack. show)) . runAppM appEnv stateTVar . enrichWithMetro)
-          freshPoints <- liftIO $ fmap (first mkError . sequenceA) $ mapConcurrentlyBounded 20 fun sdekPoints
-          for freshPoints $ \ps -> do
-            now <- currentTime
-            liftIO $ atomically $ modifyTVar' stateTVar $
-              \s -> s { _pointCache = HM.insert cityCode (now, ps) (_pointCache s) }
-            return ps
+           allMetros <- fmap _metroStations $ liftIO $ atomically $ readTVar stateTVar
+           return $ Right $ map (flip enrichWithMetro allMetros) sdekPoints
     else return $ Right $ map (WithField [] . transformSdekPoint) sdekPoints
 
-enrichWithMetro :: SdekApiPoint -> AppM (WithField "dpMetros" [Text] DeliveryPoint)
-enrichWithMetro point = do
-  yandexApiKey <- fmap _configYandexApiKey ask
-  let lon = longitude (sdekApiPointLocation point)
-  let lat = latitude (sdekApiPointLocation point)
-  let params = 
-        [ ("apikey", yandexApiKey)
-        , ("geocode", T.pack $ show lon <> "," <> show lat)
-        , ("kind", "metro")
-        , ("results", "3")
-        , ("format", "json")
-        ]
-  eResult <- getReq @YandexResponse "https://geocode-maps.yandex.ru/1.x/" params Nothing
-  case eResult of
-    Left err -> do
-      $(logTM) ErrorS $ "Yandex API call failed: " <> ls (show err)
-      throwError err500
-    Right yandexResponse -> do
-      -- The parsing is already done by 'getReq'!
-      -- We just use our pure helper function to extract the names.
-      let metroNames = extractMetroNames yandexResponse
-      return $ WithField metroNames (transformSdekPoint point)
+enrichWithMetro :: SdekApiPoint -> [MetroStation] -> WithField "dpMetros" [Text] DeliveryPoint
+enrichWithMetro sdekPoint allMetros = 
+    let 
+        -- 1. Extract lat/lon from the API object
+        loc = sdekApiPointLocation sdekPoint
+        lat = latitude loc
+        lon = longitude loc
+        
+        -- 2. Perform the Pure Math (Find nearest stations)
+        nearestMetros = findNearestMetros lat lon allMetros
+        
+        -- 3. Convert the rest of the object to your domain model
+        basePoint = transformSdekPoint sdekPoint
+    in 
+    -- 4. Wrap it
+    WithField nearestMetros basePoint

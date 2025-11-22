@@ -63,6 +63,7 @@ import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types (PaymentDetails)
+import Infrastructure.Services.Overpass.Types (MetroStation)
 
 
 -- "access_token": "string",
@@ -115,6 +116,7 @@ data State = State
   , _pointCache :: PointCache
   , _sdekPromises :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan PaymentDetails
+  , _metroStations :: [MetroStation]
   }
 
 

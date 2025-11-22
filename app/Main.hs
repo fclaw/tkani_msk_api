@@ -29,7 +29,7 @@ import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
 import System.Environment (getEnv)
 import Data.Text (pack)
-import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO)
+import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO, modifyTVar')
 import Control.Monad.Except (runExceptT)
 import Control.Monad.RWS (runRWST)
 import Control.Monad.IO.Class (liftIO)
@@ -44,6 +44,7 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
 import qualified Data.HashSet as HS
 import qualified Data.Map.Strict as M
+import Data.Foldable (for_)
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
@@ -54,6 +55,7 @@ import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (orderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
+import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 
 
 handleYamlResult (Right providers) go = go providers
@@ -176,7 +178,6 @@ main = do
       conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
       conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
-      yandexApiKey <- pack <$> getEnv "YANDEX_API_KEY"
       thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
       
       -- 6. Create the shared AppState
@@ -194,7 +195,6 @@ main = do
                    (ORDER, (orderBotToken, orderChatId))]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
-            , _configYandexApiKey = yandexApiKey
             , _metroCityCodes = HS.fromList (map code cities)
             , _thresholdMetres = thresholdMetres
             }
@@ -206,45 +206,52 @@ main = do
            , _pointCache = mempty
            , _sdekPromises = mempty
            , _tinkoffPaymentChan = tchan
+           , _metroStations = []
            }
       initialState <- newTVarIO state
 
       -- Create the runner function that bridges AppM and IO.
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)
           runInIO = runAppM appConfig initialState
-      -- Define our concurrent tasks as a list of IO actions.
-      -- Task 1: The Web Server
-      let server = 
-           run (configApiPort config) $ 
-             simpleCors $  
-               serve tkaniApiProxy $
-                 hoistServer 
-                   tkaniApiProxy 
-                   (appToHandler appConfig initialState) 
-                   (toServant apiHandlers)
-      -- Task 2: The SDEK Polling Worker
-      let sdekPoller = do
-            res <- runInIO orderStatusPoller 
-            whenLeft res $ \e -> error $ "SDEK Poller failed with a servant error: " ++ show e
-       -- Task 2: The Tinkoff Polling Worker
-      let tinkoffPoller = do
-            res <- runInIO paymentStatusPoller 
-            whenLeft res $ \e -> error $ "Tinkoff Poller failed with a servant error: " ++ show e
-      let tasks :: [(String, IO ())]
-          tasks = 
-            [ ("Web Server", server)
-            , ("SDEK Poller", sdekPoller)
-            , ("Tinkoff Poller", tinkoffPoller)
-            ]
 
-      putStrLn "Spawning concurrent workers..."
-      asyncs <- mapM (\(name, action) -> (name,) <$> async action) tasks
-      putStrLn "All workers started. Waiting for any worker to exit."
+      eAllMetros <- runInIO fetchAllRussianMetros
+      for_ eAllMetros $ \allMetros -> do
+        liftIO $ atomically $ modifyTVar' initialState $
+          \s -> s { _metroStations = allMetros }
 
-      -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
-      (taskName, _) <- waitAnyNamed asyncs
-      putStrLn $ "Worker '" ++ taskName ++ "' finished unexpectedly. Shutting down."
+        -- Define our concurrent tasks as a list of IO actions.
+        -- Task 1: The Web Server
+        let server = 
+              run (configApiPort config) $ 
+                simpleCors $  
+                  serve tkaniApiProxy $
+                    hoistServer 
+                      tkaniApiProxy 
+                      (appToHandler appConfig initialState) 
+                      (toServant apiHandlers)
+        -- Task 2: The SDEK Polling Worker
+        let sdekPoller = do
+              res <- runInIO orderStatusPoller 
+              whenLeft res $ \e -> error $ "SDEK Poller failed with a servant error: " ++ show e
+        -- Task 2: The Tinkoff Polling Worker
+        let tinkoffPoller = do
+              res <- runInIO paymentStatusPoller 
+              whenLeft res $ \e -> error $ "Tinkoff Poller failed with a servant error: " ++ show e
+        let tasks :: [(String, IO ())]
+            tasks = 
+              [ ("Web Server", server)
+              , ("SDEK Poller", sdekPoller)
+              , ("Tinkoff Poller", tinkoffPoller)
+              ]
 
-      -- Gracefully cancel all other workers on exit.
-      mapM_ (cancel . snd) asyncs
-      putStrLn "Shutdown complete."
+        putStrLn "Spawning concurrent workers..."
+        asyncs <- mapM (\(name, action) -> (name,) <$> async action) tasks
+        putStrLn "All workers started. Waiting for any worker to exit."
+
+        -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
+        (taskName, _) <- waitAnyNamed asyncs
+        putStrLn $ "Worker '" ++ taskName ++ "' finished unexpectedly. Shutting down."
+
+        -- Gracefully cancel all other workers on exit.
+        mapM_ (cancel . snd) asyncs
+        putStrLn "Shutdown complete."

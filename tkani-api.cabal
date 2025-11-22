@@ -21,6 +21,7 @@ library
       Infrastructure.Templating
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
+      Infrastructure.Services.Overpass
   other-modules:
       API.WithField
       Concurrency
@@ -34,6 +35,8 @@ library
       Handlers.TrackOrder
       Infrastructure.Database
       Infrastructure.Database.Types
+      Infrastructure.Services.Overpass.Geo
+      Infrastructure.Services.Overpass.Types
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedDeliveryPoints
@@ -42,7 +45,6 @@ library
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Types
-      Infrastructure.Services.Yandex.Types
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId
       Text
