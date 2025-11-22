@@ -23,6 +23,7 @@ library
       Workers.TinkoffPaymentStatusPoller
   other-modules:
       API.WithField
+      Concurrency
       Domain.Inventory
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo

@@ -8,7 +8,6 @@ import Control.Concurrent (threadDelay)
 import Control.Monad (forever, when)
 import Katip
 import Control.Monad.IO.Class (liftIO)
-import qualified Control.Concurrent.Async.Lifted as Async
 import Control.Monad.Reader.Class (ask)
 import Data.UUID (UUID)
 import Data.Either (isLeft, fromLeft)
@@ -21,6 +20,7 @@ import API.Types (OrderStatus (..))
 import Infrastructure.Database (getOrdersInTransit, updateOrderStatus)
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus)
+import Concurrency (pooledForConcurrentlyN)
 
 
 orderStatusPoller :: AppM ()
@@ -30,14 +30,14 @@ orderStatusPoller = forever $ do
   pool <- fmap _appDBPool ask
   eUuids <- liftIO $ getOrdersInTransit [Registered, Paid, OnRoute, Delivered] pool
   for_ eUuids $ \uuids ->
-    Async.forConcurrently_ uuids $ \(orderId, uuid, status) -> do 
+    void $ pooledForConcurrentlyN 3 uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
       eRes <- Sdek.getOrdersInTransit uuid
       when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "sdek error " <> show (fromLeft undefined eRes)
       for_ eRes $ \res -> 
         for_ (respEntity res) $ \entity -> do
           let newStatus = mapSdekToInternal (entityCdekStatus entity) status
-          if newStatus == status 
+          if newStatus == status
           then 
             $(logTM) InfoS $ ls $ "order " <> orderId <> " has not changed status, status: " <> pack (show status)
           else 
