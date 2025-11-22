@@ -14,10 +14,12 @@ module Infrastructure.Database
   , placeNewOrder
   , setTelegramMessage
   , getChatDetails
+  , updateOrderStatusStatement
   , updateOrderStatus
   , adjustFabric
   , runTransaction
   , fetchOrderStatus
+  , getOrdersInTransit
   , module Types
   ) where
 
@@ -35,6 +37,9 @@ import Control.Monad (join)
 import Data.Tuple.Ops (initT, app2, app3)
 import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
+import Data.UUID (UUID)
+import qualified Data.Vector as V
+import Data.Either (fromRight)
 
 
 import API.Types 
@@ -258,8 +263,8 @@ getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
 
-updateOrderStatus :: Hasql.Statement (Text, OrderStatus) Int
-updateOrderStatus = 
+updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int
+updateOrderStatusStatement = 
   dimap (second statusToSQL) fromIntegral
   [TH.singletonStatement| 
     UPDATE orders 
@@ -267,6 +272,9 @@ updateOrderStatus =
     WHERE id = $1 :: text 
     RETURNING internal_notification_message_id :: int4
   |]
+
+updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> IO (Either Text Int)
+updateOrderStatus orderId status pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ (orderId, status) `Hasql.statement` updateOrderStatusStatement
 
 -- | Updates inventory logic.
 -- Logic details:
@@ -359,3 +367,23 @@ fetchOrderStatusStatement =
       status <- convertFromJson @OrderStatus jsonStatus
       provider <- convertFromJson @Providers jsonProvider
       return (status, orderId, trackingN, provider)
+
+getOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> IO (Either Text [(Text, UUID, OrderStatus)])
+getOrdersInTransit statuses pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ statuses `Hasql.statement` getOrdersInTransitStatement
+
+getOrdersInTransitStatement :: Hasql.Statement [OrderStatus] [(Text, UUID, OrderStatus)]
+getOrdersInTransitStatement =
+  dimap (V.fromList . map encodeToText) (fromRight mkError . sequence . map convert . V.toList) $
+  [TH.vectorStatement|
+    SELECT
+      id :: text,
+      sdek_request_uuid :: uuid,
+      to_jsonb(CAST(status AS text)) :: jsonb
+    FROM orders
+    WHERE 
+      sdek_request_uuid IS NOT NULL
+      AND
+      status = ANY ($1 :: text[] :: order_status[])
+  |]
+  where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
+        mkError = error "aeson decode failed on order status"

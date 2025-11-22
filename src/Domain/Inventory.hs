@@ -18,7 +18,7 @@ import Control.Monad (join)
 
 import App (AppM, _appDBPool, _thresholdMetres, render)
 import Control.Monad.Reader.Class (ask)
-import Infrastructure.Database (runTransaction, updateOrderStatus, adjustFabric, AdjustFabric (..))
+import Infrastructure.Database (runTransaction, updateOrderStatusStatement, adjustFabric, AdjustFabric (..))
 import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
 import qualified Data.HashMap.Strict as HM
@@ -63,7 +63,7 @@ adjustInventoryForOrder orderId = do
 
 statements orderId thresholdMetres = do
   -- update order to paid
-  mId <- (orderId, Paid) `Hasql.statement` updateOrderStatus
+  mId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
   -- adjust fabric
   adjFabric <- (orderId, thresholdMetres) `Hasql.statement` adjustFabric
   return $ fmap (mId,) adjFabric

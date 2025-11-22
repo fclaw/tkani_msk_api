@@ -13,6 +13,7 @@ module Infrastructure.Services.Sdek
        , makeMinimalOrderRequestData
        , buildMinimalOderRequest
        , getOrderStatus
+       , getOrdersInTransit
        ) where
 
 import Data.Text (Text)
@@ -37,6 +38,7 @@ import API.WithField (WithField (..))
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
 import Infrastructure.Services.Sdek.Types
 import Data.Maybe (fromMaybe)
+import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 
 
 
@@ -229,3 +231,13 @@ getOrderStatus uuid = do
   let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderStatusResponse (Just (void $ getValidSdekToken)) ordersReq
   handleApiResponse @_ @SdekOrderStatusResponse $(currentModule) eOrders $ pure . Right
+
+
+getOrdersInTransit :: UUID -> AppM (Either SdekError SdekOrderInTransitResponse)
+getOrdersInTransit uuid = do
+  $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
+  url <- fmap (T.unpack . _sdekUrl) ask
+  let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
+  let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
+  eOrders <- makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
+  handleApiResponse @_ @SdekOrderInTransitResponse $(currentModule) eOrders $ pure . Right

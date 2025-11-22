@@ -37,6 +37,7 @@ library
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedDeliveryPoints
       Infrastructure.Services.Sdek.Types
+      Infrastructure.Services.Sdek.Types.OrderInTransit
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Types

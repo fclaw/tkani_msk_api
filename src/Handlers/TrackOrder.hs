@@ -15,7 +15,6 @@ import Data.Text (Text, pack)
 import Data.Traversable (for)
 
 import App (AppM, _appDBPool)
-import Control.Monad.Reader.Class (ask)
 import API.Types (ApiResponse, TrackOrder (..), mkError, formatStatus)
 import Infrastructure.Database (fetchOrderStatus)
 
