@@ -13,6 +13,7 @@ import Data.Text (Text, pack)
 import App (AppM)
 import Infrastructure.Services.Overpass.Types
 import Infrastructure.Utils.Http
+import Utils (withRetry)
 
 
 showt = pack . show
@@ -37,7 +38,7 @@ fetchAllRussianMetros = do
         let params = [("data", query)]
 
         -- 2. Call API
-        eResult <- getReq @OverpassResponse "https://overpass-api.de/api/interpreter" params Nothing
+        eResult <- withRetry 3 $ getReq @OverpassResponse "https://overpass-api.de/api/interpreter" params Nothing
         
         case eResult of
             Left err -> do

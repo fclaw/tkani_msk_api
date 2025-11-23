@@ -44,6 +44,7 @@ module Infrastructure.Utils.Http
 
     -- * Error Handling & Types
     handleApiResponse,
+    handleWorkerApiResponse,
     HttpError(..),
     QueryParams,
     FormParams
@@ -339,3 +340,24 @@ makeRequestWithRetries mRecoveryAction httpAction = do
   eResponse <- retryWithBackoff mRecoveryAction maxRetries initialDelay httpAction
   -- Step 2: Parse the final result into our clean HttpError type
   pure $ perseResp eResponse
+
+
+  -- | A safe version of handleApiResponse for Background Workers.
+--   Instead of throwing a ServerError (which crashes threads), it returns 'Left'.
+handleWorkerApiResponse
+  :: forall a m b . (KatipContext m) -- Removed MonadError constraint!
+  => Text                       -- ^ Call name
+  -> Either HttpError a         -- ^ Result from getReq/postReq
+  -> (a -> m b)                 -- ^ Success Continuation
+  -> m (Either HttpError b)     -- ^ Safe Result
+handleWorkerApiResponse callName eResult onSuccess =
+  case eResult of
+    Left err -> do
+      -- 1. Log the error (So you see it in logs)
+      let errorMsg = "Worker API call to '" <> callName <> "' failed: "
+      $(logTM) ErrorS $ logStr (errorMsg <> T.pack (show err))
+      -- 2. Return Left (So the Poller can decide what to do)
+      return $ Left err
+    Right successPayload -> do
+      -- 3. Run the continuation and wrap in Right
+      fmap Right $ onSuccess successPayload

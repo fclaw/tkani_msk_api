@@ -33,8 +33,7 @@ orderStatusPoller = forever $ do
     void $ pooledForConcurrentlyN 3 uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
       eRes <- Sdek.getOrdersInTransit uuid
-      when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "sdek error " <> show (fromLeft undefined eRes)
-      for_ eRes $ \res -> 
+      for_ eRes $ \res ->
         for_ (respEntity res) $ \entity -> do
           let newStatus = mapSdekToInternal (entityCdekStatus entity) status
           if newStatus == status

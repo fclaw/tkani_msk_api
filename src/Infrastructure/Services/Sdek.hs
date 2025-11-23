@@ -84,7 +84,6 @@ isFresh :: UTCTime -> UTCTime -> Bool
 isFresh now prev = let sixHours = 6 * 60 * 60 in diffUTCTime now prev < sixHours
 
 
-
 -- | A clean, minimal record holding all the necessary data gathered from the bot
 --   to construct an 'SdekOrderRequest'
 data MinimalOrderRequestData = MinimalOrderRequestData
@@ -233,11 +232,11 @@ getOrderStatus uuid = do
   handleApiResponse @_ @SdekOrderStatusResponse $(currentModule) eOrders $ pure . Right
 
 
-getOrdersInTransit :: UUID -> AppM (Either SdekError SdekOrderInTransitResponse)
+getOrdersInTransit :: UUID -> AppM (Either HttpError SdekOrderInTransitResponse)
 getOrdersInTransit uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
   url <- fmap (T.unpack . _sdekUrl) ask
   let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
   let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
-  handleApiResponse @_ @SdekOrderInTransitResponse $(currentModule) eOrders $ pure . Right
+  handleWorkerApiResponse @SdekOrderInTransitResponse $(currentModule) eOrders pure

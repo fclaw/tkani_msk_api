@@ -21,9 +21,9 @@ import Control.Monad (void)
 import qualified Data.HashMap.Strict as HM
 import Data.HashSet (member)
 import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent.STM (atomically, readTVar)
+import Control.Concurrent.STM (atomically, readTVar, modifyTVar')
 
-import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations)
+import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations, _pointCache, currentTime)
 import API.Types (DeliveryPoint, ApiResponse)
 import API.WithField (WithField)
 import Text (recordLabelModifier)
@@ -117,6 +117,10 @@ storeDeliveryPoints cityCode = do
        length sdekPoints > max_pints_threshold
     then do
            allMetros <- fmap _metroStations $ liftIO $ atomically $ readTVar stateTVar
+           let enrichedPoints = map (flip enrichWithMetro allMetros) sdekPoints
+           now <- currentTime
+           liftIO $ atomically $ modifyTVar' stateTVar $
+             \s -> s { _pointCache = HM.insert cityCode (now, enrichedPoints) (_pointCache s) }
            return $ Right $ map (flip enrichWithMetro allMetros) sdekPoints
     else return $ Right $ map (WithField [] . transformSdekPoint) sdekPoints
 

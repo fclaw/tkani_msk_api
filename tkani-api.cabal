@@ -50,6 +50,7 @@ library
       Text
       TH.Location
       TH.RecordToTuple
+      Utils
       Paths_tkani_api
   hs-source-dirs:
       src

@@ -136,7 +136,6 @@ data Config = Config
   , _bots              :: Bots
   , _configHttpManager :: Manager
   , configTemplateMap :: TemplateMap
-  , _configYandexApiKey :: Text
   , _metroCityCodes :: HS.HashSet Int
   , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
   }
