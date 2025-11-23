@@ -6,9 +6,9 @@
         "owner": "NixOS",
         "repo": "nixpkgs",
         "rev": "abfd31179174133ab8131139d650297bf4da63b7",
-        "sha256": "1j303sbqnz43hwh69d7y78s07xnpkfafzx4li7dlnwpgbkh5mxw3",
+        "sha256": "sha256:1lypgq8f1v571vgrlqj13yi97bhlw9gsqc0s9di5mn5w5fxjfd6n",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

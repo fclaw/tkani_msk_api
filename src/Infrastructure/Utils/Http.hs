@@ -45,6 +45,7 @@ module Infrastructure.Utils.Http
     -- * Error Handling & Types
     handleApiResponse,
     handleWorkerApiResponse,
+    withRetry,
     HttpError(..),
     QueryParams,
     FormParams
@@ -70,20 +71,26 @@ import           Network.HTTP.Client             (HttpException (..),
                                                   responseStatus)
 import qualified Network.HTTP.Client          as HTTP
 import           Network.HTTP.Types.Status       (statusCode)
-import           Control.Exception               (SomeException, fromException, try)
+import           Control.Exception               (SomeException, fromException, try, Exception)
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Concurrent (threadDelay)
 import qualified Data.Vector as V
 import qualified Control.Monad.Catch as Catch
 import qualified Data.ByteString.Char8 as BS8 -- For header values
+-- Imports needed for MonadBaseControl style handling
+import Control.Exception.Lifted (throwIO)
+import Control.Concurrent (threadDelay)
+import Control.Monad.Base (liftBase)
+import Control.Monad.Trans.Control (MonadBaseControl)
 
 
 -- A cleaner way to represent query parameters
 type QueryParams = [(Text, Text)]
 
-data HttpError = NetworkError Text | JsonDecodeError Text
+data HttpError = NetworkError SomeException | JsonDecodeError Text
   deriving (Show)
 
+instance Exception HttpError
 
 perseReq body =
   case eitherDecode body of
@@ -93,7 +100,7 @@ perseReq body =
 perseResp :: FromJSON a => Either SomeException (Response LBS.ByteString) -> Either HttpError a
 perseResp eResp =
   case eResp of
-    Left ex -> Left $ NetworkError (T.pack (show ex))
+    Left ex -> Left $ NetworkError ex
     Right response -> perseReq (response ^. responseBody)
 
 addToken Nothing opt = opt
@@ -344,20 +351,55 @@ makeRequestWithRetries mRecoveryAction httpAction = do
 
   -- | A safe version of handleApiResponse for Background Workers.
 --   Instead of throwing a ServerError (which crashes threads), it returns 'Left'.
-handleWorkerApiResponse
-  :: forall a m b . (KatipContext m) -- Removed MonadError constraint!
-  => Text                       -- ^ Call name
-  -> Either HttpError a         -- ^ Result from getReq/postReq
-  -> (a -> m b)                 -- ^ Success Continuation
-  -> m (Either HttpError b)     -- ^ Safe Result
-handleWorkerApiResponse callName eResult onSuccess =
-  case eResult of
-    Left err -> do
-      -- 1. Log the error (So you see it in logs)
-      let errorMsg = "Worker API call to '" <> callName <> "' failed: "
-      $(logTM) ErrorS $ logStr (errorMsg <> T.pack (show err))
-      -- 2. Return Left (So the Poller can decide what to do)
-      return $ Left err
-    Right successPayload -> do
-      -- 3. Run the continuation and wrap in Right
-      fmap Right $ onSuccess successPayload
+-- | Generic handler for API interactions in Workers
+handleWorkerApiResponse 
+    :: forall a m . (FromJSON a, KatipContext m)
+    => Text                                     -- ^ Call Name (for logging)
+    -> Either HttpError a              -- ^ The Result form the API
+    -> (HttpError -> m ())               -- ^ onError: Custom logic per error type
+    -> (a -> m ())                      -- ^ onSuccess: What to do with data
+    -> m ()
+-- 1. FAILURE CASE
+handleWorkerApiResponse callName (Left ex) onError _ = do
+  let errorMsg = "Worker API call to '" <> callName <> "' failed: "
+  $(logTM) ErrorS $ logStr (errorMsg <> T.pack (show ex))
+  -- Call your custom error logic (DB updates, etc)
+  onError ex
+-- 2. SUCCESS CASE
+handleWorkerApiResponse _ (Right val) _ onSuccess = onSuccess val
+
+showt :: Show a => a -> Text
+showt = T.pack . show
+
+-- | Retry helper for MonadBaseControl stacks
+withRetry :: forall m a . (MonadBaseControl IO m, KatipContext m) => Int -> m (Either HttpError a) -> m a
+withRetry attempts action = go 1
+  where
+    go attempt = do
+        -- 1. Try the action
+        -- explicit type annotation ensures we catch ALL standard exceptions
+        result <- action
+        case result of
+            Right val -> return val
+            
+            Left err -> do
+                if attempt >= attempts
+                then do
+                       -- 1. FINAL FAILURE (Error Level)
+                       -- We explicitly state that the limit was hit and show the final error.
+                      $(logTM) ErrorS $ ls $
+                         "Retry limit reached (" <> showt attempts <> " attempts). " <>
+                         "Operation failed permanently. Last exception: " <> showt err 
+                      throwIO err 
+                else do
+                       -- 2. INTERMEDIATE FAILURE (Warning Level)
+                       -- We state which attempt failed, that we are retrying, and what the error was.
+                      $(logTM) WarningS $ ls $
+                        "Attempt " <> showt attempt <> "/" <> showt attempts <> 
+                        " failed. Retrying in 2s... Exception: " <> showt err
+                    
+                      -- Wait 2 seconds (2,000,000 microseconds)
+                      -- 'liftBase' is the MonadBaseControl equivalent of 'liftIO'
+                      liftBase $ threadDelay 2000000 
+                    
+                      go (attempt + 1)

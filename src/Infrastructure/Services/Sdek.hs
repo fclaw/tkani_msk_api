@@ -238,5 +238,4 @@ getOrdersInTransit uuid = do
   url <- fmap (T.unpack . _sdekUrl) ask
   let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
   let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
-  eOrders <- makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
-  handleWorkerApiResponse @SdekOrderInTransitResponse $(currentModule) eOrders pure
+  makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq

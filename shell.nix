@@ -4,6 +4,10 @@ let
 in
 
 let
+  # Explicitly select the GHC version we want from Nixpkgs.
+  # If Nixpkgs has 9.10.3 specifically, this grabs it. 
+  # If it only has 9.10.1, 'ghc910' usually points to that.
+  myHaskellPkgs = pkgs.haskell.packages.ghc910;
   # Wrap Stack to configure Nix integration and target the correct Stack-Nix file
   #
   # - nix: Enable Nix support
@@ -27,6 +31,8 @@ in
 pkgs.mkShell {
   buildInputs = [
     stack-wrapped
+    # We add the specific GHC here so `stack --nix` finds the right compiler
+    myHaskellPkgs.ghc
     # Other useful tools
     pkgs.git
     pkgs.docker
@@ -45,6 +51,7 @@ pkgs.mkShell {
     echo "✅ Entered Nix-based Stack development shell."
     echo "   Using stack provided by Nix. It will manage its own GHC."
     echo "   Available commands: stack, ghcid, hpack, docker, ..."
+    echo "   Using GHC: $(ghc --version)"
 
     # Docker socket setup for macOS
     DOCKER_SOCKET_PATH="/var/run/docker.sock"

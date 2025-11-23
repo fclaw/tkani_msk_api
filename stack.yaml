@@ -17,8 +17,10 @@
 #
 # snapshot: ./custom-snapshot.yaml
 # snapshot: https://example.com/snapshots/2024-01-01.yaml
-snapshot:
-  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/19.yaml
+# snapshot:
+  # url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/19.yaml
+
+resolver: lts-24.11
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -66,3 +68,12 @@ packages:
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
 
+
+# 1. Tell Stack to always use the GHC found on PATH (provided by Nix)
+# system-ghc: true
+
+# # 2. Force Nix integration
+# nix:
+#   enable: true
+#   # Point to your working shell.nix so it doesn't use the broken integration file
+#   shell-file: shell.nix

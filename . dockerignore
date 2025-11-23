@@ -1,0 +1,7 @@
+.git
+.stack-work
+result
+dist
+dist-newstyle
+# Ignore local docker setup scripts
+docker-compose.yml

@@ -13,7 +13,6 @@ import Data.Text (Text, pack)
 import App (AppM)
 import Infrastructure.Services.Overpass.Types
 import Infrastructure.Utils.Http
-import Utils (withRetry)
 
 
 showt = pack . show
@@ -38,21 +37,14 @@ fetchAllRussianMetros = do
         let params = [("data", query)]
 
         -- 2. Call API
-        eResult <- withRetry 3 $ getReq @OverpassResponse "https://overpass-api.de/api/interpreter" params Nothing
+        resp <- withRetry 3 $ getReq @OverpassResponse "https://overpass-api.de/api/interpreter" params Nothing
+        let metros = extractOverpassMetros resp
+        $(logTM) InfoS $ ls $ "Fetched " <> pack (show (length metros)) <> " stations for " <> ctName city
+                
+        -- 3. SLEEP for 1 second to be polite/safe
+        liftIO $ threadDelay 1000000 
         
-        case eResult of
-            Left err -> do
-                $(logTM) ErrorS $ ls $ "Failed to fetch metro for " <> ctName city
-                return [] -- Continue to next city even if this one failed
-                
-            Right resp -> do
-                let metros = extractOverpassMetros resp -- Helper from previous answer
-                $(logTM) InfoS $ ls $ "Fetched " <> pack (show (length metros)) <> " stations for " <> ctName city
-                
-                -- 3. SLEEP for 1 second to be polite/safe
-                liftIO $ threadDelay 1000000 
-                
-                return metros
+        return metros
 
     -- 4. Flatten [[Station]] -> [Station]
     let allStations = concat resultsOfLists
