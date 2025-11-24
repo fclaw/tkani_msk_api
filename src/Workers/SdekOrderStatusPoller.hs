@@ -19,16 +19,18 @@ import Data.Text (Text, pack)
 import Control.Exception (fromException)
 import Network.HTTP.Client (HttpException (..), HttpExceptionContent( StatusCodeException ), responseStatus)
 import Network.HTTP.Types.Status (statusCode, status400)
+import qualified Data.HashMap.Strict as HM
 
-import App (AppM, _appDBPool)
+import App (AppM, _appDBPool, render, ChatKey (..))
 import API.Types (OrderStatus (..))
-import Infrastructure.Database (getOrdersInTransit, updateOrderStatus)
+import Infrastructure.Database (getOrdersInTransit, updateOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus)
 import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError (..))
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 
 
 orderStatusPoller :: AppM ()
@@ -59,14 +61,20 @@ orderStatusPoller = forever $ do
 
 handleSdekFailure :: Text -> UUID -> HttpError -> AppM ()
 handleSdekFailure _ _ (JsonDecodeError err) = $(logTM) ErrorS $ ls $ "aeson error " <> err
-handleSdekFailure _ uuid (NetworkError ex) = 
+handleSdekFailure orderId uuid (NetworkError ex) = 
   case fromException @HttpException ex of
     Just (HttpExceptionRequest _ (StatusCodeException response body)) -> do
       let code = statusCode (responseStatus response)
       -- SCENARIO A: FATAL ERROR (400 Bad Request)
       -- SDEK says: "I don't know this UUID".
-      if code == 400 then 
+      if code == 400 then do
          $(logTM) ErrorS $ ls $ "SDEK UUID " <> pack (show uuid) <> " is invalid or deleted. Stopping tracking."
+         pool <- fmap _appDBPool ask
+         ePair <- liftIO $ markOrderAsInvalid orderId uuid pool
+         for_ ePair $ \(msgId, trackN) -> do
+          let msgData = HM.fromList [("orderNumber", orderId), ("trackingNumber", trackN)]
+          message <- render $currentModule msgData
+          void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId)
       -- SCENARIO B: SERVER ERROR (500, 502)
       -- SDEK is down. Do NOTHING to DB. Just log and wait for next poll.
       else

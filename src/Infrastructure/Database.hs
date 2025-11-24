@@ -21,6 +21,7 @@ module Infrastructure.Database
   , runTransaction
   , fetchOrderStatus
   , getOrdersInTransit
+  , markOrderAsInvalid
   , module Types
   ) where
 
@@ -88,7 +89,9 @@ getFabricStatement =
         'fAvailableLengthM', f.available_length_m,
         'fIsSold', f.is_sold,
         'fArticle', f.article,
-        'fPreCuts', pc_data.json_val
+        'fPreCuts', pc_data.json_val,
+        'fWarehouseMessageId', f.warehouse_message_id,
+        'fMediaType', f.warehouse_media_type
     ) :: jsonb
     FROM fabrics AS f
     CROSS JOIN LATERAL (
@@ -386,27 +389,30 @@ getOrdersInTransitStatement =
       sdek_request_uuid :: uuid,
       to_jsonb(CAST(status AS text)) :: jsonb
     FROM orders
-    WHERE 
+    WHERE
       sdek_request_uuid IS NOT NULL
+      AND
+      is_removed_from_delivery_provider = FALSE
       AND
       status = ANY ($1 :: text[] :: order_status[])
   |]
   where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
         mkError = error "aeson decode failed on order status"
 
-markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text ())
+markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text (Int, Text))
 markOrderAsInvalid orderId uuid pool = 
   fmap (first (pack . show)) $ 
   runTransaction pool Hasql.Write $
     (orderId, uuid) `Hasql.statement` markOrderAsInvalidStatement
 
-markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) ()
+markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int, Text)
 markOrderAsInvalidStatement =
-  rmap (const ()) 
-  [TH.rowsAffectedStatement| 
+  rmap (first fromIntegral)
+  [TH.singletonStatement| 
     UPDATE orders
     SET is_removed_from_delivery_provider = TRUE
-    WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid 
+    WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid
+    RETURNING internal_notification_message_id :: int8, sdek_tracking_number :: text
   |]
 
 -- 1. Full Text Search (Smart matching)
