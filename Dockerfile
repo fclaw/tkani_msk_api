@@ -1,31 +1,64 @@
-# Use the official Nix image
-FROM nixos/nix:latest
+# ==========================================
+# STAGE 1: BUILDER
+# ==========================================
+FROM nixos/nix:latest as builder
 
-# 1. FIX THE LOCALE/ENCODING HERE
-# We manually set these env vars. NixOS image has C.UTF-8 support built-in
-# which doesn't require downloading extra locale packages.
+# 1. ENCODING
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Configure Nix
 RUN echo "filter-syscalls = false" >> /etc/nix/nix.conf
-
 WORKDIR /app
 
-# --- LAYER 1: Dependencies ---
+# 1. SETUP & DEPENDENCIES
 COPY nix ./nix
 COPY shell.nix ./
-COPY stack.yaml package.yaml ./
+COPY stack.yaml package.yaml *.cabal ./
 
-# Force cache download
-RUN nix-shell shell.nix --run "echo '✅ Nix environment cached'"
+# Use a specific cache location for Docker layer caching
+RUN nix-shell shell.nix --run "stack build --only-dependencies --system-ghc --no-nix"
 
-# --- LAYER 2: Application Build ---
+# 2. BUILD BINARY
 COPY src ./src
 COPY app ./app
-# ... copy other dirs ...
+# COPY test ./test 
 
-# Build
-RUN nix-shell shell.nix --run "stack build --copy-bins"
+RUN nix-shell shell.nix --run "stack build --copy-bins --system-ghc --no-nix"
 
-# ... rest of file ...
+# 3. PREPARE MINIMAL RUNTIME CLOSURE (The Optimization Magic)
+#    a. Instantiate the closure.nix file
+#    b. Calculate all required paths (recursive) using nix-store -qR
+#    c. Copy them to a 'deploy' directory
+RUN mkdir -p /deploy/nix/store && \
+    nix-instantiate nix/closure.nix --add-root ./runtime-root --indirect && \
+    nix-store -r ./runtime-root --add-root ./runtime-result --indirect && \
+    cp -r $(nix-store -qR ./runtime-result) /deploy/nix/store/
+
+# ==========================================
+# STAGE 2: RUNNER
+# ==========================================
+FROM debian:stable-slim
+
+WORKDIR /app
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# 1. Install dependencies (still needed for netbase etc)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    netbase ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. Copy Nix store, App binary, and Configs...
+COPY --from=builder /deploy/nix/store /nix/store
+COPY --from=builder /root/.local/bin/tkani-api-exe /app/server
+COPY providers.yaml /app/
+COPY templates /app/templates
+COPY data /app/data
+
+# 5. ENTRYPOINT
+RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
+    echo "export LD_LIBRARY_PATH=\$(find /nix/store -name 'lib' -type d | paste -sd ':' -)" >> /app/entrypoint.sh && \
+    echo "exec ./server" >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

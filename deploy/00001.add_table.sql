@@ -45,6 +45,9 @@ CREATE TABLE fabrics (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
+    warehouse_message_id INT NOT NULL DEFAULT 0,
+    media_type TEXT NOT NULL DEFAULT 'photo',
+
     -- Constraints
     CONSTRAINT fabrics_article_unique UNIQUE (article)
 );
@@ -92,6 +95,8 @@ CREATE TABLE orders (
     -- Context & Notifications
     telegram_url TEXT,
     internal_notification_message_id BIGINT, -- Changed to BIGINT for safety
+
+    is_removed_from_delivery_provider BOOLEAN NOT NULL DEFAULT FALSE,
 
     -- Lifecycle
     status order_status NOT NULL DEFAULT 'registered',

@@ -25,29 +25,37 @@ services:
       - "5432:5432"
 
   # The API Service
-  # api:
-  #   build: . # Build the image from the Dockerfile in the current directory
-  #   container_name: tkani-api-container
-  #   restart: unless-stopped
-  #   networks:
-  #     - tkani-net
-  #   ports:
-  #     - "${API_PORT}:${API_PORT}"
-  #   environment:
-  #     # The app connects to the 'db' service name on the internal network.
-  #     DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
-  #     PORT: ${API_PORT}
-  #   depends_on:
-  #     db:
-  #       # --- THIS IS THE MAGIC ---
-  #       # This tells docker-compose: "Do NOT start the 'api' service until
-  #       # the 'db' service reports that it is 'healthy'."
-  #       condition: service_healthy
+  api:
+    build: . # Build the image from the Dockerfile in the current directory
+    container_name: tkani-api-container
+    # restart: unless-stopped
+    networks:
+      - tkani-net
+    ports:
+      - "${API_EXTERNAL_PORT}:${API_INTERNAL_PORT}"
+    environment:
+      # The app connects to the 'db' service name on the internal network.
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+      API_PORT: ${API_INTERNAL_PORT}
+      # Re-assert the SSL paths just to be safe
+      # SSL OVERRIDES
+      SSL_CERT_FILE: /container_manual_certs.crt
+      SYSTEM_CERTIFICATE_PATH: /container_manual_certs.crt
+      NIX_SSL_CERT_FILE: /container_manual_certs.crt
+    env_file: .env
+    volumes:
+      - ./.env:/app/.env  # Mounts the file (so loadEnv works)
+      - ./cacert.pem:/container_manual_certs.crt # Mount it to a clear path
+    depends_on:
+      db:
+        # --- THIS IS THE MAGIC ---
+        # This tells docker-compose: "Do NOT start the 'api' service until
+        # the 'db' service reports that it is 'healthy'."
+        condition: service_healthy
 
 networks:
   tkani-net:
-    name: tkani-net
-    external: true
+    driver: bridge
 
 volumes:
   postgres-data:

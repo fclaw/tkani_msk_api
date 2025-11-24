@@ -1,6 +1,6 @@
 #!/bin/bash
-# This script starts and prepares the PostgreSQL database container.
-# It starts the service, waits for it to be healthy, and applies migrations.
+# This script starts the full stack: Postgres DB + Haskell API.
+# It builds the app, starts DB, waits for readiness, migrates, and launches the server.
 
 # Immediately exit if any command fails.
 set -e
@@ -8,60 +8,66 @@ set -e
 # --- Configuration & Path Setup ---
 echo "⚙️  Setting up environment..."
 
-# Determine the absolute path to the project's root directory
-# (one level up from the script's directory).
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 PROJECT_ROOT="$SCRIPT_DIR"
 
-# Define paths to the necessary configuration files.
 ENV_FILE="$PROJECT_ROOT/.env"
 COMPOSE_FILE="$PROJECT_ROOT/docker-compose.yml"
+IMAGE_NAME="tkani-api:latest"
 
 # --- Pre-run Checks ---
-# Check if the .env file exists.
 if [ ! -f "$ENV_FILE" ]; then
     echo "❌ Error: Environment file not found at ${ENV_FILE}"
     exit 1
 fi
 
-# Check if the docker-compose.yml file exists.
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "❌ Error: Docker compose file not found at ${COMPOSE_FILE}"
     exit 1
 fi
 
-# Source the .env file to load variables like POSTGRES_USER and POSTGRES_DB
-# for use in this script.
+# Load env vars for the script (used for sqitch/postgres readiness check)
 export $(grep -v '^#' $ENV_FILE | xargs)
 
+# --- Step 1: Build the Haskell Docker Image ---
+# We build before starting anything to ensure we aren't running old code.
+echo ""
+echo "🐳 1. Building Haskell API Docker Image..."
+# We use the flags we optimized earlier (cache friendly)
+docker build -t "$IMAGE_NAME" "$PROJECT_ROOT"
 
-# --- The Main Workflow ---
-
-echo "🚀 Starting the PostgreSQL database service..."
-
-# Step 1: Start the database container in the background.
-# The '-f' flag explicitly points to our compose file.
-echo "1. Launching container 'tkani-db' via docker-compose..."
+# --- Step 2: Start Database ---
+echo ""
+echo "🚀 2. Launching Database..."
+# Start ONLY the database first. We don't want the API crashing while waiting for migrations.
 docker-compose -f "$COMPOSE_FILE" up -d db
 
-# Step 2: Wait for the database to become healthy.
-# This is much more reliable than a simple 'sleep'. The loop continues
-# until 'pg_isready' returns a success code (0).
-echo -n "2. Waiting for database to accept connections..."
+# --- Step 3: Wait for DB Readiness ---
+echo -n "⏳ 3. Waiting for database connection..."
 until docker-compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q; do
-  >&2 echo -n "." # Print a dot for progress
+  >&2 echo -n "."
   sleep 1
 done
-echo " [OK]" # Print a final confirmation
+echo " [OK]"
 
-# Step 3: Apply database migrations using Sqitch.
-# We run this from the project root so sqitch can find its config files.
-echo "3. Applying database migrations..."
-# The PGUSER and PGPASSWORD environment variables are automatically used by sqitch.
-# Or you can be explicit like before.
+# --- Step 4: Run Migrations ---
+echo ""
+echo "🔄 4. Applying Sqitch Migrations..."
+# Note: Sqitch runs on the HOST, connecting to localhost:5432
 export PGUSER=$POSTGRES_USER
 export PGPASSWORD=$POSTGRES_PASSWORD
-sqitch deploy "db:pg://localhost:5432/$POSTGRES_DB"
+
+# Ensure we are in root for sqitch.conf resolution
 (cd "$PROJECT_ROOT" && sqitch deploy "db:pg://localhost:5432/$POSTGRES_DB")
 
-echo "✅ Database is up, running, and migrated."
+# --- Step 5: Start API ---
+echo ""
+echo "🚀 5. Launching Backend API..."
+# Now that DB is migrated and ready, start the API service defined in compose
+docker-compose -f "$COMPOSE_FILE" up -d api
+
+echo ""
+echo "✅ Full stack is up!"
+echo "   📊 Database: Running (Port 5432)"
+echo "   💻 API:      Running (Port "$API_EXTERNAL_PORT")"
+echo "   📝 Logs:     'docker-compose logs -f api'"

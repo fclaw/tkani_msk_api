@@ -9,7 +9,7 @@
 
 module API.Types 
   (PreCut, 
-   FabricInfo (..), 
+   Fabric (..), 
    ApiError (..), 
    ApiResponse,
    FullFabric,
@@ -22,6 +22,7 @@ module API.Types
    PointLocation (..),
    OrderConfirmationDetails (..),
    SetTelegramMessageRequest (..),
+   MediaType (..),
    TrackOrder (..),
    formatStatus,
    statusToSQL,
@@ -96,26 +97,31 @@ data PreCut = PreCut
 instance ToJSON PreCut
 instance FromJSON PreCut
 
+data MediaType = PHOTO | VIDEO deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''MediaType)
 
 -- | Represents the full information for a fabric type, including any
 --   available pre-cuts. This is a combined view, not a direct table mapping.
-data FabricInfo = FabricInfo
+data Fabric = Fabric
   { -- Fabric Properties (from the 'fabrics' table)
-    fiDescription        :: Text
-  , fiTotalLengthM       :: Int
-  , fiPricePerMeter      :: Int    -- In kopecks/cents
+    fDescription        :: Text
+  , fTotalLengthM       :: Int
+  , fPricePerMeter      :: Int    -- In kopecks/cents
     -- Inventory Status
-  , fiAvailableLengthM   :: Double -- Amount available for "cut-to-order"
-  , fiArticle            :: Text
+  , fAvailableLengthM   :: Double -- Amount available for "cut-to-order"
+  , fArticle            :: Text
+  , fWarehouseMessageId :: Int
+  , fMediaType          :: MediaType
     -- List of associated pre-cuts for this fabric.
-  , fiPreCuts            :: Maybe [WithField "pcId" Int PreCut]
+  , fPreCuts            :: Maybe [WithField "pcId" Int PreCut]
   } deriving (Show, Generic)
 
 -- Automatically derive the necessary instances
-instance ToJSON FabricInfo
-instance FromJSON FabricInfo
+instance ToJSON Fabric
+instance FromJSON Fabric
 
-type FullFabric = WithField "fiIsSold" Bool (WithField "fiId" Int FabricInfo)
+type FullFabric = WithField "fIsSold" Bool (WithField "fId" Int Fabric)
 
 
 data Providers = SDEK | NONE

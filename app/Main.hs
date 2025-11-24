@@ -209,7 +209,7 @@ main = do
            , _metroStations = []
            }
       initialState <- newTVarIO state
-
+  
       -- Create the runner function that bridges AppM and IO.
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)
           runInIO = runAppM appConfig initialState

@@ -7,7 +7,7 @@ let
   # Explicitly select the GHC version we want from Nixpkgs.
   # If Nixpkgs has 9.10.3 specifically, this grabs it. 
   # If it only has 9.10.1, 'ghc910' usually points to that.
-  myHaskellPkgs = pkgs.haskell.packages.ghc910;
+  myHaskellPkgs = pkgs.haskell.packages.ghc9102;
   # Wrap Stack to configure Nix integration and target the correct Stack-Nix file
   #
   # - nix: Enable Nix support
@@ -22,13 +22,18 @@ let
         --add-flags "\
           --nix \
           --no-nix-pure \
-          --nix-shell-file=nix/stack-integration.nix \
+          --nix-shell-file=shell.nix \
         "
     '';
   };
 
 in
 pkgs.mkShell {
+    # NATIVE inputs = Build tools (must exist during compilation)
+  nativeBuildInputs = [
+    pkgs.pkg-config  # <--- CRITICAL: Finds libraries for postgres/zlib
+  ];
+   # BUILD inputs = Libraries your app links against
   buildInputs = [
     stack-wrapped
     # We add the specific GHC here so `stack --nix` finds the right compiler
@@ -38,7 +43,13 @@ pkgs.mkShell {
     pkgs.docker
     pkgs.docker-compose
     pkgs.sqitchPg
+
+    # --- System Dependencies (The ones you identified) ---
     pkgs.postgresql
+    pkgs.zlib
+    pkgs.zlib.dev    # <--- CRITICAL: Headers for zlib
+    pkgs.gmp
+    pkgs.xz          # often needed for compression
   ];
 
   # Configure the Nix path to our own `pkgs`, to ensure Stack-with-Nix uses the correct one rather than the global <nixpkgs> when looking for the right `ghc` argument to pass in `nix/stack-integration.nix`
@@ -53,6 +64,9 @@ pkgs.mkShell {
     echo "   Available commands: stack, ghcid, hpack, docker, ..."
     echo "   Using GHC: $(ghc --version)"
 
+    # Ensure the linker finds the libraries
+    export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.postgresql pkgs.zlib pkgs.gmp ]}:$LD_LIBRARY_PATH
+    
     # Docker socket setup for macOS
     DOCKER_SOCKET_PATH="/var/run/docker.sock"
     if [ -S "$DOCKER_SOCKET_PATH" ]; then

@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Infrastructure.Database
   ( getFabricInfoById
@@ -34,8 +35,8 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join)
-import Data.Tuple.Ops (initT, app2, app3)
-import Data.Int (Int64)
+import Data.Tuple.Ops (initT, app2, app3, app6, app7)
+import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import qualified Data.Vector as V
@@ -43,12 +44,13 @@ import Data.Either (fromRight)
 
 
 import API.Types 
-       ( FabricInfo(..)
+       ( Fabric(..)
        , PreCut(..)
        , FullFabric
        , SetTelegramMessageRequest (..)
        , OrderStatus
        , Providers
+       , MediaType
        , statusToSQL
        ) -- Your data types
 import TH.RecordToTuple (recordToTuple)
@@ -63,10 +65,10 @@ import Text (encodeToText)
 -- Template Haskell Magic: Generate our statement functions automatically
 --------------------------------------------------------------------------------
 
-convertFromJson :: FromJSON a => Value -> Either String a
+convertFromJson :: forall a . FromJSON a => Value -> Either String a
 convertFromJson value =
-  case fromJSON value of
-   Success fabricInfo -> Right fabricInfo
+  case fromJSON @a value of
+   Success val -> Right val
    Error msg -> Left msg
 
 
@@ -79,14 +81,14 @@ getFabricStatement =
   dimap (first fromIntegral) (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
   [TH.maybeStatement|
     SELECT jsonb_build_object(
-        'fiId', f.id,
-        'fiDescription', f.description,
-        'fiTotalLengthM', CAST(f.total_length_m AS int4),
-        'fiPricePerMeter', f.price_per_meter,
-        'fiAvailableLengthM', f.available_length_m,
-        'fiIsSold', f.is_sold,
-        'fiArticle', f.article,
-        'fiPreCuts', pc_data.json_val
+        'fId', f.id,
+        'fDescription', f.description,
+        'fTotalLengthM', CAST(f.total_length_m AS int4),
+        'fPricePerMeter', f.price_per_meter,
+        'fAvailableLengthM', f.available_length_m,
+        'fIsSold', f.is_sold,
+        'fArticle', f.article,
+        'fPreCuts', pc_data.json_val
     ) :: jsonb
     FROM fabrics AS f
     CROSS JOIN LATERAL (
@@ -129,30 +131,34 @@ getFabricInfoById fabricId threshold pool =
     runTransaction pool Hasql.Read $ 
       fmap (first pack) $ (fabricId, threshold) `Hasql.statement` getFabricStatement
 
-putNewFabricStatement :: Hasql.Statement FabricInfo Int64
+putNewFabricStatement :: Hasql.Statement Fabric Int64
 putNewFabricStatement = 
-  dimap (app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple ''FabricInfo)) fromIntegral
+  dimap (app7 (encodeToText @MediaType) . app6 fromIntegral  . app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple ''Fabric)) fromIntegral
   [TH.singletonStatement|
     INSERT INTO fabrics 
     (description, 
      total_length_m, 
      price_per_meter, 
      available_length_m,
-     article)
+     article,
+     warehouse_message_id,
+     media_type)
     VALUES (
       $1 :: text, 
       $2 :: int4, 
       $3 :: int4, 
       $4 :: float8,
-      $5 :: text)
+      $5 :: text,
+      $6 :: int4,
+      $7 :: text)
     RETURNING id :: int8
   |]
 
-putNewFabric :: FabricInfo -> Hasql.Pool -> IO (Either Text Int64)
-putNewFabric fabricInfo_ pool = 
+putNewFabric :: Fabric -> Hasql.Pool -> IO (Either Text Int64)
+putNewFabric fabric pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
-      fabricInfo_ `Hasql.statement` putNewFabricStatement
+      fabric `Hasql.statement` putNewFabricStatement
 
 
 getFinalOrderItemPriceStatement :: Hasql.Statement (Int64, Maybe Int64, Maybe Double) Double
@@ -387,3 +393,44 @@ getOrdersInTransitStatement =
   |]
   where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
         mkError = error "aeson decode failed on order status"
+
+markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text ())
+markOrderAsInvalid orderId uuid pool = 
+  fmap (first (pack . show)) $ 
+  runTransaction pool Hasql.Write $
+    (orderId, uuid) `Hasql.statement` markOrderAsInvalidStatement
+
+markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) ()
+markOrderAsInvalidStatement =
+  rmap (const ()) 
+  [TH.rowsAffectedStatement| 
+    UPDATE orders
+    SET is_removed_from_delivery_provider = TRUE
+    WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid 
+  |]
+
+-- 1. Full Text Search (Smart matching)
+-- 2. Fallback for strict matches (e.g. searching partial Article ID)
+-- Rank results by relevance (Name match > Description match)
+searchFabricsStatement :: Hasql.Statement (Text, Int32) (Either Text (V.Vector (Int, MediaType)))
+searchFabricsStatement =
+  rmap (first pack . sequence . V.map convert)
+  [TH.vectorStatement|
+    SELECT
+        warehouse_message_id :: int4, 
+        to_jsonb(warehouse_media_type) :: jsonb
+    FROM fabrics
+    WHERE 
+        in_stock = TRUE 
+        AND in_stock = TRUE
+        AND (
+            search_vector @@ websearch_to_tsquery('russian', $1 :: text)
+            OR
+            article ILIKE ('%' || $1 :: text || '%')
+        )
+    ORDER BY 
+        ts_rank(search_vector, websearch_to_tsquery('russian', $1 :: text)) DESC,
+        created_at DESC
+    LIMIT $2 :: int4
+  |]
+  where convert (wmi, mt) = fmap (fromIntegral wmi,) $ convertFromJson mt

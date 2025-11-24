@@ -24,7 +24,7 @@ data Routes route = Routes
     _putNewFabric 
        :: route 
        :- "fabric" 
-       :> ReqBody '[JSON] FabricInfo 
+       :> ReqBody '[JSON] Fabric 
        :> Post '[JSON] (ApiResponse Int64)
   , _getFabricInfo 
        :: route 
