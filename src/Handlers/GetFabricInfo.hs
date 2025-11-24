@@ -33,7 +33,6 @@ handler fabricId = do
   -- 3. Run the database query inside our AppM monad using liftIO
   $(logTM) DebugS $ "Querying database for fabric ID: " <> fromString (show fabricId)
   eResp <- liftIO $ getFabricInfoById fabricId thresholdMetres pool
-  liftIO $ print eResp
   return $ case eResp of 
     Right (Right fabricInfo) -> Right fabricInfo
     Right (Left err) -> Left $ (mkError err) { errorCode = "404" }

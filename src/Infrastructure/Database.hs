@@ -82,16 +82,16 @@ getFabricStatement =
   dimap (first fromIntegral) (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
   [TH.maybeStatement|
     SELECT jsonb_build_object(
-        'fId', f.id,
-        'fDescription', f.description,
-        'fTotalLengthM', CAST(f.total_length_m AS int4),
-        'fPricePerMeter', f.price_per_meter,
-        'fAvailableLengthM', f.available_length_m,
-        'fIsSold', f.is_sold,
-        'fArticle', f.article,
-        'fPreCuts', pc_data.json_val,
-        'fWarehouseMessageId', f.warehouse_message_id,
-        'fMediaType', f.warehouse_media_type
+        'id', f.id,
+        'description', f.description,
+        'total_length_m', CAST(f.total_length_m AS int4),
+        'price_per_meter', f.price_per_meter,
+        'available_length_m', f.available_length_m,
+        'is_sold', f.is_sold,
+        'article', f.article,
+        'pre_cuts', pc_data.json_val,
+        'warehouse_message_id', f.warehouse_message_id,
+        'media_type', to_jsonb(f.warehouse_media_type) :: jsonb
     ) :: jsonb
     FROM fabrics AS f
     CROSS JOIN LATERAL (

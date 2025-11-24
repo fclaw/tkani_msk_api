@@ -99,7 +99,7 @@ instance FromJSON PreCut
 
 data MediaType = PHOTO | VIDEO deriving (Show, Generic)
 
-$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''MediaType)
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''MediaType)
 
 -- | Represents the full information for a fabric type, including any
 --   available pre-cuts. This is a combined view, not a direct table mapping.
@@ -117,11 +117,10 @@ data Fabric = Fabric
   , fPreCuts            :: Maybe [WithField "pcId" Int PreCut]
   } deriving (Show, Generic)
 
--- Automatically derive the necessary instances
-instance ToJSON Fabric
-instance FromJSON Fabric
 
-type FullFabric = WithField "fIsSold" Bool (WithField "fId" Int Fabric)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "f" } ''Fabric)
+
+type FullFabric = WithField "is_sold" Bool (WithField "id" Int Fabric)
 
 
 data Providers = SDEK | NONE
