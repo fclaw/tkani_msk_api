@@ -53,24 +53,20 @@ jobs:
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          # Stop execution if any error occurs
           set -e
           
           echo "Login to Google Cloud Registry on server..."
-          # Ensure the server has permissions (we fixed this in previous steps)
           gcloud auth configure-docker europe-west10-docker.pkg.dev --quiet
           
           echo "Pulling new image..."
           docker pull europe-west10-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tkani-api/tkani-api:latest
           
           echo "Restarting application..."
-          # We cd into the folder to find docker-compose.yml
-          # CHANGE 'tkani' TO YOUR ACTUAL FOLDER NAME ON SERVER IF DIFFERENT
           cd tkani-api 
           
-          # Force pull the latest image referenced in compose
-          docker-compose down
-          docker-compose up -d
+          # FIX: Use 'docker compose' (space), not 'docker-compose' (dash)
+          docker compose down
+          docker compose up -d
           
-          # Prune old images to save disk space on your small server
+          # Prune old images
           docker image prune -f
