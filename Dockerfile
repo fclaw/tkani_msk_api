@@ -57,9 +57,16 @@ COPY providers.yaml /app/
 COPY templates /app/templates
 COPY data /app/data
 
-# 5. ENTRYPOINT
+# 5. THE FIX: Update Entrypoint to look in System Folders too
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
-    echo "export LD_LIBRARY_PATH=\$(find /nix/store -name 'lib' -type d | paste -sd ':' -)" >> /app/entrypoint.sh && \
+    # We find Nix libs, BUT we also append :/usr/lib/x86_64-linux-gnu:/usr/lib
+    # This tells the app: "Check Nix folders first, but if missing, check Debian folders!"
+    echo "export LD_LIBRARY_PATH=\$(find /nix/store -name 'lib' -type d | paste -sd ':' -):/usr/lib/x86_64-linux-gnu:/usr/lib" >> /app/entrypoint.sh && \
+    # Export SSL vars (keep this)
+    echo "export SSL_CERT_FILE=/app/cacert.pem" >> /app/entrypoint.sh && \
+    echo "export SYSTEM_CERTIFICATE_PATH=/app/cacert.pem" >> /app/entrypoint.sh && \
+    echo "export NIX_SSL_CERT_FILE=/app/cacert.pem" >> /app/entrypoint.sh && \
+    # Run
     echo "exec ./server" >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
 
