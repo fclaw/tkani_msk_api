@@ -19,6 +19,7 @@ pkgs.symlinkJoin {
     pkgs.cacert
     # --- ADD THIS (Crucial for DNS) ---
     pkgs.glibc
+    # Force rebuild comment: Adding Libelf explicitly
     pkgs.libelf
     
     # REMOVED: pkgs.bash (Debian has this)
