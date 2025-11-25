@@ -7,7 +7,7 @@ import Domain.Warehouse.Types
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Char as C
-import Data.Validation (Validation(..))
+import Data.Validation (Validation(..), toEither)
 import GHC.Generics (Generic)
 import Text.Read (readMaybe)
 import Control.Applicative (liftA2)

@@ -57,7 +57,7 @@ jobs:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "docker-compose.yml,cacert.pem"
+        source: "docker-compose.yml,cacert.pem,start.sh,sqitch.conf,sqitch.plan,deploy,revert,verify"
         target: "/home/${{ secrets.SSH_USERNAME }}/tkani-api"
 
     # 5. SSH into Server and Restart
@@ -73,15 +73,9 @@ jobs:
           echo "Login to Google Cloud Registry on server..."
           gcloud auth configure-docker europe-west10-docker.pkg.dev --quiet
           
-          echo "Pulling new image..."
-          docker pull europe-west10-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tkani-api/tkani-api:latest
+          # Go to folder
+          cd tkani-api
           
-          echo "Restarting application..."
-          cd tkani-api 
-          
-          # FIX: Use 'docker compose' (space), not 'docker-compose' (dash)
-          docker compose down
-          docker compose up -d
-          
-          # Prune old images
-          docker image prune -f
+          # Make script executable (just in case) and run it
+          chmod +x start.sh
+          ./start.sh
