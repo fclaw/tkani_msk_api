@@ -6,7 +6,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Char as C
 import Text.Read (readMaybe)
-import Domain.Admin.Types
+import Domain.Warehouse.Types
 
 --------------------------------------------------------------------------------
 -- TEMPLATES

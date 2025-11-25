@@ -26,6 +26,8 @@ library
       API.WithField
       Concurrency
       Domain.Inventory
+      Domain.Warehouse.Parser
+      Domain.Warehouse.Types
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo
       Handlers.GetProviders
