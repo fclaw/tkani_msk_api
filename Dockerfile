@@ -53,7 +53,12 @@ RUN apt-get update && \
     libelf1 \
     libdw1 \
     libnuma1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# 2. DOWNLOAD THE CERTIFICATE (Self-contained)
+# We download it directly to a system path. No local file needed.
+RUN curl -k -o /app/cacert.pem https://curl.se/ca/cacert.pem
 
 # 4. Copy Nix store, App binary, and Configs...
 COPY --from=builder /deploy/nix/store /nix/store

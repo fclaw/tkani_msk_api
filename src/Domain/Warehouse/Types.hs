@@ -19,7 +19,9 @@ data ParsedFabric = ParsedFabric
 
   -- Updated Error Type: Carries the FabricType context
 data AdminParseError
-  = StructureError FabricType Text  -- e.g. "Not enough lines"
-  | ValueError FabricType Text      -- e.g. "Price is text, not number"
-  | UnknownType                     -- Couldn't detect #tags
+  = MissingArticle
+  | MissingPrice
+  | InvalidPriceFormat Text
+  | MissingName
+  | InvalidLengthFormat Text
   deriving (Show, Eq)

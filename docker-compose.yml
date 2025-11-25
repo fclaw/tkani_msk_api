@@ -40,13 +40,14 @@ services:
       API_PORT: ${API_INTERNAL_PORT}
       # Re-assert the SSL paths just to be safe
       # SSL OVERRIDES
-      SSL_CERT_FILE: /container_manual_certs.crt
-      SYSTEM_CERTIFICATE_PATH: /container_manual_certs.crt
-      NIX_SSL_CERT_FILE: /container_manual_certs.crt
+      # Point to the MOUNTED path inside the container
+      SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
+      SYSTEM_CERTIFICATE_PATH: /etc/ssl/certs/mounted-bundle.crt
+      NIX_SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
     env_file: .env
     volumes:
       - ./.env:/app/.env  # Mounts the file (so loadEnv works)
-      - ./cacert.pem:/container_manual_certs.crt # Mount it to a clear path
+      - ./cacert.pem:/etc/ssl/certs/mounted-bundle.crt:ro
     depends_on:
       db:
         # --- THIS IS THE MAGIC ---
