@@ -93,9 +93,8 @@ data PreCut = PreCut
   , pcInStock :: Bool    -- Corresponds to 'in_stock'
   } deriving (Show, Generic)
 
--- Automatically derive the necessary instances
-instance ToJSON PreCut
-instance FromJSON PreCut
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pc" } ''PreCut)
 
 data MediaType = PHOTO | VIDEO deriving (Show, Generic)
 
@@ -114,7 +113,7 @@ data Fabric = Fabric
   , fWarehouseMessageId :: Int
   , fMediaType          :: MediaType
     -- List of associated pre-cuts for this fabric.
-  , fPreCuts            :: Maybe [WithField "pcId" Int PreCut]
+  , fPreCuts            :: Maybe [WithField "id" Int PreCut]
   } deriving (Show, Generic)
 
 
