@@ -1,12 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Domain.Warehouse.Parser (parseIngestRequest, renderParseError) where
+module Domain.Warehouse.Parser (parseIngestRequest) where
 
+import Text.Read (readMaybe)
+import Domain.Warehouse.Types
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Char as C
+import Data.Validation (Validation(..))
+import GHC.Generics (Generic)
 import Text.Read (readMaybe)
-import Domain.Warehouse.Types
+import Control.Applicative (liftA2)
 
 --------------------------------------------------------------------------------
 -- TEMPLATES
@@ -31,116 +35,103 @@ preCutTemplate =
     "`Description...`\n" <>
     "`#отрез`"
 
---------------------------------------------------------------------------------
--- MAIN LOGIC
---------------------------------------------------------------------------------
 
-parseIngestRequest :: Text -> Either AdminParseError ParsedFabric
-parseIngestRequest rawText = do
-    let lines = filter (not . T.null) $ map T.strip $ T.lines rawText
-    
-    if null lines then Left UnknownType else Right ()
+-- | Helper: Validates a reading function
+-- If read succeeds: Success a
+-- If read fails: Failure [Error]
+validateRead :: (Text -> Maybe a) -> (Text -> AdminParseError) -> Text -> Validation [AdminParseError] a
+validateRead reader errorBuilder raw =
+    case reader raw of
+        Just x  -> Success x
+        Nothing -> Failure [errorBuilder raw]
 
-    -- 1. Detect Type
-    let isPreCut = "#отрез" `T.isInfixOf` T.toLower rawText 
+-- | 1. Main Entry Point
+-- Note: We return 'Validation [Error] Result' instead of 'Either Error Result'
+parseIngestRequest :: Text -> Validation [AdminParseError] ParsedFabric
+parseIngestRequest rawText = 
+    let 
+        cleanLines = filter (not . T.null) $ map T.strip $ T.lines rawText
+        isPreCut = "#отрез" `T.isInfixOf` T.toLower rawText 
                 || "#лоскут" `T.isInfixOf` T.toLower rawText
-
-    -- 2. Route
-    if isPreCut
-        then parsePreCut lines
-        else parseRoll lines
-
---------------------------------------------------------------------------------
--- PARSERS (Now throwing Typed Errors)
---------------------------------------------------------------------------------
-
-parsePreCut :: [Text] -> Either AdminParseError ParsedFabric
-parsePreCut lines = do
-    if length lines < 4 
-        then Left (StructureError PreCut "Need at least 4 lines") 
-        else Right ()
-
-    let name     = lines !! 0
-    let lenRow   = lines !! 1
-    let priceRow = lines !! 2
-    let article  = lines !! 3
-    let desc     = T.unlines (drop 4 lines)
-
-    len <- case extractDouble lenRow of
-        Just d  -> Right d
-        Nothing -> Left (ValueError PreCut $ "Line 2 (Length) invalid: " <> lenRow)
-
-    price <- case extractInt priceRow of
-        Just p  -> Right p
-        Nothing -> Left (ValueError PreCut $ "Line 3 (Price) invalid: " <> priceRow)
-
-    Right $ ParsedFabric name price article desc PreCut (Just len)
-
-parseRoll :: [Text] -> Either AdminParseError ParsedFabric
-parseRoll lines = do
-    if length lines < 3
-        then Left (StructureError Roll "Need at least 3 lines") 
-        else Right ()
-
-    let name     = lines !! 0
-    let priceRow = lines !! 1
-    let article  = lines !! 2
-    let desc     = T.unlines (drop 3 lines)
-
-    price <- case extractInt priceRow of
-        Just p  -> Right p
-        Nothing -> Left (ValueError Roll $ "Line 2 (Price) invalid: " <> priceRow)
-
-    Right $ ParsedFabric name price article desc Roll Nothing
+    in 
+    -- We still need a "Fail Fast" check for line counts, 
+    -- because we can't validate Line 4 if it doesn't exist.
+    if isPreCut 
+        then validatePreCut cleanLines 
+        else validateRoll cleanLines
 
 --------------------------------------------------------------------------------
--- HELPERS (Extraction)
+-- PARSERS (Using Applicative Style)
 --------------------------------------------------------------------------------
--- Same extractInt/extractDouble as before...
-extractInt :: Text -> Maybe Int
-extractInt t = readMaybe (T.unpack $ T.filter C.isDigit t)
 
-extractDouble :: Text -> Maybe Double
-extractDouble t = 
-    let norm = T.replace "," "." t
+validatePreCut :: [Text] -> Validation [AdminParseError] ParsedFabric
+validatePreCut lines 
+    | length lines < 4 = Failure [NotEnoughLines PreCut (length lines)]
+    | otherwise = 
+        ParsedFabric 
+            <$> pure (lines !! 0)                      -- Name (Line 1) - Always Valid
+            <*> validatePrice (lines !! 2)             -- Price (Line 3)
+            <*> pure (lines !! 3)                      -- Article (Line 4)
+            <*> pure (T.unlines (drop 4 lines))        -- Description
+            <*> pure PreCut
+            <*> (Just <$> validateLength (lines !! 1)) -- Length (Line 2)
+
+validateRoll :: [Text] -> Validation [AdminParseError] ParsedFabric
+validateRoll lines 
+    | length lines < 3 = Failure [NotEnoughLines Roll (length lines)]
+    | otherwise =
+        ParsedFabric
+            <$> pure (lines !! 0)                 -- Name
+            <*> validatePrice (lines !! 1)        -- Price
+            <*> pure (lines !! 2)                 -- Article
+            <*> pure (T.unlines (drop 3 lines))   -- Description
+            <*> pure Roll
+            <*> pure Nothing                      -- Length is Nothing
+
+--------------------------------------------------------------------------------
+-- FIELD VALIDATORS
+--------------------------------------------------------------------------------
+
+validatePrice :: Text -> Validation [AdminParseError] Int
+validatePrice raw = 
+    let digits = T.filter C.isDigit raw
+    in validateRead (readMaybe . T.unpack) InvalidPrice digits
+
+validateLength :: Text -> Validation [AdminParseError] Double
+validateLength raw = 
+    let norm = T.replace "," "." raw
         clean = T.filter (\c -> C.isDigit c || c == '.') norm
-    in readMaybe (T.unpack clean)
+    in validateRead (readMaybe . T.unpack) InvalidLength clean
 
 --------------------------------------------------------------------------------
--- ERROR RENDERING (The View Layer)
+-- ERROR RENDERING (Handling Multiple Errors)
 --------------------------------------------------------------------------------
 
-renderParseError :: AdminParseError -> Text
-renderParseError err = case err of
-    
-    -- Case: We couldn't even determine what the user wanted
-    UnknownType -> 
-        "❌ **Error: Empty Post or Unknown Type**\n\n" <>
-        "Please use hashtags `#отрез` or ensure format is correct.\n\n" <>
-        rollTemplate <> "\n\n" <> preCutTemplate
+-- | Converts a list of errors into a single message string for Telegram
+renderValidationErrors :: [AdminParseError] -> Text
+renderValidationErrors errors = 
+    let 
+        -- Helper to detect context (PreCut vs Roll) from the errors to show right template
+        isPreCutError = any checkType errors
+        checkType (InvalidLength _) = True
+        checkType (NotEnoughLines PreCut _) = True
+        checkType _ = False
 
-    -- Case: Pre-Cut Logic Failed
-    ValueError PreCut msg -> 
-        "❌ **Parsing Error (Pre-Cut)**\n" <>
-        "_" <> msg <> "_\n\n" <>
-        "👇 **Expected Format:**\n" <>
-        preCutTemplate
+        header = "❌ **Parsing Errors Found:**\n"
+        
+        -- Render each error as a bullet point
+        errorText = T.intercalate "\n" $ map ("• " <>) $ map simpleErrorText errors
+        
+        template = if isPreCutError then preCutTemplate else rollTemplate
+    in 
+    header <> errorText <> "\n\n👇 **Expected Format:**\n" <> template
 
-    StructureError PreCut msg -> 
-        "❌ **Layout Error (Pre-Cut)**\n" <>
-        "_" <> msg <> "_\n\n" <>
-        "👇 **Expected Format:**\n" <>
-        preCutTemplate
-
-    -- Case: Roll Logic Failed
-    ValueError Roll msg -> 
-        "❌ **Parsing Error (Roll)**\n" <>
-        "_" <> msg <> "_\n\n" <>
-        "👇 **Expected Format:**\n" <>
-        rollTemplate
-
-    StructureError Roll msg -> 
-        "❌ **Layout Error (Roll)**\n" <>
-        "_" <> msg <> "_\n\n" <>
-        "👇 **Expected Format:**\n" <>
-        rollTemplate
+-- Simpler render for individual list items
+simpleErrorText :: AdminParseError -> Text
+simpleErrorText err = case err of
+    NotEnoughLines Roll count -> "Need at least 3 lines. Missing lines (Found " <> T.pack (show count) <> ")"
+    NotEnoughLines PreCut count -> "Need at least 4 lines for #отрез. Missing lines (Found " <> T.pack (show count) <> ")"
+    InvalidPrice t       -> "Invalid Price number: " <> t
+    InvalidLength t      -> "Invalid Length number: " <> t
+    MissingTag           -> "Missing Type Tag"
+    _                    -> "Unknown formatting error"

@@ -17,11 +17,17 @@ data ParsedFabric = ParsedFabric
   , pfLength      :: Maybe Double -- Only for PreCut
   } deriving (Show, Eq)
 
-  -- Updated Error Type: Carries the FabricType context
 data AdminParseError
-  = MissingArticle
-  | MissingPrice
-  | InvalidPriceFormat Text
-  | MissingName
-  | InvalidLengthFormat Text
+  -- | Structure Errors (e.g. Empty post or too few lines)
+  = NotEnoughLines FabricType Int 
+  
+  -- | Value Errors (e.g. "Text" instead of "123")
+  | InvalidPrice Text    -- Stores the bad text
+  | InvalidLength Text   -- Stores the bad text
+  
+  -- | Type Logic
+  | MissingTag
+
+  -- | General fallback if regex/other checks fail
+  | UnknownFormat
   deriving (Show, Eq)

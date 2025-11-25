@@ -13,8 +13,9 @@ import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (first)
 
 import App (AppM, _appDBPool)
-import API.Types (ApiResponse, RawIngestRequest, mkError)
+import API.Types (ApiResponse, RawIngestRequest (rawText), mkError)
 import Infrastructure.Database (putNewFabric)
+import Domain.Warehouse.Parser (parseIngestRequest)
 
 
 
@@ -24,6 +25,9 @@ handler :: RawIngestRequest -> AppM (ApiResponse Int64)
 handler rawIngestReq = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new fabric"
+  let parsedText = parseIngestRequest $ rawText rawIngestReq
+  liftIO $ print parsedText
+
   -- 2. Get the database connection pool from our AppState environment
   -- dbPool <- fmap _appDBPool ask
   -- 3. Run the database query inside our AppM monad using liftIO

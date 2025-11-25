@@ -94,6 +94,7 @@ library
     , unix
     , unordered-containers
     , uuid
+    , validation
     , vector
     , wai
     , warp

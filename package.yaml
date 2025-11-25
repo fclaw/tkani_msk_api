@@ -61,6 +61,7 @@ library:
     - transformers-base
     - uuid
     - lifted-base
+    - validation
 
 executables:
   tkani-api-exe:
