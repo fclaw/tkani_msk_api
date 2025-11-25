@@ -225,7 +225,7 @@ data OrderStatus
   | Delivered           -- Customer has received the package.
   | Completed
   | Cancelled
-  deriving (Show, Eq, Read, Bounded, Enum, Generic)
+  deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
 

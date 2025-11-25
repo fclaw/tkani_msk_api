@@ -11,37 +11,78 @@ module Infrastructure.Services.Sdek.Types.OrderInTransit
   ) where
 
 import Data.Aeson
+import Data.Aeson.Types (parseMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
 -- ===============================================================
--- 1. Shipment Status (Physical Location)
---    Located in JSON: entity.cdek_status
+-- 1. Shipment Status
+--    Covers CDEK API v2 Webhook Statuses
 -- ===============================================================
 data SdekShipmentState
-  = StatusCreated           -- "CREATED": Papers signed, box not given yet.
-  | StatusAccepted          -- "ACCEPTED": Courier/Warehouse has the box.
-  | StatusSent              -- "SENT": In transit between cities.
-  | StatusArrived           -- "ARRIVED": At destination city.
-  | StatusReadyForPickup    -- "READY_FOR_PICKUP": Waiting at PVZ.
-  | StatusDelivered         -- "DELIVERED": Customer has it.
-  | StatusNotDelivered      -- "NOT_DELIVERED": Issue/Return.
-  | StatusUnknown Text      -- Future-proof for new SDEK statuses.
+  -- Initial Stages
+  = StatusCreated                           -- "CREATED"
+  | StatusRemoved                           -- "REMOVED"
+  
+  -- Processing at Sender City
+  | StatusAccepted                          -- "ACCEPTED"
+  | StatusReceivedAtShipmentWarehouse       -- "RECEIVED_AT_SHIPMENT_WAREHOUSE"
+  | StatusReadyForShipmentInSenderCity      -- "READY_FOR_SHIPMENT_IN_SENDER_CITY"
+  | StatusTakenByTransporterFromSenderCity  -- "TAKEN_BY_TRANSPORTER_FROM_SENDER_CITY"
+  
+  -- Transit (The "Black Box" between cities)
+  | StatusSentToTransitCity                 -- "SENT_TO_TRANSIT_CITY"
+  | StatusAcceptedInTransitCity             -- "ACCEPTED_IN_TRANSIT_CITY"
+  | StatusSentToRecipientCity               -- "SENT_TO_RECIPIENT_CITY"
+  
+  -- Destination City / Last Mile
+  | StatusAcceptedAtDeliveryWarehouse       -- "ACCEPTED_AT_DELIVERY_WAREHOUSE"
+  | StatusAcceptedAtPickUpPoint             -- "ACCEPTED_AT_PICK_UP_POINT" (Arrived at PVZ)
+  | StatusReadyForPickup                    -- "READY_FOR_PICKUP" (Client got SMS)
+  | StatusTakenByCourier                    -- "TAKEN_BY_COURIER" (Out for delivery)
+  
+  -- Final States
+  | StatusDelivered                         -- "DELIVERED"
+  | StatusNotDelivered                      -- "NOT_DELIVERED" (Failed)
+  | StatusReturned                          -- "RETURNED" (Sent back to sender)
+  
+  -- Fallback
+  | StatusUnknown Text
   deriving (Show, Eq, Generic)
 
--- Custom Parser to handle string mapping
+-- Custom Parser
 instance FromJSON SdekShipmentState where
   parseJSON = withText "SdekShipmentState" $ \t -> return $ case t of
-    "CREATED"          -> StatusCreated
-    "ACCEPTED"         -> StatusAccepted
-    "SENT"             -> StatusSent
-    "ARRIVED"          -> StatusArrived
-    "READY_FOR_PICKUP" -> StatusReadyForPickup
-    "DELIVERED"        -> StatusDelivered
-    "NOT_DELIVERED"    -> StatusNotDelivered
-    other              -> StatusUnknown other
+    -- Initial
+    "CREATED"                                 -> StatusCreated
+    "REMOVED"                                 -> StatusRemoved
+    
+    -- Sender Side
+    "ACCEPTED"                                -> StatusAccepted
+    "RECEIVED_AT_SHIPMENT_WAREHOUSE"          -> StatusReceivedAtShipmentWarehouse
+    "READY_FOR_SHIPMENT_IN_SENDER_CITY"       -> StatusReadyForShipmentInSenderCity
+    "TAKEN_BY_TRANSPORTER_FROM_SENDER_CITY"  -> StatusTakenByTransporterFromSenderCity
+    
+    -- Transit
+    "SENT_TO_TRANSIT_CITY"                    -> StatusSentToTransitCity
+    "ACCEPTED_IN_TRANSIT_CITY"                -> StatusAcceptedInTransitCity
+    "SENT_TO_RECIPIENT_CITY"                  -> StatusSentToRecipientCity
+    
+    -- Destination Side
+    "ACCEPTED_AT_DELIVERY_WAREHOUSE"          -> StatusAcceptedAtDeliveryWarehouse
+    "ACCEPTED_AT_PICK_UP_POINT"               -> StatusAcceptedAtPickUpPoint
+    "READY_FOR_PICKUP"                        -> StatusReadyForPickup
+    "TAKEN_BY_COURIER"                        -> StatusTakenByCourier
+    
+    -- Final
+    "DELIVERED"                               -> StatusDelivered
+    "NOT_DELIVERED"                           -> StatusNotDelivered
+    "RETURNED"                                -> StatusReturned
+    
+    -- Fallback
+    other                                     -> StatusUnknown other
 
 -- ===============================================================
 -- 2. The Entity (Order Details)
@@ -53,11 +94,27 @@ data SdekEntity = SdekEntity
   , entityCdekStatus :: Maybe SdekShipmentState   -- The Physical Status
   } deriving (Show, Eq, Generic)
 
+
 instance FromJSON SdekEntity where
-  parseJSON = withObject "SdekEntity" $ \v -> SdekEntity
-    <$> v .: "uuid"
-    <*> v .:? "cdek_number" -- Optional, might not exist immediately on creation
-    <*> v .:? "cdek_status"
+  parseJSON = withObject "SdekEntity" $ \v -> do
+    u   <- v .: "uuid"
+    num <- v .:? "cdek_number"
+    
+    -- 1. Extract the list of status objects (default to empty list if missing)
+    statusList <- v .:? "statuses" .!= []
+    
+    -- 2. Determine the current status
+    --    The API returns the list sorted by date DESC (Newest is index 0).
+    --    We take the head of the list.
+    let currentStatus = case statusList of
+                          [] -> Nothing
+                          (newestObj : _) -> 
+                            -- 3. Extract the "code" field from the object 
+                            --    and parse it into SdekShipmentState
+                            parseMaybe (\o -> o .: "code") newestObj
+
+    return $ SdekEntity u num currentStatus
+
 
 -- ===============================================================
 -- 3. Request State (API Validation Logic)

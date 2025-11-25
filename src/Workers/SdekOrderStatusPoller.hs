@@ -48,12 +48,24 @@ orderStatusPoller = forever $ do
         (\ex -> handleSdekFailure orderId uuid ex)
         (\res ->
             for_ (respEntity res) $ \entity -> do
+              liftIO $ print entity
               let newStatus = mapSdekToInternal (entityCdekStatus entity) status
               if newStatus == status
               then 
-                $(logTM) InfoS $ ls $ "order " <> orderId <> " has not changed status, status: " <> pack (show status)
+                $(logTM) InfoS $ ls $ 
+                  "order " <> 
+                  orderId <> 
+                  " has not changed status, status: " <> 
+                  pack (show status) <> 
+                  ", SDEK status: " <> 
+                  pack (show (entityCdekStatus entity))
               else 
-                $(logTM) InfoS $ ls $ "order " <> orderId <> " has changed status from " <> pack (show status) <> " to " <> pack (show newStatus)
+                $(logTM) InfoS $ ls $ 
+                  "order " <> 
+                  orderId <> 
+                  " has changed status from " <> 
+                  pack (show status) <> " to " <> 
+                  pack (show newStatus)
               void $ liftIO $ updateOrderStatus orderId newStatus pool)
 
   when(isLeft eUuids) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eUuids
@@ -85,30 +97,62 @@ handleSdekFailure orderId uuid (NetworkError ex) =
   -- | Logic to map SDEK state (which might be missing) to your Internal Status.
 --   We treat 'Nothing' (missing field) exactly like 'StatusCreated'.
 mapSdekToInternal :: Maybe SdekShipmentState -> OrderStatus -> OrderStatus
-mapSdekToInternal mbSdekSt currentInternalStatus = 
-  case mbSdekSt of
-    -- 1. If field is missing, nothing has happened physically.
-    -- Keep the status exactly as it is in the DB (whether Registered or Paid).
-    Nothing -> currentInternalStatus
+-- 1. If CDEK data is missing, keep existing status
+mapSdekToInternal Nothing current = current
 
-    -- 2. If we have a status, process it
-    Just sdekSt -> case sdekSt of
-        
-        -- Paperwork created, but courier doesn't have the box.
-        -- Do not move to 'OnRoute'. Keep current state (e.g. Paid).
-        StatusCreated -> currentInternalStatus 
+-- 2. If the order is already final (Completed/Cancelled), ignore webhooks 
+--    (prevents accidental reopening if delayed webhooks arrive)
+mapSdekToInternal (Just _) current 
+  | current == Completed || current == Cancelled = current
 
-        -- The Courier has scanned the box!
-        StatusAccepted -> OnRoute 
-        StatusSent     -> OnRoute
-        StatusArrived  -> OnRoute -- At sorting center/dest city
+mapSdekToInternal (Just sdekState) current = case sdekState of
+  -- ==========================================================
+  -- A. PRE-TRANSIT
+  -- ==========================================================
+  StatusCreated -> 
+    -- Don't downgrade if already Paid or moving
+    if current > Registered then current else Registered
 
-        -- The box is at the Pickup Point (PVZ) waiting for client
-        StatusReadyForPickup -> Delivered 
+  StatusRemoved -> 
+    Cancelled
 
-        -- The Client has the box
-        StatusDelivered -> Completed 
+  -- ==========================================================
+  -- B. ACTIVE TRANSIT (Any physical movement = OnRoute)
+  -- ==========================================================
+  -- Sender City Processing
+  StatusAccepted                          -> OnRoute
+  StatusReceivedAtShipmentWarehouse       -> OnRoute
+  StatusReadyForShipmentInSenderCity      -> OnRoute
+  StatusTakenByTransporterFromSenderCity  -> OnRoute
+  
+  -- Between Cities
+  StatusSentToTransitCity                 -> OnRoute
+  StatusAcceptedInTransitCity             -> OnRoute
+  StatusSentToRecipientCity               -> OnRoute
+  
+  -- Destination City / Last Mile
+  StatusAcceptedAtDeliveryWarehouse       -> OnRoute
+  StatusAcceptedAtPickUpPoint             -> OnRoute
+  StatusReadyForPickup                    -> OnRoute
+  StatusTakenByCourier                    -> OnRoute
 
-        -- Exceptions
-        StatusNotDelivered -> Cancelled -- Or handle manually
-        StatusUnknown _    -> currentInternalStatus
+  -- ==========================================================
+  -- C. FINAL STAGES
+  -- ==========================================================
+  StatusDelivered -> 
+    Delivered
+
+  StatusNotDelivered -> 
+    -- Failed delivery attempt usually means it's still with the courier 
+    -- trying again, or waiting at warehouse. Keep OnRoute.
+    OnRoute 
+
+  StatusReturned -> 
+    -- Return to sender essentially cancels the sale.
+    Cancelled
+
+  -- ==========================================================
+  -- D. UNKNOWN / FALLBACK
+  -- ==========================================================
+  StatusUnknown _ -> 
+    current
