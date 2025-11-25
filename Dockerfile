@@ -42,10 +42,12 @@ FROM debian:stable-slim
 WORKDIR /app
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# 1. Install dependencies (still needed for netbase etc)
+
+# 1. Install dependencies
+# Added 'libelf1' here. This solves the missing shared object error.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    netbase ca-certificates \
+    netbase ca-certificates libelf1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 4. Copy Nix store, App binary, and Configs...

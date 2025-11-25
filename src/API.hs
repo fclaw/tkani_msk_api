@@ -22,8 +22,8 @@ import API.WithField (WithField)
 data Routes route = Routes
   {
     _putNewFabric 
-       :: route 
-       :- "fabric" 
+       :: route
+       :- "fabric"
        :> ReqBody '[JSON] Fabric 
        :> Post '[JSON] (ApiResponse Int64)
   , _getFabricInfo 
@@ -59,7 +59,7 @@ data Routes route = Routes
        :- "order"
        :> "track"
        :> QueryParam "query" Text
-       :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
+       :> Get '[JSON] (ApiResponse (Maybe TrackOrder))    
   } deriving (Generic)
 
 
