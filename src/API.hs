@@ -23,8 +23,10 @@ data Routes route = Routes
   {
     _putNewFabric 
        :: route
-       :- "fabric"
-       :> ReqBody '[JSON] Fabric 
+       :- "warehouse"
+       :> "fabric"
+       :> "ingest"
+       :> ReqBody '[JSON] RawIngestRequest
        :> Post '[JSON] (ApiResponse Int64)
   , _getFabricInfo 
        :: route 

@@ -37,7 +37,7 @@ RUN mkdir -p /deploy/nix/store && \
 # ==========================================
 # STAGE 2: RUNNER
 # ==========================================
-FROM ubuntu:latest
+FROM debian:stable-slim
 
 WORKDIR /app
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
@@ -45,9 +45,14 @@ ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # 1. Install dependencies
 # Added 'libelf1' here. This solves the missing shared object error.
+# INSTALL MISSING SYSTEM LIBRARIES
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    netbase ca-certificates libelf1 \
+    netbase \
+    ca-certificates \
+    libelf1 \
+    libdw1 \
+    libnuma1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 4. Copy Nix store, App binary, and Configs...

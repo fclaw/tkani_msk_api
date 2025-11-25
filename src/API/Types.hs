@@ -7,26 +7,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module API.Types 
-  (PreCut, 
-   Fabric (..), 
-   ApiError (..), 
-   ApiResponse,
-   FullFabric,
-   Providers (..),
-   DeliveryPoint (..),
-   ProviderInfo (..),
-   OrderRequest (..),
-   OrderStatus (..),
-   DisplayInfo (..),
-   PointLocation (..),
-   OrderConfirmationDetails (..),
-   SetTelegramMessageRequest (..),
-   MediaType (..),
-   TrackOrder (..),
-   formatStatus,
-   statusToSQL,
-   mkError) where
+module API.Types  where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
 import Data.Text (Text)
@@ -83,6 +64,28 @@ instance {-# OVERLAPPING #-} ToJSON a => ToJSON (ApiResponse a) where
 
 mkError e = (ApiError mempty e)
 
+-- | 1. Supported Media Types
+data MediaType = 
+       PHOTO 
+     | VIDEO 
+     | DOCUMENT 
+     | UNKNOWN 
+     deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''MediaType)
+
+-- | 2. The Ingest Payload (Matches your Python Dict keys exactly)
+data RawIngestRequest = 
+     RawIngestRequest
+    { rawText         :: Text        -- ^ The caption
+    , rawMsgId        :: Int64       -- ^ Warehouse Message ID
+    , rawMediaGroupId :: Maybe Text  -- ^ Album ID (null/None if single)
+    , rawMediaType    :: MediaType   -- ^ Parsed via the Enum above
+    , rawFileId       :: Maybe Text  -- ^ The file ID
+    } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)
+
 
 -- | Represents a specific, fixed-length pre-cut of a fabric.
 --   This corresponds to the 'pre_cuts' table in the database.
@@ -96,9 +99,6 @@ data PreCut = PreCut
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pc" } ''PreCut)
 
-data MediaType = PHOTO | VIDEO deriving (Show, Generic)
-
-$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''MediaType)
 
 -- | Represents the full information for a fabric type, including any
 --   available pre-cuts. This is a combined view, not a direct table mapping.
