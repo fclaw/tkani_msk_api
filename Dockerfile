@@ -37,7 +37,7 @@ RUN mkdir -p /deploy/nix/store && \
 # ==========================================
 # STAGE 2: RUNNER
 # ==========================================
-FROM debian:stable-slim
+FROM ubuntu:latest
 
 WORKDIR /app
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
