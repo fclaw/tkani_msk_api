@@ -18,7 +18,8 @@ pkgs.symlinkJoin {
     pkgs.iana-etc
     pkgs.cacert
     # --- ADD THIS (Crucial for DNS) ---
-    pkgs.glibc 
+    pkgs.glibc
+    pkgs.libelf
     
     # REMOVED: pkgs.bash (Debian has this)
     
