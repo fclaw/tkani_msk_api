@@ -46,6 +46,10 @@ jobs:
 
     steps:
 
+    # --- ADD THIS STEP ---
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
     # NEW STEP: Copy docker-compose.yml to server
     - name: Copy files to server
       uses: appleboy/scp-action@v0.1.7
