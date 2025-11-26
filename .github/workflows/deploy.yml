@@ -57,7 +57,7 @@ jobs:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "docker-compose.yml,cacert.pem,start.sh,sqitch.conf,sqitch.plan,deploy,revert,verify"
+        source: "docker-compose.yml,cacert.pem,server_start.sh,sqitch.conf,sqitch.plan,deploy,revert,verify"
         target: "/home/${{ secrets.SSH_USERNAME }}/tkani-api"
 
     # 5. SSH into Server and Restart
@@ -77,5 +77,5 @@ jobs:
           cd tkani-api
           
           # Make script executable (just in case) and run it
-          chmod +x start.sh
-          ./start.sh
+          chmod +x server_start.sh
+          ./server_start.sh

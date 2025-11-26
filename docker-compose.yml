@@ -24,6 +24,23 @@ services:
     ports: # Optional: expose the port for local tools like sqitch
       - "5432:5432"
 
+  # ... db and api services ...
+
+  migrator:
+    image: sqitch/sqitch:latest
+    networks:
+      - tkani-net
+    env_file: .env
+    # Mount the current folder (containing sqitch.conf and deploy/) into the container
+    volumes:
+      - ./:/root
+    # The command to run
+    command: deploy db:pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+
+
   # The API Service
   api:
     image: europe-west10-docker.pkg.dev/tkani-479219/tkani-api/tkani-api:latest
