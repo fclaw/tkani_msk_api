@@ -31,10 +31,10 @@ export $(grep -v '^#' $ENV_FILE | xargs)
 
 # --- Step 1: Build the Haskell Docker Image ---
 # We build before starting anything to ensure we aren't running old code.
-echo ""
-echo "🐳 1. Building Haskell API Docker Image..."
-# We use the flags we optimized earlier (cache friendly)
-docker build -t "$IMAGE_NAME" "$PROJECT_ROOT"
+# echo ""
+# echo "🐳 1. Building Haskell API Docker Image..."
+# # We use the flags we optimized earlier (cache friendly)
+# docker build -t "$IMAGE_NAME" "$PROJECT_ROOT"
 
 # --- Step 2: Start Database ---
 echo ""
@@ -60,14 +60,14 @@ export PGPASSWORD=$POSTGRES_PASSWORD
 # Ensure we are in root for sqitch.conf resolution
 (cd "$PROJECT_ROOT" && sqitch deploy "db:pg://localhost:5432/$POSTGRES_DB")
 
-# --- Step 5: Start API ---
-echo ""
-echo "🚀 5. Launching Backend API..."
-# Now that DB is migrated and ready, start the API service defined in compose
-docker-compose -f "$COMPOSE_FILE" up -d api
+# # --- Step 5: Start API ---
+# echo ""
+# echo "🚀 5. Launching Backend API..."
+# # Now that DB is migrated and ready, start the API service defined in compose
+# docker-compose -f "$COMPOSE_FILE" up -d api
 
 echo ""
 echo "✅ Full stack is up!"
 echo "   📊 Database: Running (Port 5432)"
-echo "   💻 API:      Running (Port "$API_EXTERNAL_PORT")"
+# echo "   💻 API:      Running (Port "$API_EXTERNAL_PORT")"
 echo "   📝 Logs:     'docker-compose logs -f api'"

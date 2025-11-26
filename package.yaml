@@ -62,6 +62,7 @@ library:
     - uuid
     - lifted-base
     - validation
+    - regex-tdfa
 
 executables:
   tkani-api-exe:

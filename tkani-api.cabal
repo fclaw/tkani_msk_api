@@ -36,6 +36,7 @@ library
       Handlers.SetTelegramMessage
       Handlers.TrackOrder
       Infrastructure.Database
+      Infrastructure.Database.Fabric
       Infrastructure.Database.Types
       Infrastructure.Services.Overpass.Geo
       Infrastructure.Services.Overpass.Types
@@ -82,6 +83,7 @@ library
     , mtl
     , profunctors
     , random
+    , regex-tdfa
     , servant
     , servant-server
     , stm

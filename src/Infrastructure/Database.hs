@@ -30,7 +30,7 @@ import qualified Hasql.Pool as Hasql
 import qualified Hasql.Transaction as Hasql
 import qualified Hasql.Transaction.Sessions as Hasql
 import qualified Hasql.Statement as Hasql
-import qualified Hasql.TH as TH
+import qualified Hasql.TH as Hasql
 import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
@@ -44,22 +44,14 @@ import qualified Data.Vector as V
 import Data.Either (fromRight)
 
 
-import API.Types 
-       ( Fabric(..)
-       , PreCut(..)
-       , FullFabric
-       , SetTelegramMessageRequest (..)
-       , OrderStatus
-       , Providers
-       , MediaType
-       , statusToSQL
-       ) -- Your data types
+import API.Types -- Your data types
 import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
 import Infrastructure.Database.Types as Types
 import Text (encodeToText)
-
+import Infrastructure.Database.Fabric (ingestFabricDB)
+import qualified Domain.Warehouse.Types as DWT
 
 
 --------------------------------------------------------------------------------
@@ -73,6 +65,7 @@ convertFromJson value =
    Error msg -> Left msg
 
 
+runTransaction :: Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> IO (Either Hasql.UsageError a)
 runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable mode
 
 -- | Statement to fetch a single fabric row by its ID.
@@ -80,10 +73,10 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 getFabricStatement :: Hasql.Statement (Int64, Double) (Either String FullFabric)
 getFabricStatement =
   dimap (first fromIntegral) (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
-  [TH.maybeStatement|
+  [Hasql.maybeStatement|
     SELECT jsonb_build_object(
         'id', f.id,
-        'description', f.description,
+        'description', f.name,
         'total_length_m', CAST(f.total_length_m AS int4),
         'price_per_meter', f.price_per_meter,
         'available_length_m', f.available_length_m,
@@ -98,10 +91,10 @@ getFabricStatement =
         SELECT coalesce(
             jsonb_agg(
                 jsonb_build_object(
-                    'pcId', pc.id,
-                    'pcLengthM', pc.length_m,
-                    'pcPriceRub', pc.price_rub,
-                    'pcInStock', pc.in_stock
+                    'id', pc.id,
+                    'length_m', pc.length_m,
+                    'price_rub', pc.price_rub,
+                    'in_stock', pc.in_stock
                 )
             ),
             '[]'::jsonb
@@ -119,8 +112,17 @@ getFabricStatement =
         OR 
         
         (
+          f.total_length_m > 0 AND
           f.available_length_m > 0.1 AND
           f.available_length_m < $2 :: float8 AND
+          jsonb_array_length(pc_data.json_val) > 0
+        )
+
+        OR
+
+        (
+          cast(f.available_length_m as int4) = 0 AND
+          cast(f.total_length_m as int4) = 0 AND
           jsonb_array_length(pc_data.json_val) > 0
         )
       )
@@ -134,39 +136,17 @@ getFabricInfoById fabricId threshold pool =
     runTransaction pool Hasql.Read $ 
       fmap (first pack) $ (fabricId, threshold) `Hasql.statement` getFabricStatement
 
-putNewFabricStatement :: Hasql.Statement Fabric Int64
-putNewFabricStatement = 
-  dimap (app7 (encodeToText @MediaType) . app6 fromIntegral  . app2 fromIntegral . app3 fromIntegral . initT . $(recordToTuple ''Fabric)) fromIntegral
-  [TH.singletonStatement|
-    INSERT INTO fabrics 
-    (description, 
-     total_length_m, 
-     price_per_meter, 
-     available_length_m,
-     article,
-     warehouse_message_id,
-     media_type)
-    VALUES (
-      $1 :: text, 
-      $2 :: int4, 
-      $3 :: int4, 
-      $4 :: float8,
-      $5 :: text,
-      $6 :: int4,
-      $7 :: text)
-    RETURNING id :: int8
-  |]
 
-putNewFabric :: Fabric -> Hasql.Pool -> IO (Either Text Int64)
-putNewFabric fabric pool = 
+putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text Int64)
+putNewFabric fabric req pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
-      fabric `Hasql.statement` putNewFabricStatement
+    runTransaction pool Hasql.Write $
+      ingestFabricDB fabric req
 
 
 getFinalOrderItemPriceStatement :: Hasql.Statement (Int64, Maybe Int64, Maybe Double) Double
 getFinalOrderItemPriceStatement = 
-  [TH.singletonStatement|
+  [Hasql.singletonStatement|
     SELECT
       (CASE
         WHEN $2 :: int8? is not null THEN
@@ -199,7 +179,7 @@ getFinalOrderItemPrice fabricId preCutId lengthM pool =
 placeNewOrderStatement :: Hasql.Statement Order ()
 placeNewOrderStatement = 
   dimap $(recordToTuple ''Order) (const ())
-  [TH.singletonStatement|
+  [Hasql.singletonStatement|
     WITH inserted_order AS (
       INSERT INTO orders (
        id,
@@ -257,7 +237,7 @@ placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasq
 setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
 setTelegramMessageStatement =
    lmap (app3 fromIntegral . $(recordToTuple ''SetTelegramMessageRequest))
-   [TH.rowsAffectedStatement| 
+   [Hasql.rowsAffectedStatement| 
      INSERT INTO order_telegram_bindings 
      (order_id, chat_id, message_id) 
      VALUES ($1 :: text, $2 :: int8, $3 :: int4) |]
@@ -266,7 +246,7 @@ setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> IO (Either Text
 setTelegramMessage message pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
 
 getChatDetailsStatement :: Hasql.Statement Text (Maybe Int)
-getChatDetailsStatement = rmap (fmap fromIntegral) [TH.maybeStatement| SELECT message_id :: int FROM order_telegram_bindings WHERE order_id = $1 :: text |]
+getChatDetailsStatement = rmap (fmap fromIntegral) [Hasql.maybeStatement| SELECT message_id :: int FROM order_telegram_bindings WHERE order_id = $1 :: text |]
 
 getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
@@ -275,7 +255,7 @@ getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool H
 updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int
 updateOrderStatusStatement = 
   dimap (second statusToSQL) fromIntegral
-  [TH.singletonStatement| 
+  [Hasql.singletonStatement| 
     UPDATE orders 
     SET status = CAST($2 :: text AS order_status) 
     WHERE id = $1 :: text 
@@ -296,7 +276,7 @@ updateOrderStatus orderId status pool = fmap (first (pack . show)) $ runTransact
 adjustFabric :: Hasql.Statement (Text, Double) (Result AdjustFabric)
 adjustFabric =
   rmap (fromJSON @AdjustFabric)
-  [TH.singletonStatement|
+  [Hasql.singletonStatement|
     WITH order_info AS (
         SELECT
             ofb.fabric_id, 
@@ -360,7 +340,7 @@ fetchOrderStatus query pool = fmap (join . first (pack . show)) $ runTransaction
 fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
 fetchOrderStatusStatement =
   rmap (sequence . fmap (first pack) . fmap convert)
-  [TH.maybeStatement|
+  [Hasql.maybeStatement|
     SELECT 
       to_jsonb(CAST(status AS text)) :: jsonb,
       id :: text,
@@ -383,7 +363,7 @@ getOrdersInTransit statuses pool = fmap (first (pack . show)) $ runTransaction p
 getOrdersInTransitStatement :: Hasql.Statement [OrderStatus] [(Text, UUID, OrderStatus)]
 getOrdersInTransitStatement =
   dimap (V.fromList . map encodeToText) (fromRight mkError . sequence . map convert . V.toList) $
-  [TH.vectorStatement|
+  [Hasql.vectorStatement|
     SELECT
       id :: text,
       sdek_request_uuid :: uuid,
@@ -408,7 +388,7 @@ markOrderAsInvalid orderId uuid pool =
 markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int, Text)
 markOrderAsInvalidStatement =
   rmap (first fromIntegral)
-  [TH.singletonStatement| 
+  [Hasql.singletonStatement| 
     UPDATE orders
     SET is_removed_from_delivery_provider = TRUE
     WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid
@@ -421,7 +401,7 @@ markOrderAsInvalidStatement =
 searchFabricsStatement :: Hasql.Statement (Text, Int32) (Either Text (V.Vector (Int, MediaType)))
 searchFabricsStatement =
   rmap (first pack . sequence . V.map convert)
-  [TH.vectorStatement|
+  [Hasql.vectorStatement|
     SELECT
         warehouse_message_id :: int4, 
         to_jsonb(warehouse_media_type) :: jsonb

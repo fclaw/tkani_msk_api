@@ -8,26 +8,23 @@ import GHC.Generics (Generic)
 data FabricType = Roll | PreCut
   deriving (Show, Eq, Generic)
 
-data ParsedFabric = ParsedFabric
-  { pfName        :: Text
-  , pfPrice       :: Int
-  , pfArticle     :: Text
-  , pfDescription :: Text -- Includes composition and hashtags
-  , pfType        :: FabricType
-  , pfLength      :: Maybe Double -- Only for PreCut
+data Fabric = Fabric
+  { fName        :: Text
+  , fPrice       :: Int -- either for per meter or total price
+  , fArticle     :: Text
+  , fDescription :: Text -- Includes composition and hashtags
+  , fType        :: FabricType
+  , fLength      :: Maybe Double -- Only for PreCut
   } deriving (Show, Eq)
 
 data AdminParseError
   -- | Structure Errors (e.g. Empty post or too few lines)
-  = NotEnoughLines FabricType Int 
+  = StructureError FabricType Text 
   
   -- | Value Errors (e.g. "Text" instead of "123")
   | InvalidPrice Text    -- Stores the bad text
   | InvalidLength Text   -- Stores the bad text
-  
-  -- | Type Logic
-  | MissingTag
-
-  -- | General fallback if regex/other checks fail
-  | UnknownFormat
+  | ValueError FabricType Text
+  | AmbiguousFormat Text -- New constructor for generic failures
+  | InvalidArticleFormat Text -- New constructor
   deriving (Show, Eq)
