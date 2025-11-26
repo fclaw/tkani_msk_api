@@ -40,7 +40,7 @@ ingestFabricDB fabric req = do
       rawMediaGroupId req,             -- $7 warehouse_media_group_id
       encodeToText (rawMediaType req), -- $8 warehouse_media_type
       if fType fabric == Roll 
-      then Length fabric
+      then fLength fabric
       else 0.0                         -- $9 Length (Only for rolls)                
     ) upsertFabricQuery
 
