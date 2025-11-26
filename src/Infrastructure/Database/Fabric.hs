@@ -11,7 +11,7 @@ import  API.Types (RawIngestRequest (..))
 import Data.Int (Int32, Int64)
 import Data.Text (Text)
 import Data.Maybe (fromMaybe)
-import Control.Monad (void)
+import Control.Monad (void, when)
 
 import Text (encodeToText)
 
@@ -31,30 +31,31 @@ ingestFabricDB fabric req = do
   -- If New: Insert it.
   parentId <- 
     Hasql.statement (
-      fArticle fabric,                -- $1 Article (Unique Key)
-      fName fabric,                   -- $2 Name
+      fArticle fabric,                 -- $1 Article (Unique Key)
+      fName fabric,                    -- $2 Name
       fmap fromIntegral finalPricePerMeter :: Maybe Int32, -- $3 Price/m
-      fDescription fabric,            -- $4 Desc
-      rawMsgId req,                   -- $5 warehouse_msg_id
-      rawFileId req,                  -- $6 warehouse_file_id (Thumb)
-      rawMediaGroupId req,            -- $7 warehouse_media_group_id
-      encodeToText (rawMediaType req) -- $8 warehouse_media_type
+      fDescription fabric,             -- $4 Desc
+      rawMsgId req,                    -- $5 warehouse_msg_id
+      rawFileId req,                   -- $6 warehouse_file_id (Thumb)
+      rawMediaGroupId req,             -- $7 warehouse_media_group_id
+      encodeToText (rawMediaType req), -- $8 warehouse_media_type
+      if fType fabric == Roll 
+      then Length fabric
+      else 0.0                         -- $9 Length (Only for rolls)                
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
-  case fType fabric of
-    Roll -> return ()
-    PreCut -> do
-      let len = fromMaybe undefined (fLength fabric)
-      let total = fPrice fabric
-      void $ Hasql.statement (parentId, len, fromIntegral total :: Int32) insertPreCutQuery
+  when(fType fabric == PreCut) $ do
+    let len = fLength fabric
+    let total = fPrice fabric
+    void $ Hasql.statement (parentId, len, fromIntegral total :: Int32) insertPreCutQuery
   return parentId
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text) Int64
+upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double) Int64
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -65,7 +66,9 @@ upsertFabricQuery =
       warehouse_message_id,
       image_url,
       media_group_id,
-      media_type
+      media_type,
+      total_length_m,
+      available_length_m
     ) 
     VALUES (
       $1 :: text, 
@@ -75,7 +78,9 @@ upsertFabricQuery =
       $5 :: int8,
       $6 :: text?,
       $7 :: text?,
-      $8 :: text
+      $8 :: text,
+      $9 :: float8,
+      $9 :: float8
     )
     ON CONFLICT (article) DO UPDATE 
     SET 

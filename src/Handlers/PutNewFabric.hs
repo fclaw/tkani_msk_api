@@ -18,7 +18,7 @@ import Data.Either (isLeft)
 import App (AppM, _appDBPool)
 import API.Types (ApiResponse, RawIngestRequest (rawText), mkError)
 import Infrastructure.Database (putNewFabric)
-import Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors)
+import Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither)
 
 
 -- The handler function itself is the same as before.
@@ -27,7 +27,7 @@ handler :: RawIngestRequest -> AppM (ApiResponse Int64)
 handler rawIngestReq = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new fabric"
-  let eFabric = parseIngestRequest $ rawText rawIngestReq
+  let eFabric = toEither $ parseIngestRequest $ rawText rawIngestReq
   res <- for eFabric $ \fabric -> do
     -- 2. Get the database connection pool from our AppState environment
     pool <- fmap _appDBPool ask

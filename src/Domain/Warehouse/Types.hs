@@ -1,30 +1,24 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Domain.Warehouse.Types where
 
 import Data.Text (Text)
-import GHC.Generics (Generic)
 
-data FabricType = Roll | PreCut
-  deriving (Show, Eq, Generic)
-
+-- The target data structure we are parsing into.
 data Fabric = Fabric
   { fName        :: Text
-  , fPrice       :: Int -- either for per meter or total price
+  , fPrice       :: Int
   , fArticle     :: Text
-  , fDescription :: Text -- Includes composition and hashtags
+  , fDescription :: Text
   , fType        :: FabricType
-  , fLength      :: Maybe Double -- Only for PreCut
+  , fLength      :: Double
   } deriving (Show, Eq)
 
+data FabricType = Roll | PreCut
+  deriving (Show, Eq)
+
+-- All possible validation errors.
 data AdminParseError
-  -- | Structure Errors (e.g. Empty post or too few lines)
-  = StructureError FabricType Text 
-  
-  -- | Value Errors (e.g. "Text" instead of "123")
-  | InvalidPrice Text    -- Stores the bad text
-  | InvalidLength Text   -- Stores the bad text
+  = StructureError FabricType Text
   | ValueError FabricType Text
-  | AmbiguousFormat Text -- New constructor for generic failures
-  | InvalidArticleFormat Text -- New constructor
+  | InvalidArticleFormat Text
+  | AmbiguousFormat Text -- For when we can't even guess
   deriving (Show, Eq)
