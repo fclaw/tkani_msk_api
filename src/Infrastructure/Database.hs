@@ -84,7 +84,7 @@ getFabricStatement =
         'article', f.article,
         'pre_cuts', pc_data.json_val,
         'warehouse_message_id', f.warehouse_message_id,
-        'media_type', to_jsonb(f.warehouse_media_type) :: jsonb
+        'media_type', to_jsonb(f.media_type) :: jsonb
     ) :: jsonb
     FROM fabrics AS f
     CROSS JOIN LATERAL (
