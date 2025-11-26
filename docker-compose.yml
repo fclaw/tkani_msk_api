@@ -31,9 +31,11 @@ services:
     networks:
       - tkani-net
     env_file: .env
-    # Mount the current folder (containing sqitch.conf and deploy/) into the container
+    # 1. Force the container to work in this specific folder
+    working_dir: /src
+    # 2. Mount the current host folder (./) to that folder (/src)
     volumes:
-      - ./:/root
+      - ./:/src
     # The command to run
     command: deploy db:pg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
