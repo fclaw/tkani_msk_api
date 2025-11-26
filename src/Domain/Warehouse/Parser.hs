@@ -11,6 +11,7 @@ import Text.Regex.TDFA ((=~)) -- For article validation
 
 -- Assuming these types are defined in Domain.Warehouse.Types
 import Domain.Warehouse.Types
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 --------------------------------------------------------------------------------
 -- TEMPLATES (For Error Messages - Updated)
@@ -19,21 +20,21 @@ import Domain.Warehouse.Types
 rollTemplate :: Text
 rollTemplate =
     "📄 **Standard Roll Format**\n" <>
-    "`Name \\(Line 1\\)`\n" <>
-    "`Длина рулона: 50 м \\(Line 2\\)`\n" <>
-    "`Цена: 1500 руб/метр \\(Line 3\\)`\n" <>
-    "`ART\\-123 \\(Line 4\\)`\n" <>
-    "`Description\\.\\.\\.`"
+    "`Name (Line 1)`\n" <>
+    "`Длина рулона: 50 м (Line 2)`\n" <>
+    "`Цена: 1500 руб/метр (Line 3)`\n" <>
+    "`ART-123 (Line 4)`\n" <>
+    "`Description...`"
 
 preCutTemplate :: Text
 preCutTemplate =
-    "✂️ **Pre\\-Cut Format \\(must include \\#отрез\\)**\n" <>
-    "`Name \\(Line 1\\)`\n" <>
-    "`Длина: 1\\.2 м \\(Line 2\\)`\n" <>
-    "`Цена: 2400 руб \\(Line 3\\)`\n" <>
-    "`ART\\-123 \\(Line 4\\)`\n" <>
-    "`Description\\.\\.\\.`\n" <>
-    "`\\#отрез`"
+    "✂️ **Pre-Cut Format (must include #отрез)**\n" <>
+    "`Name (Line 1)`\n" <>
+    "`Длина: 1.2 м (Line 2)`\n" <>
+    "`Цена: 2400 руб (Line 3)`\n" <>
+    "`ART-123 (Line 4)`\n" <>
+    "`Description...`\n" <>
+    "`#отрез`"
 
 --------------------------------------------------------------------------------
 -- MAIN LOGIC
@@ -102,8 +103,8 @@ validatePrice fType raw =
   if "Цена" `T.isPrefixOf` raw
   then case extractInt raw of
          Just p  -> Success p
-         Nothing -> Failure [ValueError fType ("Could not parse number from price line: " <> raw)]
-  else Failure [ValueError fType ("Price line must start with 'Цена:'\\. Got: " <> raw)]
+         Nothing -> Failure [ValueError fType ("Could not parse number from price line: " <> escapeMarkdownV2 raw)]
+  else Failure [ValueError fType ("Price line must start with 'Цена:'\\. Got: " <> escapeMarkdownV2 raw)]
 
 -- | Validates a length string, ensuring it starts with "Длина:".
 validateLength :: FabricType -> Text -> Validation [AdminParseError] Double
@@ -111,8 +112,8 @@ validateLength fType raw =
   if "Длина" `T.isPrefixOf` raw
  then case extractDouble raw of
         Just l  -> Success l
-        Nothing -> Failure [ValueError fType ("Could not parse number from length line: " <> raw)]
-  else Failure [ValueError fType ("Length line must start with 'Длина:'\\. Got: " <> raw)]
+        Nothing -> Failure [ValueError fType ("Could not parse number from length line: " <> escapeMarkdownV2 raw)]
+  else Failure [ValueError fType ("Length line must start with 'Длина:'\\. Got: " <> escapeMarkdownV2 raw)]
 
 -- | Helper to extract an Int from a string like "Цена: 1 500 руб".
 extractInt :: Text -> Maybe Int
@@ -140,15 +141,15 @@ renderValidationErrors errors =
 
      header = "❌ **Parsing Errors Found:**\n\n"
      errorText = T.intercalate "\n" $ map ("• " <>) $ map simpleErrorText errors
-     template = if isPreCutError then preCutTemplate else rollTemplate
+     template = escapeMarkdownV2 $ if isPreCutError then preCutTemplate else rollTemplate
      hint = if not isPreCutError
-            then "\n\n_PS: If this was a pre\\-cut, please add the `\\#отрез` tag\\._"
+            then escapeMarkdownV2 "\n\n_PS: If this was a pre-cut, please add the `#отрез` tag._"
             else mempty
   in header <> errorText <> "\n\n👇 **Expected Format:**\n" <> template <> hint
 
 -- | Renders a single error from the list into a simple string.
 simpleErrorText :: AdminParseError -> Text
-simpleErrorText (StructureError _ msg) = msg
-simpleErrorText (ValueError _ msg) = msg
-simpleErrorText (AmbiguousFormat msg) = msg
-simpleErrorText (InvalidArticleFormat t) = "Invalid Article format: `" <> t <> "`\\. Use only A\\-Z, 0\\-9, and dashes \\(\\-\\)\\."
+simpleErrorText (StructureError _ msg) = escapeMarkdownV2 msg
+simpleErrorText (ValueError _ msg) = escapeMarkdownV2 msg
+simpleErrorText (AmbiguousFormat msg) = escapeMarkdownV2 msg
+simpleErrorText (InvalidArticleFormat t) = escapeMarkdownV2 $ "Invalid Article format: `" <> t <> "`. Use only A-Z, 0-9, and dashes (-)."
