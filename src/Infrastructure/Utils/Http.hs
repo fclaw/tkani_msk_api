@@ -88,15 +88,22 @@ classifyException ex =
       case httpException of
         HttpExceptionRequest _ content ->
           case content of
-            ConnectionTimeout      -> RetryableNetworkError content
-            ConnectionFailure _    -> RetryableNetworkError content
-            ResponseTimeout        -> RetryableNetworkError content
-            ConnectionClosed       -> RetryableNetworkError content
+            ConnectionTimeout      -> 
+              RetryableNetworkError content
+            ConnectionFailure _    -> 
+              RetryableNetworkError content
+            ResponseTimeout        -> 
+              RetryableNetworkError content
+            ConnectionClosed       -> 
+              RetryableNetworkError content
             StatusCodeException response body ->
               let status = statusCode (responseStatus response)
               in 
-                if status == 401 then AuthTokenExpired
-                else if status >= 500 && status < 600 then RetryableServerError status
+                if status == 401 then 
+                  AuthTokenExpired
+                else if status >= 500 && 
+                        status < 600 then 
+                  RetryableServerError status
                 else ClientError status
             _ -> UnclassifiedException ex
         InvalidUrlException _ _ -> UnclassifiedException ex
@@ -230,17 +237,24 @@ withRetry :: forall m a . (MonadBaseControl IO m, KatipContext m) => Int -> m (E
 withRetry attempts action = go 1
   where
     go attempt = do
-        result <- action
-        case result of
-            Right val -> return val
-            Left err -> do
-                if attempt >= attempts
-                then do
-                      $(logTM) ErrorS $ ls $
-                         "Retry limit reached (" <> showt attempts <> " attempts). Exception: " <> showt err 
-                      throwIO err 
-                else do
-                      $(logTM) WarningS $ ls $
-                        "Attempt " <> showt attempt <> "/" <> showt attempts <> " failed. Retrying... "
-                      liftBase $ threadDelay 2000000 
-                      go (attempt + 1)
+      result <- action
+      case result of
+        Right val -> return val
+        Left err -> do
+          if attempt >= attempts
+          then do
+            $(logTM) ErrorS $ ls $
+              "Retry limit reached (" <> 
+              showt attempts <> 
+              " attempts). Exception: " <> 
+              showt err 
+            throwIO err 
+          else do
+            $(logTM) WarningS $ ls $
+              "Attempt " <> 
+              showt attempt <> 
+              "/" <> 
+              showt attempts <> 
+              " failed. Retrying... "
+            liftBase $ threadDelay 2000000 
+            go (attempt + 1)
