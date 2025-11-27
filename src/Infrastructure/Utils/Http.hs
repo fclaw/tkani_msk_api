@@ -55,8 +55,6 @@ where
 
 import           Control.Lens           ((^.), (.~), (&))
 import           Data.Aeson             (FromJSON, ToJSON, eitherDecode, encode)
-import qualified Data.Aeson             as A
-import           Data.Aeson.KeyMap      as A
 import qualified Data.ByteString.Lazy   as LBS
 import           Data.Text              (Text)
 import qualified Data.Text              as T
@@ -137,11 +135,13 @@ classifyException ex =
 
             StatusCodeException response body ->
               let status = statusCode (responseStatus response)
-              in if status == 401 && isSdekTokenExpiredError (LBS.fromStrict body)
-                   then AuthTokenExpired
-                   else if status >= 500 && status < 600
-                          then RetryableServerError status
-                          else ClientError status
+              in 
+                if status == 401
+                then AuthTokenExpired
+                else
+                  if status >= 500 && status < 600
+                  then RetryableServerError status
+                  else ClientError status
 
             -- Catch all OTHER HttpExceptionContent constructors and treat them
             -- as unclassified. This makes our function total and future-proof.
@@ -153,33 +153,7 @@ classifyException ex =
 
     -- If fromException returns Nothing, it wasn't an HttpException at all.
     Nothing -> UnclassifiedException ex
-
--- NEW HELPER FUNCTION
--- This helper inspects the body of a 401 response to see if it's the specific
--- "token expired" error from SDEK.
-isSdekTokenExpiredError :: LBS.ByteString -> Bool
-isSdekTokenExpiredError body =
-  case A.decode body :: Maybe A.Value of
-    Just (A.Object obj) ->
-      -- This is a bit verbose, but it's a safe way to traverse the JSON.
-      -- You could use lenses for a more concise version.
-      case A.lookup "requests" obj of
-        Just (A.Array requests) ->
-          not (V.null requests) && -- Check if array is not empty
-          case V.head requests of
-            A.Object reqObj ->
-              case A.lookup "errors" reqObj of
-                Just (A.Array errors) ->
-                  not (V.null errors) &&
-                  case V.head errors of
-                    A.Object errObj -> 
-                      A.lookup "code" errObj == 
-                      Just (A.String "v2_token_expired")
-                    _ -> False
-                _ -> False
-            _ -> False
-        _ -> False
-    _ -> False
+-- ===================================================================
 
 -- file: src/Infrastructure/Http.hs
 

@@ -78,6 +78,7 @@ data SdekToken = SdekToken
  , sdekExpiresIn   :: Int
  , sdekScope       :: Text
  , sdekJti         :: Text
+ , sdekObtainedAt  :: UTCTime
  } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sdek" } ''SdekToken)

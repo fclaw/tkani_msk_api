@@ -29,6 +29,8 @@ import           Control.Concurrent.STM
 import           Control.Concurrent.Async (async, link)
 import           Control.Concurrent (threadDelay)
 
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+
 -- | Data type to hold our Telegram configuration.
 data TelegramConfig = TelegramConfig
   { tcToken   :: T.Text -- ^ Your bot token
@@ -93,7 +95,7 @@ telegramBatchWorker tlsManager config queue = forever $ do
     
     -- 2. Try to grab up to 4 more messages currently in the queue (Batch size = 5)
     --    This is non-blocking. If queue is empty, 'rest' is [].
-    rest <- atomically $ flushUpTo 1 queue
+    rest <- atomically $ flushUpTo 3 queue
 
     let batch = firstMsg : rest
     
@@ -104,7 +106,7 @@ telegramBatchWorker tlsManager config queue = forever $ do
     -- OR use a different separator (like emojis) that doesn't need escaping.
     
     -- Option A: Escaped Dashes (Valid MarkdownV2)
-    let separator = "\n\n\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\\-\n\n"
+    let separator = escapeMarkdownV2 "\n\n--------------------\n\n"
     
     -- Option B: Emojis (Easier to read, no escaping needed) -> Recommended
     -- let separator = "\n\n〰️〰️〰️〰️〰️〰️〰️〰️\n\n"

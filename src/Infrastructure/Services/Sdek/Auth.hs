@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-} 
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 module Infrastructure.Services.Sdek.Auth (getValidSdekToken) where
 
-import App
 import Control.Monad.State (get)
 import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent.STM (atomically, readTVar, writeTVar)
+import Control.Concurrent.STM (atomically, readTVar, writeTVar, modifyTVar')
 import Katip
 import Servant.Server.Internal.ServerError
 import Control.Monad.Reader.Class (ask)
@@ -17,10 +17,24 @@ import Data.Text (Text, pack, unpack)
 import Data.Aeson.TH
 import GHC.Generics (Generic)
 import Network.Wreq (FormParam(..)) -- Import the FormParam builder
+import Data.Time (UTCTime, NominalDiffTime, addUTCTime, diffUTCTime)
+import Data.Traversable (for)
 
 
+import App
 import  Infrastructure.Utils.Http (HttpError, FormParams, postFormReq)
 import Text (camelToSnake, recordLabelModifier) 
+
+data SdekTokenRaw = SdekTokenRaw
+ {
+   strAccessToken :: Text
+ , strTokenType   :: Text
+ , strExpiresIn   :: Int
+ , strScope       :: Text
+ , strJti         :: Text
+ } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "str" } ''SdekTokenRaw)
 
 
 sdekAuthUrl :: String -> String
@@ -37,29 +51,70 @@ internalGetSdekAccessToken cred url = do
   
   -- Call our new, specialized function.
   -- It will return the parsed SdekToken on success.
-  postFormReq @SdekToken (sdekAuthUrl (unpack url)) payload
+  sdekTokenRaw <- postFormReq @SdekTokenRaw (sdekAuthUrl (unpack url)) payload
+  ct <- currentTime
+  for sdekTokenRaw $ \SdekTokenRaw {..} -> do
+    let sdekToken = SdekToken
+          { sdekObtainedAt  = ct
+          , sdekAccessToken = strAccessToken
+          , sdekTokenType   = strTokenType
+          , sdekExpiresIn   = strExpiresIn
+          , sdekScope       = strScope
+          , sdekJti         = strJti
+          }
+    return sdekToken
 
--- This is the function we sketched out before, now fully integrated.
+-- Helper to calculate the exact expiry time
+expiryTime :: SdekToken -> UTCTime
+expiryTime token =
+  let seconds = fromIntegral (sdekExpiresIn token) :: NominalDiffTime
+  in addUTCTime seconds (sdekObtainedAt token)
+
+
+-- A safety margin. We refresh the token if it's going to expire in the next 120 seconds.
+expiryMarginSeconds :: NominalDiffTime
+expiryMarginSeconds = 120
+
+-- Helper to check if a token is still fresh
+isTokenFresh :: UTCTime -> SdekToken -> Bool
+isTokenFresh now token =
+  let expiresAt = expiryTime token
+      -- Calculate how many seconds are left until it expires
+      secondsLeft = diffUTCTime expiresAt now
+  in secondsLeft > expiryMarginSeconds -- True if more than 2 minutes are left
+
 getValidSdekToken :: AppM SdekToken
 getValidSdekToken = do
-  stateTVar <- get -- From MonadState
-  config <- ask -- From MonadReader
-  -- Atomically check the current token
-  state <- liftIO $ atomically $ readTVar stateTVar
-  let maybeToken = _sdekToken state
-  case maybeToken of
-    -- TODO: Add expiry check here in a real app
-    Just validToken -> pure validToken
 
-    Nothing -> do
-      -- Token is missing, fetch a new one
+  $(logTM) InfoS "Checking SDEK token validity..."
+
+  stateTVar <- get
+  config    <- ask
+  now       <- currentTime
+
+  -- 1. Read the current state atomically
+  mbToken <- liftIO $ atomically $ fmap _sdekToken (readTVar stateTVar)
+
+  -- 2. Check the token's validity
+  case mbToken of
+    -- A token exists. Is it fresh?
+    Just token | isTokenFresh now token -> do
+      $(logTM) InfoS "SDEK token is fresh. Reusing."
+      pure token
+
+    -- A token exists but it's old, or no token at all
+    _ -> do
       $(logTM) InfoS "SDEK token is missing or expired. Refreshing..."
-      eToken <- internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)
+            
+      -- Call the internal function to get a new token from SDEK's API
+      eToken <- internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)      
       case eToken of
         Left err -> do
-          $(logTM) ErrorS $ logStr ("error during fetching token  " <> pack (show err))
-          throwError err500 { errBody = "SDEK auth failed" }
-        Right newToken -> do
-          -- Update the shared state with the new token
-          liftIO $ atomically $ writeTVar stateTVar (state { _sdekToken = Just newToken })
-          pure newToken
+          $(logTM) ErrorS $ ls $ "Failed to fetch SDEK token: " <> show err
+          throwError err500 { errBody = "SDEK authentication failed" }
+
+        Right freshToken -> do
+          -- Update the shared state with the new, fresh token
+          liftIO $ atomically $ modifyTVar' stateTVar (\s -> s { _sdekToken = Just freshToken })          
+          $(logTM) InfoS "Successfully refreshed SDEK token."
+          pure freshToken
