@@ -61,7 +61,13 @@ data Routes route = Routes
        :- "order"
        :> "track"
        :> QueryParam "query" Text
-       :> Get '[JSON] (ApiResponse (Maybe TrackOrder))    
+       :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
+  , _getCatalogSummary
+       :: route
+       :- "catalog"
+       :> "by-date"
+       :> QueryParam "date" CatalogDate
+       :> Get '[JSON] (ApiResponse CatalogSummary)     
   } deriving (Generic)
 
 

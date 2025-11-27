@@ -99,7 +99,9 @@ getValidSdekToken = do
   case mbToken of
     -- A token exists. Is it fresh?
     Just token | isTokenFresh now token -> do
-      $(logTM) InfoS "SDEK token is fresh. Reusing."
+      now <- currentTime
+      let secondsLeft = diffUTCTime (expiryTime token) now
+      $(logTM) InfoS $ ls $ "SDEK token is fresh. Reusing. Seconds left: " <> pack (show secondsLeft)
       pure token
 
     -- A token exists but it's old, or no token at all

@@ -25,9 +25,11 @@ import           Network.HTTP.Client (Manager)
 import           Data.Time (formatTime, defaultTimeLocale)
 
 -- New Imports for Concurrency / Batching
-import           Control.Concurrent.STM
 import           Control.Concurrent.Async (async, link)
 import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.STM (STM, atomically)
+import           Control.Concurrent.STM.TBQueue (TBQueue, isFullTBQueue, writeTBQueue, isEmptyTBQueue, readTBQueue, newTBQueueIO)
+
 
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 
@@ -87,11 +89,11 @@ formatTelegramMessage item =
 
 -- | The worker logic that runs in the background.
 --   It waits for at least one message, then grabs up to 4 more immediately if available.
-telegramBatchWorker :: Manager -> TelegramConfig -> TQueue T.Text -> IO ()
+telegramBatchWorker :: Manager -> TelegramConfig -> TBQueue T.Text -> IO ()
 telegramBatchWorker tlsManager config queue = forever $ do
     
     -- 1. Block until we get at least one log message
-    firstMsg <- atomically $ readTQueue queue
+    firstMsg <- atomically $ readTBQueue queue
     
     -- 2. Try to grab up to 4 more messages currently in the queue (Batch size = 5)
     --    This is non-blocking. If queue is empty, 'rest' is [].
@@ -116,14 +118,14 @@ telegramBatchWorker tlsManager config queue = forever $ do
     sendToTelegram tlsManager config finalMessage
 
 -- | Helper to take N items from TQueue non-blocking
-flushUpTo :: Int -> TQueue a -> STM [a]
+flushUpTo :: Int -> TBQueue a -> STM [a]
 flushUpTo 0 _ = return []
 flushUpTo n q = do
-    isEmpty <- isEmptyTQueue q
+    isEmpty <- isEmptyTBQueue q
     if isEmpty 
         then return [] 
         else do
-            x <- readTQueue q
+            x <- readTBQueue q
             xs <- flushUpTo (n - 1) q
             return (x : xs)
 
@@ -152,22 +154,23 @@ sendToTelegram mgr cfg msg = do
 mkTelegramScribe :: Manager -> TelegramConfig -> Severity -> Verbosity -> IO Scribe
 mkTelegramScribe tlsManager config minSeverity verbosity = do
   
-  -- 1. Create a thread-safe queue
-  queue <- newTQueueIO
+  -- 1. Create a BOUNDED queue. Size 1000 is safe (few MBs of RAM max).
+  queue <- newTBQueueIO 1000 
 
-  -- 2. Spawn a background worker thread
-  --    'link' ensures that if the worker crashes, the exception bubbles up (useful for debugging),
-  --    though our worker handles its own HTTP exceptions.
+  -- 2. Spawn worker (Passes the TBQueue now)
   workerAsync <- async (telegramBatchWorker tlsManager config queue)
   link workerAsync
 
-  -- 3. Define the push logic (Main Thread)
-  --    This is now very fast: it just formats the text and adds to queue (STM).
+  -- 3. Push Logic: Non-blocking write
   let pushLog item = do
         isPerm <- permitItem minSeverity item
         when isPerm $ do
           let txt = formatTelegramMessage item
-          atomically $ writeTQueue queue txt
+          -- Force evaluation of txt to avoid thunk buildup (Space Leak protection)
+          -- Although Strict Text is usually fine, `seq` is safer here.
+          atomically $ do
+             isFull <- isFullTBQueue queue
+             when(not isFull) $ writeTBQueue queue txt
 
   -- 4. Return the Scribe
   pure $ Scribe

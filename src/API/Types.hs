@@ -292,3 +292,29 @@ data TrackOrder =
      } deriving (Show, Generic)
      
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "to" } ''TrackOrder)
+
+
+data CatalogDate = 
+     CatalogDate
+      { cdYear  :: Int
+      , cdMonth :: Int
+      , cdDay   :: Int
+      } deriving (Show, Eq, Generic)
+
+instance FromHttpApiData CatalogDate where
+  parseUrlPiece text =
+    let parts = T.splitOn "-" text
+    in case parts of
+         [y, m, d] -> case (reads (T.unpack y), reads (T.unpack m), reads (T.unpack d)) of
+                        ([(year, "")], [(month, "")], [(day, "")]) ->
+                          Right $ CatalogDate year month day
+                        _ -> Left "Invalid date format"
+         _ -> Left "Invalid date format"
+
+data CatalogSummary = 
+     CatalogSummary
+      { csUrl :: Text
+      , csLastUpdated :: Text
+      } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)
