@@ -23,7 +23,7 @@ import Data.HashSet (member)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.STM (atomically, readTVar, modifyTVar')
 
-import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations, _pointCache, currentTime)
+import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations, _pointCache, currentTime, _configHttpManager)
 import API.Types (DeliveryPoint, ApiResponse)
 import API.WithField (WithField)
 import Text (recordLabelModifier)
@@ -101,10 +101,12 @@ max_pints_threshold = 80
 storeDeliveryPoints :: Int -> AppM (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
 storeDeliveryPoints cityCode = do
   $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
-  url <- fmap (T.unpack . _sdekUrl) ask
+  cfg <- ask
+  let url = (T.unpack . _sdekUrl) cfg
+  let httpManager = _configHttpManager cfg
   let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
   let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-  let pointsReq = getValidSdekToken >>= (_getReq' pointsUrl pointsParams . Just . sdekAccessToken)
+  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl pointsParams . Just . sdekAccessToken)
   ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
     -- Transform the result (only runs on success of the second call)

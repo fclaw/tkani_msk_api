@@ -9,8 +9,9 @@ import Control.Monad (forM)
 import Katip
 import Control.Monad.IO.Class (liftIO)
 import Data.Text (Text, pack)
+import Control.Monad.Reader.Class (ask)
 
-import App (AppM)
+import App (AppM, _configHttpManager)
 import Infrastructure.Services.Overpass.Types
 import Infrastructure.Utils.Http
 
@@ -37,7 +38,9 @@ fetchAllRussianMetros = do
         let params = [("data", query)]
 
         -- 2. Call API
-        resp <- withRetry 3 $ getReq @OverpassResponse "https://overpass-api.de/api/interpreter" params Nothing
+        cfg <- ask
+        let httpManager = _configHttpManager cfg
+        resp <- withRetry 3 $ getReq @OverpassResponse httpManager "https://overpass-api.de/api/interpreter" params Nothing
         let metros = extractOverpassMetros resp
         $(logTM) InfoS $ ls $ "Fetched " <> pack (show (length metros)) <> " stations for " <> ctName city
                 

@@ -29,7 +29,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 
-import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime)
+import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime, _configHttpManager)
 import API.Types
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
@@ -44,7 +44,8 @@ import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResp
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
 getDeliveryPoints city = do
-  url <- fmap (T.unpack . _sdekUrl) ask
+  cfg <-  ask
+  let url = (T.unpack . _sdekUrl) cfg
   -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "Fetching SDEK city code for " <> city
   let cityUrl = "https://" <> url <> "/v2/location/cities"
@@ -54,7 +55,8 @@ getDeliveryPoints city = do
         , ("size", "1")            -- Optional but good practice: we only need one result
         , ("lang", "rus")          -- Optional but good practice: ensure Russian response
         ]
-  let cityReq = getValidSdekToken >>= (_getReq' cityUrl cityParams . Just . sdekAccessToken)
+  let httpManager = _configHttpManager cfg      
+  let cityReq = getValidSdekToken >>= (_getReq' httpManager cityUrl cityParams . Just . sdekAccessToken)
   eCities <- makeRequestWithRetries @[SdekCity] (Just (void $ getValidSdekToken)) cityReq
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case
     [] -> do
@@ -185,11 +187,13 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
 
 registerOrder :: SdekOrderRequest -> AppM (Either SdekError UUID)
 registerOrder order = do
-  url <- fmap (T.unpack . _sdekUrl) ask
+  cfg <-  ask
+  let url = (T.unpack . _sdekUrl) cfg
   -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "registering order in sdek" <> show order
   let ordersUrl = "https://" <> url <> "/v2/orders"
-  let ordersReq = getValidSdekToken >>= (_postReq' ordersUrl order . Just . sdekAccessToken)
+  let httpManager = _configHttpManager cfg
+  let ordersReq = getValidSdekToken >>= (_postReq' httpManager ordersUrl order . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderResponse (Just (void $ getValidSdekToken)) ordersReq
   handleApiResponse @_ @SdekOrderResponse $(currentModule) eOrders $ \resp -> do
     when(sorRequestState resp == Accepted) $ 
@@ -225,9 +229,11 @@ registerOrder order = do
 getOrderStatus :: UUID -> AppM (Either SdekError SdekOrderStatusResponse)
 getOrderStatus uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
-  url <- fmap (T.unpack . _sdekUrl) ask
+  cfg <-  ask
+  let url = (T.unpack . _sdekUrl) cfg
   let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
-  let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
+  let httpManager = _configHttpManager cfg
+  let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderStatusResponse (Just (void $ getValidSdekToken)) ordersReq
   handleApiResponse @_ @SdekOrderStatusResponse $(currentModule) eOrders $ pure . Right
 
@@ -235,7 +241,9 @@ getOrderStatus uuid = do
 getOrdersInTransit :: UUID -> AppM (Either HttpError SdekOrderInTransitResponse)
 getOrdersInTransit uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
-  url <- fmap (T.unpack . _sdekUrl) ask
+  cfg <-  ask
+  let url = (T.unpack . _sdekUrl) cfg
   let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
-  let ordersReq = getValidSdekToken >>= (_getReq' fullUrl mempty . Just . sdekAccessToken)
+  let httpManager = _configHttpManager cfg
+  let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq

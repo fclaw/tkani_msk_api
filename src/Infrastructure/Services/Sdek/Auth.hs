@@ -51,7 +51,9 @@ internalGetSdekAccessToken cred url = do
   
   -- Call our new, specialized function.
   -- It will return the parsed SdekToken on success.
-  sdekTokenRaw <- postFormReq @SdekTokenRaw (sdekAuthUrl (unpack url)) payload
+  cfg <- ask
+  let httpManager = _configHttpManager cfg
+  sdekTokenRaw <- postFormReq @SdekTokenRaw httpManager (sdekAuthUrl (unpack url)) payload
   ct <- currentTime
   for sdekTokenRaw $ \SdekTokenRaw {..} -> do
     let sdekToken = SdekToken
