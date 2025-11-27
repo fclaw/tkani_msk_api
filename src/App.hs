@@ -121,7 +121,11 @@ data State = State
   }
 
 
-data ChatKey = ORDER | CONCIERGE deriving (Show, Ord, Eq)
+data ChatKey = 
+        ORDER 
+      | CONCIERGE 
+      | WAREHOUSE
+        deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int)
 

@@ -15,12 +15,16 @@ import qualified Data.Text as T
 import Data.Char (toLower)
 import GHC.Generics (Generic)
 import Data.Text (pack)
+
 import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
 import Data.Aeson.TH
 import Data.Int (Int64)
+import Data.Time (Day, parseTimeM, defaultTimeLocale)
+
 
 import API.WithField (WithField)
 import Text (camelToSnake, recordLabelModifier) 
+import Domain.Warehouse.Types (FabricType)
 
 
 -- | A standard structure for an error response.
@@ -294,27 +298,55 @@ data TrackOrder =
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "to" } ''TrackOrder)
 
 
-data CatalogDate = 
-     CatalogDate
-      { cdYear  :: Int
-      , cdMonth :: Int
-      , cdDay   :: Int
-      } deriving (Show, Eq, Generic)
+newtype CatalogDate = CatalogDate Day
 
 instance FromHttpApiData CatalogDate where
-  parseUrlPiece text =
-    let parts = T.splitOn "-" text
-    in case parts of
-         [y, m, d] -> case (reads (T.unpack y), reads (T.unpack m), reads (T.unpack d)) of
-                        ([(year, "")], [(month, "")], [(day, "")]) ->
-                          Right $ CatalogDate year month day
-                        _ -> Left "Invalid date format"
-         _ -> Left "Invalid date format"
+  parseUrlPiece dateStr = 
+    -- parseTimeM is the standard way to parse time strings in Haskell.
+    -- "%Y-%m-%d" is the format string for "Year-Month-Day".
+    -- True - Accept leading/trailing whitespace?
+    -- defaultTimeLocale - Use system's default locale for month names etc
+    -- "%Y-%m-%d" - The format to expect
+    let mRes = fmap CatalogDate $ parseTimeM True defaultTimeLocale "%Y-%m-%d" (T.unpack dateStr)
+    in case mRes of Just v -> Right v; Nothing -> Left "wrong format"
 
-data CatalogSummary = 
-     CatalogSummary
-      { csUrl :: Text
-      , csLastUpdated :: Text
-      } deriving (Show, Generic)
+-- | Represents a single item in the daily catalog carousel.
+--   This is a "summary" DTO (Data Transfer Object).
+data CatalogSummaryItem = CatalogSummaryItem
+  { -- | The unique database ID for this fabric. Used to initiate a purchase.
+    csiId                  :: Int64
+    -- | The user-facing name of the fabric.
+  , csiName                :: Text
+    -- | The unique article/SKU.
+  , csiArticle             :: Text
+    -- | The type of product: a roll or a specific pre-cut.
+  , csiType                :: FabricType -- e.g., "roll" or "pre_cut"
+    -- | Price per meter. Only present for rolls.
+  , csiPricePerMeter       :: Maybe Int
+    -- | The total price for the piece. Only present for pre-cuts.
+  , csiTotalPrice          :: Maybe Int
+    -- | The length of the piece in meters. Only for pre-cuts.
+  , csiLengthM             :: Maybe Double
+  , csiAvailableLength      :: Maybe Double
+    -- | Flag indicating if the item is sold out (roll has 0 length or pre-cut is sold).
+  , csiIsSoldOut           :: Bool
+    -- | The message_id of the ad post in the private warehouse channel.
+  , csiWarehouseMessageId  :: Int64
+    -- | The chat_id of the private warehouse channel.
+  , csiWarehouseChatId     :: Int64
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)
+
+-- | The top-level response for a daily catalog request.
+data CatalogSummary = CatalogSummary
+  { -- | The date for which the catalog is generated (e.g., "2025-11-26").
+    csDate       :: Text
+    -- | The total number of items in today's catalog.
+  , csTotalItems :: Int
+    -- | The list of fabric summary items for the carousel.
+  , csItems      :: [CatalogSummaryItem]
+  } deriving (Show, Eq, Generic)
+
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)

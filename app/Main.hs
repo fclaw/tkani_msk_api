@@ -177,6 +177,7 @@ main = do
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
       conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
       conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
+      warehouseChatId <- fmap read $ getEnv "WAREHOUSE_CHANNEL_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
       thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
       
@@ -192,7 +193,9 @@ main = do
             , _bots =
                 M.fromList
                   [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
-                   (ORDER, (orderBotToken, orderChatId))]
+                   (ORDER, (orderBotToken, orderChatId)),
+                   (WAREHOUSE, (conciergeBotToken, warehouseChatId))
+                   ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
             , _metroCityCodes = HS.fromList (map code cities)

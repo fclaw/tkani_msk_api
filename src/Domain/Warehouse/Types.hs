@@ -1,6 +1,13 @@
+{-# LANGUAGE DeriveGeneric     #-} -- To automatically derive Generic
+{-# LANGUAGE TemplateHaskell   #-}
+
 module Domain.Warehouse.Types where
 
 import Data.Text (Text)
+import Data.Aeson.TH
+import GHC.Generics (Generic)
+
+import Text (camelToSnake) 
 
 -- The target data structure we are parsing into.
 data Fabric = Fabric
@@ -13,7 +20,9 @@ data Fabric = Fabric
   } deriving (Show, Eq)
 
 data FabricType = Roll | PreCut
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''FabricType)
 
 -- All possible validation errors.
 data AdminParseError

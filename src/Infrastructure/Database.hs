@@ -22,6 +22,7 @@ module Infrastructure.Database
   , fetchOrderStatus
   , getOrdersInTransit
   , markOrderAsInvalid
+  , fetchCatalogSummaryItem
   , module Types
   ) where
 
@@ -42,6 +43,7 @@ import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import qualified Data.Vector as V
 import Data.Either (fromRight)
+import Data.Time (Day)
 
 
 import API.Types -- Your data types
@@ -420,3 +422,62 @@ searchFabricsStatement =
     LIMIT $2 :: int4
   |]
   where convert (wmi, mt) = fmap (fromIntegral wmi,) $ convertFromJson mt
+
+
+fetchCatalogSummaryItemStatement :: Hasql.Statement Day [CatalogSummaryItem]
+fetchCatalogSummaryItemStatement =
+  rmap (V.toList . V.map (fromRight undefined . convertFromJson)) $
+  [Hasql.vectorStatement|
+    SELECT item_json :: jsonb
+      FROM (
+          SELECT
+              f.updated_at,
+              jsonb_build_object(
+                  'id', f.id,
+                  'name', f.name,
+                  'article', f.article,
+                  'type', 'roll',
+                  'price_per_meter', f.price_per_meter,
+                  'total_price', NULL,
+                  'length_m', NULL,
+                  'available_length', f.available_length_m,
+                  'is_sold_out', f.is_sold,
+                  'warehouse_message_id', f.warehouse_message_id,
+                  'warehouse_chat_id', -1001234567890
+              ) :: jsonb AS item_json
+          FROM 
+              fabrics AS f
+          WHERE
+              CAST(f.updated_at AS date) = $1 :: date
+              AND f.is_sold = FALSE
+              AND f.available_length_m > 0.01
+
+          UNION ALL
+
+          SELECT
+              f.updated_at,
+              jsonb_build_object(
+                  'id', f.id,
+                  'name', f.name || ' (отрез ' || pc.length_m || 'м)',
+                  'article', f.article,
+                  'type', 'pre_cut',
+                  'price_per_meter', NULL,
+                  'total_price', pc.price_rub,
+                  'length_m', pc.length_m,
+                  'is_sold_out', FALSE,
+                  'warehouse_message_id', f.warehouse_message_id,
+                  'warehouse_chat_id', -1001234567890
+              ) :: jsonb AS item_json
+          FROM 
+              pre_cuts AS pc
+          JOIN 
+              fabrics AS f ON pc.fabric_id = f.id
+          WHERE
+              CAST(f.updated_at AS date) = $1 :: date
+              AND pc.in_stock = TRUE
+      ) AS catalog_items
+    ORDER BY updated_at DESC
+  |]
+
+fetchCatalogSummaryItem :: Day -> Hasql.Pool -> IO (Either Text [CatalogSummaryItem])
+fetchCatalogSummaryItem day pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ day `Hasql.statement` fetchCatalogSummaryItemStatement
