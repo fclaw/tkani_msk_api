@@ -92,7 +92,7 @@ validatePreCut lines
 -- | Validates an article string. Must contain only uppercase letters, numbers, and dashes.
 validateArticle :: Text -> Validation [AdminParseError] Text
 validateArticle articleRaw =
-    let pattern = "^[A-Z0-9-]+$" :: String
+    let pattern = "^ART-[0-9]{1,8}$" :: String
     in if T.unpack articleRaw =~ pattern
         then Success articleRaw
         else Failure [InvalidArticleFormat articleRaw]
