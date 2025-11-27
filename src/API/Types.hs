@@ -327,13 +327,19 @@ data CatalogSummaryItem = CatalogSummaryItem
   , csiTotalPrice          :: Maybe Int
     -- | The length of the piece in meters. Only for pre-cuts.
   , csiLengthM             :: Maybe Double
-  , csiAvailableLength      :: Maybe Double
+    -- | The amount of fabric available for cut-to-order (in meters). Only for rolls.
+  , csiAvailableLength     :: Maybe Double
     -- | Flag indicating if the item is sold out (roll has 0 length or pre-cut is sold).
   , csiIsSoldOut           :: Bool
     -- | The message_id of the ad post in the private warehouse channel.
   , csiWarehouseMessageId  :: Int64
     -- | The chat_id of the private warehouse channel.
   , csiWarehouseChatId     :: Int64
+    -- | The file_id of the image thumbnail for this fabric.
+  , csiWarehouseFileId     :: Maybe Text
+    -- | The description text for this fabric.
+  , csiDescription         :: Text
+  , csiMediaType           :: MediaType
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)

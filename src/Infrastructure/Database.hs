@@ -443,7 +443,10 @@ fetchCatalogSummaryItemStatement =
                   'available_length', f.available_length_m,
                   'is_sold_out', f.is_sold,
                   'warehouse_message_id', f.warehouse_message_id,
-                  'warehouse_chat_id', -1001234567890
+                  'warehouse_chat_id', -1001234567890,
+                  'warehouse_file_id', f.image_url,
+                  'description', f.description,
+                  'media_type', to_jsonb(f.media_type)
               ) :: jsonb AS item_json
           FROM 
               fabrics AS f
@@ -466,7 +469,10 @@ fetchCatalogSummaryItemStatement =
                   'length_m', pc.length_m,
                   'is_sold_out', FALSE,
                   'warehouse_message_id', f.warehouse_message_id,
-                  'warehouse_chat_id', -1001234567890
+                  'warehouse_chat_id', -1001234567890,
+                  'warehouse_file_id', f.image_url,
+                  'description', f.description,
+                  'media_type', to_jsonb(f.media_type)
               ) :: jsonb AS item_json
           FROM 
               pre_cuts AS pc
