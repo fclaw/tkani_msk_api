@@ -48,7 +48,11 @@ library
       Infrastructure.Services.Sdek.Types.OrderInTransit
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
+      Infrastructure.Services.Tinkoff.Security
       Infrastructure.Services.Tinkoff.Types
+      Infrastructure.Services.Tinkoff.Types.Enum
+      Infrastructure.Services.Tinkoff.Types.Init
+      Infrastructure.Services.Types
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId
       Text
@@ -63,8 +67,10 @@ library
     , async
     , async-extra
     , base >=4.18 && <5
+    , base16-bytestring
     , bytestring
     , containers
+    , crypton
     , directory
     , exceptions
     , filepath
@@ -80,6 +86,7 @@ library
     , lens
     , lifted-async
     , lifted-base
+    , memory
     , monad-control
     , monad-time
     , mtl

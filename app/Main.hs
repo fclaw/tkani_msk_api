@@ -49,7 +49,7 @@ import Data.Foldable (for_)
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
-import App (AppM(..), SDEKCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
+import App (AppM(..), SDEKCredentials (..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
@@ -183,6 +183,9 @@ main = do
       warehouseChatId <- fmap read $ getEnv "WAREHOUSE_CHANNEL_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
       thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
+      tinkoffTerminalKey <- fmap pack $ getEnv "TINKOFF_TERMINAL_KEY"
+      tinkoffSecret <- fmap pack $ getEnv "TINKOFF_SECRET"
+      tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
       
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -190,6 +193,7 @@ main = do
             , _appLogEnv = logEnv
             , _providers = providers
             , _sdekCred  = SdekCreds {..}
+            , _tinkoffCred = TinkoffCredentials {..}
             , _sdekUrl   = sdekUrl
             , _sdekTariffCode = sdekTariffCode
             , _sdekShipmentPoint = sdekShipmentPoint

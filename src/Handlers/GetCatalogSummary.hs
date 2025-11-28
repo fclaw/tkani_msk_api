@@ -18,7 +18,7 @@ import API.Types (CatalogDate (..), CatalogSummary (..))
 import App (AppM)
 import API.Types (ApiResponse, mkError, csiWarehouseChatId)
 import Infrastructure.Database (fetchCatalogSummaryItem)
-import App (AppM, _appDBPool, _bots, ChatKey (WAREHOUSE))
+import App (AppM, _appDBPool, _bots, ChatKey (WAREHOUSE), _thresholdMetres)
 
 
 handler :: Maybe CatalogDate -> AppM (ApiResponse CatalogSummary)
@@ -28,8 +28,9 @@ handler (Just cday) = do
   $(logTM) InfoS $ ls $ "Request received for fetching catalog items for " <> (pack (iso8601Show day))
   cfg <- ask
   let pool = _appDBPool cfg
+  let threshold = _thresholdMetres cfg
   let Just (_, chatId) = M.lookup WAREHOUSE $ _bots cfg
-  eRes <- liftIO $ fetchCatalogSummaryItem day pool
+  eRes <- liftIO $ fetchCatalogSummaryItem day threshold pool
   let catalogSummary =
         flip fmap eRes $ \items ->
           let newItems = 

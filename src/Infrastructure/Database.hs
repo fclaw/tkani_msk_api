@@ -425,7 +425,7 @@ searchFabricsStatement =
   where convert (wmi, mt) = fmap (fromIntegral wmi,) $ convertFromJson mt
 
 
-fetchCatalogSummaryItemStatement :: Hasql.Statement Day [CatalogSummaryItem]
+fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
 fetchCatalogSummaryItemStatement =
   rmap (V.toList . V.map (fromRight undefined . convertFromJson)) $
   [Hasql.vectorStatement|
@@ -454,7 +454,7 @@ fetchCatalogSummaryItemStatement =
           WHERE
               CAST(f.updated_at AS date) = $1 :: date
               AND f.is_sold = FALSE
-              AND f.available_length_m > 0.01
+              AND f.available_length_m > $2 :: float8
 
           UNION ALL
 
@@ -486,8 +486,11 @@ fetchCatalogSummaryItemStatement =
     ORDER BY updated_at DESC
   |]
 
-fetchCatalogSummaryItem :: Day -> Hasql.Pool -> IO (Either Text [CatalogSummaryItem])
-fetchCatalogSummaryItem day pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ day `Hasql.statement` fetchCatalogSummaryItemStatement
+fetchCatalogSummaryItem :: Day -> Double -> Hasql.Pool -> IO (Either Text [CatalogSummaryItem])
+fetchCatalogSummaryItem day threshold pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      (day, threshold) `Hasql.statement` fetchCatalogSummaryItemStatement
 
 
 checkFabricPreCutsStatement :: Hasql.Statement Text Bool

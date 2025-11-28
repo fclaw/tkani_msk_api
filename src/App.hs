@@ -20,6 +20,7 @@ module App
   SDEKCredentials (..),
   MetroCity (..),
   ChatKey (..),
+  TinkoffCredentials (..),
   currentTime,
   render,
   runAppM
@@ -135,6 +136,7 @@ data Config = Config
   , _appLogEnv :: LogEnv
   , _providers :: [ProviderInfo]
   , _sdekCred  :: SDEKCredentials
+  , _tinkoffCred :: TinkoffCredentials
   , _sdekUrl   :: Text
   , _sdekTariffCode :: Int
   , _sdekShipmentPoint :: Text
@@ -155,6 +157,13 @@ data SDEKCredentials = SdekCreds
   { sdekClientId :: Text
   , sdekClientSecret :: Text
   }
+
+data TinkoffCredentials =
+     TinkoffCredentials 
+     { tinkoffTerminalKey :: Text
+     , tinkoffSecret      :: Text
+     , tinkoffUrl         :: Text
+     }
 
 makeLenses ''Config
 

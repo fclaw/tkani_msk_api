@@ -63,6 +63,9 @@ library:
     - lifted-base
     - validation
     - regex-tdfa
+    - crypton
+    - base16-bytestring
+    - memory
 
 executables:
   tkani-api-exe:

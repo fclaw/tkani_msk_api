@@ -17,7 +17,7 @@ import Data.Maybe
 import Data.Bifunctor (first)
 import Data.Traversable (for)
 import Data.Foldable (for_)
-import Control.Monad (join, when, void)
+import Control.Monad (join, when, void, msum)
 import Control.Applicative (asum)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -37,7 +37,7 @@ import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER))
+import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -46,13 +46,18 @@ import qualified Infrastructure.Services.Sdek.Types as Sdek
 import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder)
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Types as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
+import Infrastructure.Utils.Http (HttpError)
 import Text (encodeToText)
 
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
-  | TinkoffPaymentLinkFailed Tinkoff.ApiError -- Failed to create a payment link
+  | TinkoffPaymentLinkFailed HttpError     -- Failed to create a payment link
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
@@ -91,10 +96,15 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
   
   -- STEP B. Generate the payment link
-  let orderDetails = Tinkoff.OrderDetails 0
-  (paymentLink, paymentId) <- wrap (Tinkoff.initiateTinkoffPayment orderDetails) TinkoffPaymentLinkFailed
+  let tinkoffCred = _tinkoffCred cfg
+  let initReq = mkInitRequest orderId fabricPrice orderRequest tinkoffCred
+  tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffPaymentLinkFailed
+
+  $(logTM) InfoS $ "Tinkoff response received. " <> ls (show tinkoffResp)
+
+  let Just paymentLink = Tinkoff.irPaymentURL tinkoffResp
   -- forward paymentId to the poller
-  let paymentDetails = Tinkoff.PaymentDetails paymentId orderId
+  let paymentDetails = undefined
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` paymentDetails) . _tinkoffPaymentChan)
    
   -- STEP C. Notify the telegram channel
@@ -240,3 +250,75 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   , DB._orderSdekTrackingNumber = trackingNumber
   , DB._orderInternalNotificationMessageId = fromIntegral @Int @Int64 (coerce telegramMsgId)
   }
+
+
+-- Helper for kopecks
+toKopecks :: Double -> Int64
+toKopecks = round . (* 100)
+
+mkInitRequest :: Text -> Double -> OrderRequest -> TinkoffCredentials -> Tinkoff.InitRequest
+mkInitRequest orderId pricePerMetre orderRequest tinkoffCred =
+  let
+    -- 1. Determine the purchase type and calculate receipt/amount
+    -- This 'case' statement is the core of the fix
+    (receiptItems, totalAmount) = case (orLengthM orderRequest, orPreCutId orderRequest) of
+      -- CASE A: Roll Purchase
+      (Just lengthM, Nothing) ->
+        let
+          pricePerMeterKopecks = toKopecks pricePerMetre
+          totalAmountKopecks = round (fromIntegral pricePerMeterKopecks * lengthM)
+          item = Tinkoff.ReceiptItem
+                  { riName = "Ткань на отрез: " <> orFabricName orderRequest
+                  , riPrice = pricePerMeterKopecks
+                  , riQuantity = lengthM
+                  , riAmount = totalAmountKopecks
+                  , riTax = Tinkoff.VAT20
+                  , riPaymentMethod = Tinkoff.FullPayment
+                  , riPaymentObject = Tinkoff.Commodity
+                  }
+        in ([item], totalAmountKopecks)
+
+      -- CASE B: Pre-Cut Purchase
+      (Nothing, Just preCutId) ->
+        let
+          totalPriceKopecks = toKopecks $ fromMaybe 0 (orPreCutLengthM orderRequest)
+          item = Tinkoff.ReceiptItem
+                  { riName = "Мерный лоскут: " <> orFabricName orderRequest
+                  , riPrice = totalPriceKopecks -- For pre-cuts, price IS the total
+                  , riQuantity = 1.0
+                  , riAmount = totalPriceKopecks
+                  , riTax = Tinkoff.VAT20
+                  , riPaymentMethod = Tinkoff.FullPayment
+                  , riPaymentObject = Tinkoff.Commodity
+                  }
+        in ([item], totalPriceKopecks)
+      
+      -- Error case, should not happen due to DB constraints
+      _ -> ([], 0)
+
+    -- 2. Prepare token generation data
+    terminalKey = tinkoffTerminalKey tinkoffCred
+    terminalSecret = tinkoffSecret tinkoffCred
+    token = Tinkoff.Token (T.pack (show totalAmount)) orderId (orFabricName orderRequest) terminalKey terminalSecret
+
+  in
+  -- 3. Construct the final request
+  Tinkoff.InitRequest
+    { Tinkoff.irOrderId = orderId
+    , Tinkoff.irTerminalKey = terminalKey
+    , Tinkoff.irAmount = totalAmount
+    , Tinkoff.irDescription = Just $ "Оплата заказа " <> orderId
+    , Tinkoff.irToken = Tinkoff.generatedToken token
+    , Tinkoff.irData = Just $
+        Tinkoff.CustomerData
+        { Tinkoff.cdEmail = Nothing
+        , Tinkoff.cdPhone = Just (orCustomerPhone orderRequest)
+        }
+    , Tinkoff.irReceipt = Just $
+        Tinkoff.ReceiptData
+        { rdEmail = Nothing
+        , rdPhone = Just (orCustomerPhone orderRequest)
+        , rdTaxation = Tinkoff.OSN -- Or your specific system
+        , rdItems = receiptItems
+        }
+    }

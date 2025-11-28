@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Text (camelToSnake, recordLabelModifier, encodeToText) where
+module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase) where
 
-import Data.Char (toLower, isUpper)
+import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
 import Data.Aeson (ToJSON, encode)
@@ -20,6 +20,11 @@ camelToSnake (x:xs) = toLower x : go xs
       | isUpper y = '_' : toLower y : go ys
       | otherwise   = y : go ys
 
+-- | Converts a string to PascalCase.
+--   Example: "terminalKey" -> "TerminalKey"
+pascalCase :: String -> String
+pascalCase (c:cs) = toUpper c : cs
+pascalCase mempty = mempty
 
 
 recordLabelModifier :: String -> String -> String

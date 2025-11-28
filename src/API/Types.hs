@@ -356,3 +356,5 @@ data CatalogSummary = CatalogSummary
 
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)
+
+data SearchItem

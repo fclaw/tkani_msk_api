@@ -22,7 +22,6 @@ data Status
   | Unknown Text
   deriving (Show, Eq)
 
-data OrderDetails = OrderDetails Int64
 
 data PaymentDetails = 
      PaymentDetails 

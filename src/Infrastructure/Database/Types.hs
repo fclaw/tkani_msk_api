@@ -15,6 +15,7 @@ import           Data.Aeson.TH
 import           Data.Int (Int64)
 
 import Text (recordLabelModifier)
+import Infrastructure.Services.Types (PaymentProvider)
 
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -66,3 +67,11 @@ data AdjustFabric =
      } deriving (Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "af" } ''AdjustFabric)
+
+
+data Payment = Payment
+  { pOrderId           :: Text
+  , pProvider          :: PaymentProvider
+  , pProviderPaymentId :: Text
+  , pError             :: Maybe Text
+  } deriving (Show, Eq, Generic)

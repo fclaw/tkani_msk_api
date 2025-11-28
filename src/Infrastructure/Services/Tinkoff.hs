@@ -1,11 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Infrastructure.Services.Tinkoff (initiateTinkoffPayment, checkTinkoffPaymentStatus, module Types) where
 
-import Data.Text (Text)
+import Data.Text (Text, unpack)
+import Control.Monad.Reader.Class (ask)
 
-import App (AppM)
+import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl)
 import Infrastructure.Services.Tinkoff.Types as Types
+import Infrastructure.Services.Tinkoff.Types.Init
+import Infrastructure.Services.Tinkoff.Security (generatedToken, Token(..))
+import  Infrastructure.Utils.Http (postReq, HttpError)
 
 
 
@@ -39,11 +45,15 @@ import Infrastructure.Services.Tinkoff.Types as Types
 --   - __SENDING__ the returned `paymentUrl` back to the user via the bot,
 --     so they can click the link and pay.
 initiateTinkoffPayment
-  :: OrderDetails                      -- ^ Details of the order to create a payment for.
-  -> AppM (Either ApiError (Text, Text))  -- ^ A tuple of (`paymentUrl`, `paymentId`), or an error.
-initiateTinkoffPayment orderDetails = do
+  :: InitRequest                      -- ^ Details of the order to create a payment for.
+  -> AppM (Either HttpError InitResponse)  -- ^ A tuple of (`paymentUrl`, `paymentId`), or an error.
+initiateTinkoffPayment initReq = do
   -- ... function implementation goes here ...
-  return $ Right ("https://google.com", "1232")
+  cfg <- ask
+  let url = tinkoffUrl $ _tinkoffCred cfg
+  let httpManager = _configHttpManager $ cfg
+  postReq @InitResponse httpManager (unpack url <> "/Init") initReq Nothing
+
 
 
 -- | Queries the Tinkoff Acquiring API to get the current status of a payment (`GetState` method).
