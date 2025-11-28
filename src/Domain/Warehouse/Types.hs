@@ -25,7 +25,7 @@ data FabricType = Roll | PreCut
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''FabricType)
 
 -- All possible validation errors.
-data AdminParseError
+data ParseError
   = StructureError FabricType Text
   | ValueError FabricType Text
   | InvalidArticleFormat Text

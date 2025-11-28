@@ -23,6 +23,7 @@ module Infrastructure.Database
   , getOrdersInTransit
   , markOrderAsInvalid
   , fetchCatalogSummaryItem
+  , checkFabricPreCuts
   , module Types
   ) where
 
@@ -487,3 +488,19 @@ fetchCatalogSummaryItemStatement =
 
 fetchCatalogSummaryItem :: Day -> Hasql.Pool -> IO (Either Text [CatalogSummaryItem])
 fetchCatalogSummaryItem day pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ day `Hasql.statement` fetchCatalogSummaryItemStatement
+
+
+checkFabricPreCutsStatement :: Hasql.Statement Text Bool
+checkFabricPreCutsStatement =
+  [Hasql.singletonStatement|
+    SELECT EXISTS (
+      SELECT 1 
+      FROM fabrics f
+      JOIN pre_cuts pc ON f.id = pc.fabric_id
+      WHERE f.article = $1 :: text
+      AND pc.in_stock = TRUE
+    ) :: bool
+  |]
+
+checkFabricPreCuts :: Text -> Hasql.Pool -> IO (Either Text Bool)
+checkFabricPreCuts articleId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ articleId `Hasql.statement` checkFabricPreCutsStatement

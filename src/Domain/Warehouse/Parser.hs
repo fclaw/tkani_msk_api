@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither) where
+module Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither, validateLength) where
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -41,8 +41,8 @@ preCutTemplate =
 --------------------------------------------------------------------------------
 
 -- | The entry point. The result is a Validation containing either a list of errors or the successful parse.
-parseIngestRequest :: Text -> Validation [AdminParseError] Fabric
-parseIngestRequest rawText =
+parseIngestRequest :: Text -> Double -> Validation [ParseError] Fabric
+parseIngestRequest rawText threshold =
   let
      cleanLines = 
        filter (not . T.null) $ 
@@ -53,15 +53,15 @@ parseIngestRequest rawText =
   in
     if isPreCut
     then validatePreCut cleanLines
-    else validateRoll cleanLines
+    else validateRoll cleanLines threshold
 
 --------------------------------------------------------------------------------
 -- VALIDATORS (Applicative Style)
 --------------------------------------------------------------------------------
 
 -- | Validator for the Roll pattern (Name, Length, Price, Article)
-validateRoll :: [Text] -> Validation [AdminParseError] Fabric
-validateRoll lines
+validateRoll :: [Text] -> Double -> Validation [ParseError] Fabric
+validateRoll lines threshold
   | length lines < 4 = Failure [StructureError Roll "Need at least 4 lines for a Roll"]
   | otherwise =
       Fabric
@@ -70,10 +70,10 @@ validateRoll lines
         <*> validateArticle (lines !! 3)           -- Article (Line 4)
         <*> pure (T.unlines (drop 4 lines))        -- Description
         <*> pure Roll
-        <*> validateLength Roll (lines !! 1)       -- Length (Line 2)
+        <*> validateLength Roll (lines !! 1) (Just threshold) -- Length (Line 2)
 
 -- | Validator for the Pre-Cut pattern (Name, Length, Price, Article)
-validatePreCut :: [Text] -> Validation [AdminParseError] Fabric
+validatePreCut :: [Text] -> Validation [ParseError] Fabric
 validatePreCut lines
   | length lines < 4 = Failure [StructureError PreCut "Need at least 4 lines for a Pre-Cut"]
   | otherwise =
@@ -83,14 +83,14 @@ validatePreCut lines
         <*> validateArticle (lines !! 3)              -- Article (Line 4)
         <*> pure (T.unlines (drop 4 lines))           -- Description
         <*> pure PreCut
-        <*> validateLength PreCut (lines !! 1)        -- Length (Line 2)
+        <*> validateLength PreCut (lines !! 1) Nothing -- Length (Line 2)
 
 --------------------------------------------------------------------------------
 -- FIELD-LEVEL VALIDATORS & HELPERS
 --------------------------------------------------------------------------------
 
 -- | Validates an article string. Must contain only uppercase letters, numbers, and dashes.
-validateArticle :: Text -> Validation [AdminParseError] Text
+validateArticle :: Text -> Validation [ParseError] Text
 validateArticle articleRaw =
     let pattern = "^ART-[0-9]{1,8}$" :: String
     in if T.unpack articleRaw =~ pattern
@@ -98,7 +98,7 @@ validateArticle articleRaw =
         else Failure [InvalidArticleFormat articleRaw]
 
 -- | Validates a price string, ensuring it starts with "Цена:".
-validatePrice :: FabricType -> Text -> Validation [AdminParseError] Int
+validatePrice :: FabricType -> Text -> Validation [ParseError] Int
 validatePrice fType raw =
   if "Цена" `T.isPrefixOf` raw
   then case extractInt raw of
@@ -107,11 +107,14 @@ validatePrice fType raw =
   else Failure [ValueError fType ("Price line must start with 'Цена:'. Got: " <> raw)]
 
 -- | Validates a length string, ensuring it starts with "Длина:".
-validateLength :: FabricType -> Text -> Validation [AdminParseError] Double
-validateLength fType raw =
+validateLength :: FabricType -> Text -> Maybe Double -> Validation [ParseError] Double
+validateLength fType raw threshold =
   if "Длина" `T.isPrefixOf` raw
  then case extractDouble raw of
-        Just l  -> Success l
+        Just l  -> 
+          if (fType == Roll && Just l >= threshold) || fType == PreCut then
+            Success l
+          else Failure [ValueError fType "length must be > 1 for rolls"]
         Nothing -> Failure [ValueError fType ("Could not parse number from length line: " <> raw)]
   else Failure [ValueError fType ("Length line must start with 'Длина:'. Got: " <> raw)]
 
@@ -131,7 +134,7 @@ extractDouble t =
 --------------------------------------------------------------------------------
 
 -- | Takes a list of errors and formats them into a single, user-friendly message.
-renderValidationErrors :: [AdminParseError] -> Text
+renderValidationErrors :: [ParseError] -> Text
 renderValidationErrors errors =
   let
      isPreCutError = any isPreCutContext errors
@@ -148,7 +151,7 @@ renderValidationErrors errors =
   in escapeMarkdownV2 $ header <> errorText <> "\n\n👇 **Expected Format:**\n" <> template <> hint
 
 -- | Renders a single error from the list into a simple string.
-simpleErrorText :: AdminParseError -> Text
+simpleErrorText :: ParseError -> Text
 simpleErrorText (StructureError _ msg) = msg
 simpleErrorText (ValueError _ msg) = msg
 simpleErrorText (AmbiguousFormat msg) = msg

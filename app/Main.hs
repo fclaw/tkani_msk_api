@@ -27,7 +27,7 @@ import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
-import System.Environment (getEnv)
+import System.Environment (getEnv, getArgs)
 import Data.Text (pack)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO, modifyTVar')
 import Control.Monad.Except (runExceptT)
@@ -141,6 +141,9 @@ waitAnyNamed namedAsyncs = do
 
 main :: IO ()
 main = do
+  args <- getArgs
+  let isMetroMode = not ("no-metro" `elem` args)
+
   -- Step 1: Create a new TLS-enabled manager using our custom settings.
   -- This is where the magic from 'http-client-tls' happens.
   tlsManager <- newManager tlsManagerSettings
@@ -217,7 +220,10 @@ main = do
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)
           runInIO = runAppM appConfig initialState
 
-      eAllMetros <- runInIO fetchAllRussianMetros
+      when(not isMetroMode) $ 
+        putStrLn "--> Running in NO-METRO mode. Metro data will not be loaded."
+
+      eAllMetros <- if not isMetroMode then return (Right []) else runInIO fetchAllRussianMetros
       for_ eAllMetros $ \allMetros -> do
         liftIO $ atomically $ modifyTVar' initialState $
           \s -> s { _metroStations = allMetros }

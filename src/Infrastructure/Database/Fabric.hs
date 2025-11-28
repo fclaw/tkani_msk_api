@@ -29,6 +29,8 @@ ingestFabricDB fabric req = do
   -- 2. UPSERT the Parent Fabric
   -- If Article exists: Update Name, Price, Description, Media.
   -- If New: Insert it.
+  let rollLength | fType fabric == Roll = fLength fabric
+                 | otherwise = 0.0
   parentId <- 
     Hasql.statement (
       fArticle fabric,                 -- $1 Article (Unique Key)
@@ -39,9 +41,7 @@ ingestFabricDB fabric req = do
       rawFileId req,                   -- $6 warehouse_file_id (Thumb)
       rawMediaGroupId req,             -- $7 warehouse_media_group_id
       encodeToText (rawMediaType req), -- $8 warehouse_media_type
-      if fType fabric == Roll 
-      then fLength fabric
-      else 0.0                         -- $9 Length (Only for rolls)                
+      rollLength                        -- $9 Length (Only for rolls)                
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -91,7 +91,15 @@ upsertFabricQuery =
         image_url = EXCLUDED.image_url,
         media_group_id = EXCLUDED.media_group_id,
         media_type = EXCLUDED.media_type,
-        updated_at = NOW()
+        total_length_m = 
+          fabrics.total_length_m + 
+          COALESCE(EXCLUDED.total_length_m, 0),
+        available_length_m = 
+          fabrics.available_length_m + 
+          COALESCE(EXCLUDED.available_length_m, 0),
+        updated_at = NOW(),
+        in_stock = TRUE,
+        is_sold = FALSE
     RETURNING id :: int8
 |]
 
