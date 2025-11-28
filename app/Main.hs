@@ -21,7 +21,7 @@ import Control.Monad.Reader (runReaderT)
 import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Exception (finally, bracket, SomeException)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
