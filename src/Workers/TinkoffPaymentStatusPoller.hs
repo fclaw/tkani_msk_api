@@ -43,7 +43,7 @@ delayMedium = 12 * 1000000 -- 12 seconds
 delaySlow   = 45 * 1000000 -- 45 seconds
 
 readTVar = liftIO . STM.atomically . STM.readTVar
-readTChan = liftIO . STM.atomically . STM.tryReadTChan
+readTChan = liftIO . STM.atomically . STM.readTChan
 
 paymentStatusPoller :: AppM ()
 paymentStatusPoller = do
@@ -57,11 +57,9 @@ paymentStatusPoller = do
     
   -- Loop forever, dispatching a new worker for each job that arrives.
   forever $ do
-    jobm <- readTChan chan
-    for_ jobm $ \job -> do
-      $(logTM) InfoS $ ls $ "Dispatching worker for Order " <> fst job
-      void $ async $ workerLogic job
-    liftIO $ threadDelay (1 * 1000000) -- 1 second delay between checks  
+    job <- readTChan chan
+    $(logTM) InfoS $ ls $ "Dispatching worker for Order " <> fst job
+    void $ async $ workerLogic job
 
 -- | The logic for a single worker thread. It polls one payment until a final status is reached.
 workerLogic :: (Text, GetStateRequest) -> AppM ()
