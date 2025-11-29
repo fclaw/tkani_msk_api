@@ -28,13 +28,14 @@ import Data.Foldable (for_)
 import Control.Exception (SomeException)
 import Control.Exception.Lifted (catch)
 
-import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render)
+import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render, _tinkoffCred, tinkoffTerminalKey, tinkoffSecret)
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
-import Infrastructure.Database (getChatDetails)
+import Infrastructure.Database (getChatDetails, fetchPendingPayments)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..))
 import Infrastructure.Services.Tinkoff.Types.GetState
+import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
 
 
 -- Configuration constants (in microseconds)
@@ -55,6 +56,31 @@ paymentStatusPoller = do
   st <- readTVar stvar
   let chan = _tinkoffPaymentChan st
     
+  -- fetch pending payments and enqueue them
+  pool <- fmap _appDBPool ask
+  ePendingPayments <- liftIO $ fetchPendingPayments pool
+  for_ ePendingPayments $ \xs -> do
+    tinkoffCred <- fmap _tinkoffCred ask
+    for_ xs $ \(orderId, paymentId) -> do
+      let getStateRequest = 
+            GetStateRequest
+            { gsrqPaymentId = paymentId
+            , gsrqToken = 
+                generateGetStateToken $
+                  GetStateToken
+                   paymentId
+                   (tinkoffTerminalKey tinkoffCred)
+                   (tinkoffSecret tinkoffCred)
+            , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
+            , gsrqIP = Nothing
+            }
+      liftIO $ STM.atomically $ STM.writeTChan chan (orderId, getStateRequest)
+      $(logTM) InfoS $ ls $ "enqueued pending payment for Order " <> orderId
+
+  when(isLeft ePendingPayments) $ do
+    $(logTM) ErrorS $ ls $ "error while fetching pending payments: " <> pack (show (fromLeft undefined ePendingPayments))
+    error $ "while fetching pending payments: " <> (show (fromLeft undefined ePendingPayments))    
+
   -- Loop forever, dispatching a new worker for each job that arrives.
   forever $ do
     job <- readTChan chan

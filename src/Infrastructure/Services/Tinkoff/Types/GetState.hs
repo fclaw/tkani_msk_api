@@ -16,6 +16,7 @@ import Text (camelToSnake, recordLabelModifierG, pascalCase)
 -- | Represents the payment status returned by the Tinkoff GetState API.
 data Status
  =  NEW              -- Payment session initiated.
+  | PENDING
   | FORMSHOWED
   | AUTHORIZING
   | CANCELED         -- Payment was canceled by the merchant or user.
@@ -33,6 +34,7 @@ data Status
 instance FromJSON Status where
   parseJSON = withText "Status" $ \t -> return $ case t of
     "NEW"              -> NEW
+    "PENDING"          -> PENDING
     "FORMSHOWED"       -> FORMSHOWED
     "AUTHORIZING"      -> AUTHORIZING
     "CANCELED"         -> CANCELED
@@ -48,6 +50,7 @@ instance FromJSON Status where
 instance ToJSON Status where
   toJSON s = case s of
     NEW              -> "NEW"
+    PENDING          -> "PENDING"
     FORMSHOWED       -> "FORMSHOWED"
     AUTHORIZING      -> "AUTHORIZING"
     CANCELED         -> "CANCELED"

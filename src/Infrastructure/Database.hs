@@ -25,6 +25,7 @@ module Infrastructure.Database
   , fetchCatalogSummaryItem
   , checkFabricPreCuts
   , insertNewPaymentRecord
+  , fetchPendingPayments
   , module Types
   ) where
 
@@ -56,7 +57,8 @@ import Infrastructure.Database.Types as Types
 import Text (encodeToText)
 import Infrastructure.Database.Fabric (ingestFabricDB)
 import qualified Domain.Warehouse.Types as DWT
-
+import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
+import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 
 --------------------------------------------------------------------------------
 -- Template Haskell Magic: Generate our statement functions automatically
@@ -538,3 +540,18 @@ insertNewPaymentRecord paymentRecord pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $
       paymentRecord `Hasql.statement` insertNewPaymentRecordStatement
+
+
+fetchPendingPaymentsStatement :: Hasql.Statement Status [(Text, Text)]
+fetchPendingPaymentsStatement =
+  dimap encodeToText V.toList $
+  [Hasql.vectorStatement|
+    SELECT
+      order_id :: text,
+      provider_payment_id::text
+    FROM payments
+    WHERE status = CAST(LOWER($1 :: text) as payment_status)
+  |]
+
+fetchPendingPayments :: Hasql.Pool -> IO (Either Text [(Text, Text)])
+fetchPendingPayments pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ PENDING `Hasql.statement` fetchPendingPaymentsStatement
