@@ -47,6 +47,9 @@ CREATE TABLE payments (
     -- Optional error message for debugging failed payments.
     error TEXT,
 
+    -- A unique token to identify this payment attempt externally (e.g., in webhooks).
+    token TEXT NOT NULL,
+
     -- Make sure a provider's payment ID is unique for that provider.
     CONSTRAINT unique_provider_payment_id UNIQUE (provider, provider_payment_id)
 );

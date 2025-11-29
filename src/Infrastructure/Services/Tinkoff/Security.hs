@@ -5,6 +5,8 @@
 
 module Infrastructure.Services.Tinkoff.Security
   ( generatedToken
+  , generateGetStateToken
+  , GetStateToken (..)
   , Token(..)
   ) where
 
@@ -59,4 +61,32 @@ generatedToken Token{..} =
         digest :: Digest SHA256 = hash byteStringToSign
         hexEncodedHash = TE.decodeUtf8 $ Base16.encode $ convert digest
 
+    in T.toLower hexEncodedHash
+
+
+
+
+
+data GetStateToken = GetStateToken
+  { gstPaymentId   :: Text -- PaymentId as Text for signing
+  , gstTerminalKey :: Text
+  , gstSecret      :: Text
+  }
+
+-- This is a NEW signing function
+generateGetStateToken :: GetStateToken -> Text
+generateGetStateToken GetStateToken{..} =
+    let
+        -- For GetState, it's a simpler set of fields
+        valueMap = Map.fromList
+            [ ("PaymentId",   gstPaymentId)
+            , ("TerminalKey", gstTerminalKey)
+            , ("Password",    gstSecret)
+            ]
+        
+        stringToSign = T.concat (Map.elems valueMap)
+        
+        digest :: Digest SHA256 = hash (TE.encodeUtf8 stringToSign)
+        hexEncodedHash = TE.decodeUtf8 $ Base16.encode $ convert digest
+    
     in T.toLower hexEncodedHash

@@ -1,17 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Infrastructure.Services.Tinkoff (initiateTinkoffPayment, checkTinkoffPaymentStatus, module Types) where
+module Infrastructure.Services.Tinkoff (initiateTinkoffPayment, checkTinkoffPaymentStatus) where
 
-import Data.Text (Text, unpack)
+import Data.Text (Text, unpack, pack)
 import Control.Monad.Reader.Class (ask)
+import Data.Bifunctor (second)
+import Katip
+import Data.Traversable (for)
+import Data.Maybe (fromMaybe)
 
 import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl)
-import Infrastructure.Services.Tinkoff.Types as Types
 import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedToken, Token(..))
-import  Infrastructure.Utils.Http (postReq, HttpError)
+import Infrastructure.Utils.Http (postReq, HttpError)
+import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
 
 
 
@@ -51,7 +56,7 @@ initiateTinkoffPayment initReq = do
   -- ... function implementation goes here ...
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
-  let httpManager = _configHttpManager $ cfg
+  let httpManager = _configHttpManager cfg
   postReq @InitResponse httpManager (unpack url <> "Init") initReq Nothing
 
 
@@ -86,8 +91,19 @@ initiateTinkoffPayment initReq = do
 --   - `Right "NEW"`, `Right "PROCESSING"`: Take no action and check again later.
 --   - `Left apiError`: Log the error, as the check failed at a network/parsing level.
 checkTinkoffPaymentStatus
-  :: Text                                 -- ^ The `PaymentId` to query the status for.
-  -> AppM (Either ApiError Status)          -- ^ The status string from the API, or an error.
-checkTinkoffPaymentStatus paymentId = do
+  :: GetStateRequest                         -- ^ The get state request containing the `paymentId` to check.
+  -> AppM (Either HttpError Status)          -- ^ The status string from the API, or an error.
+checkTinkoffPaymentStatus getStateReq = do
   -- ... function implementation goes here ...
-  return $ Right Confirmed
+  cfg <- ask
+  let url = tinkoffUrl $ _tinkoffCred cfg
+  let httpManager = _configHttpManager cfg
+  eResp <- postReq @GetStateResponse httpManager (unpack url <> "GetState") getStateReq Nothing
+  $(logTM) InfoS $ ls $ "Tinkoff GetState response: " <> pack (show eResp)
+  for eResp $ \resp -> do 
+    let isSuccess = gsrpSuccess resp
+    if not isSuccess
+    then
+      let errCode = maybe "Unknown error" id (gsrpErrorCode resp) in
+      error $ "Tinkoff GetState API call failed with error code: " <> unpack errCode
+    else return $ fromMaybe undefined $ gsrpStatus resp

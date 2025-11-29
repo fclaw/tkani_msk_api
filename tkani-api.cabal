@@ -49,9 +49,9 @@ library
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Security
-      Infrastructure.Services.Tinkoff.Types
       Infrastructure.Services.Tinkoff.Types.Enum
       Infrastructure.Services.Tinkoff.Types.Enum.Modifier
+      Infrastructure.Services.Tinkoff.Types.GetState
       Infrastructure.Services.Tinkoff.Types.Init
       Infrastructure.Services.Types
       Infrastructure.Utils.Http

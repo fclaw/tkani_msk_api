@@ -69,9 +69,13 @@ data AdjustFabric =
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "af" } ''AdjustFabric)
 
 
-data Payment = Payment
-  { pOrderId           :: Text
-  , pProvider          :: PaymentProvider
-  , pProviderPaymentId :: Text
-  , pError             :: Maybe Text
-  } deriving (Show, Eq, Generic)
+data NewPaymentRecord = 
+    NewPaymentRecord
+    { nprOrderId            :: Text
+    , nprProvider           :: PaymentProvider
+    , nprProviderPaymentId  :: Text
+    , nprAmountKopecks      :: Int64
+    , nprPaymentUrl         :: Text
+    , nprError              :: Maybe Text
+    , nprToken              :: Text
+    }

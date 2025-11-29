@@ -46,13 +46,14 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessag
 import TH.Location (currentModule)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
-import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder)
+import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder, insertNewPaymentRecord, NewPaymentRecord (..))
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
-import qualified Infrastructure.Services.Tinkoff.Types as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Types.GetState as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
+import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import Infrastructure.Utils.Http (HttpError)
 import Text (encodeToText)
 
@@ -112,10 +113,11 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
     let errMsg = "Tinkoff Init API call failed: " <> fromMaybe "Unknown error" (Tinkoff.irMessage tinkoffResp)
     void $ wrap (pure (Left ())) (const $ TinkoffPaymentLinkFailed errMsg)
 
-  let Just paymentLink = Tinkoff.irPaymentURL tinkoffResp
-  -- forward paymentId to the poller
-  let paymentDetails = undefined
-  liftIO $ atomically $ readTVar st >>= ((`writeTChan` paymentDetails) . _tinkoffPaymentChan)
+  paymentLink <- wrap ( 
+    case Tinkoff.irPaymentURL tinkoffResp of
+      Just link  -> pure (Right link)
+      Nothing -> pure (Left ())
+    ) (const $ TinkoffPaymentLinkFailed "Tinkoff Init API did not return a payment URL.")
    
   -- STEP C. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
@@ -124,6 +126,32 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   -- STEP D. Save the order in database
   let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
   void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed
+
+  let newPaymentRecord = NewPaymentRecord
+        { nprOrderId = orderId
+        , nprProvider = Tinkoff
+        , nprProviderPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
+        , nprAmountKopecks = round fabricPrice
+        , nprPaymentUrl = paymentLink
+        , nprError = Nothing
+        , nprToken = Tinkoff.irToken initReq
+        }
+  void $ wrap (liftIO (insertNewPaymentRecord newPaymentRecord pool)) DatabaseFailed
+
+  -- forward paymentId to the poller
+  let getStateRequest = 
+        Tinkoff.GetStateRequest
+        { gsrqPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
+        , gsrqToken = 
+            Tinkoff.generateGetStateToken $
+              Tinkoff.GetStateToken
+              (fromJust (Tinkoff.irPaymentId tinkoffResp))
+              (tinkoffTerminalKey tinkoffCred)
+              (tinkoffSecret tinkoffCred)
+        , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
+        , gsrqIP = Nothing
+        }
+  liftIO $ atomically $ readTVar st >>= ((`writeTChan` (orderId, getStateRequest)) . _tinkoffPaymentChan)
 
   return OrderConfirmationDetails {..}
 

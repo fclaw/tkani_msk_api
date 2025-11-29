@@ -63,7 +63,7 @@ import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
-import Infrastructure.Services.Tinkoff.Types (PaymentDetails)
+import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
 
 
@@ -117,7 +117,7 @@ data State = State
   { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
   , _pointCache :: PointCache
   , _sdekPromises :: SdekPromiseMap
-  , _tinkoffPaymentChan :: TChan PaymentDetails
+  , _tinkoffPaymentChan :: TChan (Text, GetStateRequest)
   , _metroStations :: [MetroStation]
   }
 

@@ -92,6 +92,8 @@ formatTelegramMessage item =
 telegramBatchWorker :: Manager -> TelegramConfig -> TBQueue T.Text -> IO ()
 telegramBatchWorker tlsManager config queue = forever $ do
     
+    threadDelay (5 * 1000000) -- 1 seconds delay between batches
+
     -- 1. Block until we get at least one log message
     firstMsg <- atomically $ readTBQueue queue
     

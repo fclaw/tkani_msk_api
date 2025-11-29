@@ -24,6 +24,7 @@ module Infrastructure.Database
   , markOrderAsInvalid
   , fetchCatalogSummaryItem
   , checkFabricPreCuts
+  , insertNewPaymentRecord
   , module Types
   ) where
 
@@ -507,3 +508,33 @@ checkFabricPreCutsStatement =
 
 checkFabricPreCuts :: Text -> Hasql.Pool -> IO (Either Text Bool)
 checkFabricPreCuts articleId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ articleId `Hasql.statement` checkFabricPreCutsStatement
+
+insertNewPaymentRecordStatement :: Hasql.Statement NewPaymentRecord Int64
+insertNewPaymentRecordStatement =
+  dimap (app2 encodeToText . $(recordToTuple ''NewPaymentRecord)) fromIntegral
+  [Hasql.singletonStatement|
+    INSERT INTO payments (
+      order_id,
+      provider,
+      provider_payment_id,
+      amount,
+      payment_url, 
+      error,
+      token
+    ) VALUES (
+      $1 :: text,
+      cast($2 :: text as payment_provider),
+      $3 :: text,
+      $4 :: int8,
+      $5 :: text,
+      $6 :: text?,
+      $7 :: text
+    )
+    RETURNING id :: int8
+  |]
+
+insertNewPaymentRecord :: NewPaymentRecord -> Hasql.Pool -> IO (Either Text Int64)
+insertNewPaymentRecord paymentRecord pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $
+      paymentRecord `Hasql.statement` insertNewPaymentRecordStatement
