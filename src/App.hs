@@ -21,6 +21,7 @@ module App
   MetroCity (..),
   ChatKey (..),
   TinkoffCredentials (..),
+  Scheme (..),
   currentTime,
   render,
   runAppM
@@ -65,6 +66,14 @@ import API.WithField (WithField)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
+
+
+
+data Scheme = HTTP | HTTPS
+
+instance Show Scheme where
+  show HTTP  = "http://"
+  show HTTPS = "https://"
 
 
 -- "access_token": "string",

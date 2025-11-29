@@ -29,7 +29,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 
-import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime, _configHttpManager)
+import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
 import API.Types
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
@@ -191,7 +191,7 @@ registerOrder order = do
   let url = (T.unpack . _sdekUrl) cfg
   -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "registering order in sdek" <> show order
-  let ordersUrl = "https://" <> url <> "/v2/orders"
+  let ordersUrl = show HTTPS <> url <> "/v2/orders"
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_postReq' httpManager ordersUrl order . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderResponse (Just (void $ getValidSdekToken)) ordersReq
@@ -231,7 +231,7 @@ getOrderStatus uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
   cfg <-  ask
   let url = (T.unpack . _sdekUrl) cfg
-  let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
+  let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   eOrders <- makeRequestWithRetries @SdekOrderStatusResponse (Just (void $ getValidSdekToken)) ordersReq
@@ -243,7 +243,7 @@ getOrdersInTransit uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
   cfg <-  ask
   let url = (T.unpack . _sdekUrl) cfg
-  let fullUrl = "https://" <> url <> "/v2/orders/" <> UUID.toString uuid
+  let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq

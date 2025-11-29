@@ -12,7 +12,7 @@ import Katip
 import Data.Traversable (for)
 import Data.Maybe (fromMaybe)
 
-import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl)
+import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedToken, Token(..))
 import Infrastructure.Utils.Http (postReq, HttpError)
@@ -57,7 +57,7 @@ initiateTinkoffPayment initReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  postReq @InitResponse httpManager (unpack url <> "Init") initReq Nothing
+  postReq @InitResponse httpManager (show HTTPS <> unpack url <> "/Init") initReq Nothing
 
 
 -- | Queries the Tinkoff Acquiring API to get the current status of a payment (`GetState` method).
@@ -98,7 +98,7 @@ checkTinkoffPaymentStatus getStateReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  eResp <- postReq @GetStateResponse httpManager (unpack url <> "GetState") getStateReq Nothing
+  eResp <- postReq @GetStateResponse httpManager (show HTTPS <> unpack url <> "/GetState") getStateReq Nothing
   $(logTM) InfoS $ ls $ "Tinkoff GetState response: " <> pack (show eResp)
   for eResp $ \resp -> do 
     let isSuccess = gsrpSuccess resp

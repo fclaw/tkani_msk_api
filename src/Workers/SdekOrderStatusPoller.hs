@@ -38,7 +38,7 @@ orderStatusPoller = forever $ do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask
-  eUuids <- liftIO $ getOrdersInTransit [Registered, Paid, OnRoute, Delivered] pool
+  eUuids <- liftIO $ getOrdersInTransit [Registered, Paid, OnRoute] pool
   for_ eUuids $ \uuids ->
     void $ pooledForConcurrentlyN 3 uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid

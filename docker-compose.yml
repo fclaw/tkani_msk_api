@@ -48,7 +48,7 @@ services:
     image: europe-west10-docker.pkg.dev/tkani-479219/tkani-api/tkani-api:latest
     # build: . # Build the image from the Dockerfile in the current directory
     container_name: tkani-api-container
-    # restart: unless-stopped
+    restart: unless-stopped
     networks:
       - tkani-net
     ports:
