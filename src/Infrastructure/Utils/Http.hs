@@ -163,7 +163,8 @@ _postReq' mgr url body maybeToken = do
   -- FIX: Use global manager and set Content-Type
   let baseOpts = defaults 
         & manager .~ Right mgr 
-        & header "Content-Type" .~ [BS8.pack "application/json"]
+        & header "Content-Type" .~ 
+          [BS8.pack "application/json; charset=utf-8"]
 
   let opts = addToken maybeToken baseOpts
   let encoded_body = encode body

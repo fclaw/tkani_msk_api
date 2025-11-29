@@ -66,6 +66,7 @@ library:
     - crypton
     - base16-bytestring
     - memory
+    - aeson-pretty
 
 executables:
   tkani-api-exe:

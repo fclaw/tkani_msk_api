@@ -12,7 +12,7 @@ import GHC.Generics (Generic)
 import Data.Int (Int64)
 import Data.Text (Text)
 
-import Text (camelToSnake, recordLabelModifier, pascalCase)
+import Text (camelToSnake, recordLabelModifierG, pascalCase)
 
 
 import Infrastructure.Services.Tinkoff.Types.Enum
@@ -29,7 +29,7 @@ data ReceiptItem = ReceiptItem
   } deriving (Show, Eq, Generic)
 
 -- Custom ToJSON for PascalCase
-$(deriveJSON defaultOptions { fieldLabelModifier = pascalCase . recordLabelModifier "ri"} ''ReceiptItem)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "ri"} ''ReceiptItem)
 
 -- | Represents the fiscal receipt object.
 data ReceiptData = ReceiptData
@@ -40,7 +40,7 @@ data ReceiptData = ReceiptData
   } deriving (Show, Eq, Generic)
 
 
-$(deriveJSON defaultOptions { fieldLabelModifier = pascalCase . recordLabelModifier "rd" } ''ReceiptData)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "rd" } ''ReceiptData)
 
 -- | Optional customer data.
 data CustomerData = CustomerData
@@ -49,7 +49,7 @@ data CustomerData = CustomerData
   } deriving (Show, Eq, Generic)
 
 
-$(deriveJSON defaultOptions { fieldLabelModifier = pascalCase . recordLabelModifier "cd"} ''CustomerData)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "cd"} ''CustomerData)
 
 
 -- | The main request body for the /v2/Init endpoint.
@@ -70,10 +70,10 @@ $(deriveJSON
   defaultOptions 
   { fieldLabelModifier = 
       \fieldName -> 
-         let baseName = recordLabelModifier "ir" fieldName
+         let baseName = recordLabelModifierG id "ir" fieldName
          in if baseName == "Data" -- Check if the stripped name is "Data"
             then "DATA"          -- If so, use all caps
-            else pascalCase baseName {- Otherwise, use PascalCase -} } ''InitRequest)
+            else baseName {- Otherwise, use as it is -} } ''InitRequest)
 
 
 -- | Represents the response from the T-Bank /v2/Init endpoint.
@@ -89,7 +89,7 @@ data InitResponse = InitResponse
     -- | The URL for the customer to complete the payment. Only present on success.
   , irPaymentURL   :: Maybe Text
     -- | The unique payment ID from Tinkoff. Store this for status polling.
-  , irPaymentId    :: Maybe Int64
+  , irPaymentId    :: Maybe Text
   } deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = pascalCase . recordLabelModifier "ir"} ''InitResponse)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "ir"} ''InitResponse)

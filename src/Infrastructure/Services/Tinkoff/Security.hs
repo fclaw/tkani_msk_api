@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Infrastructure.Services.Tinkoff.Security
@@ -21,7 +22,7 @@ import           Data.Maybe (catMaybes)
 data Token = Token
   { tokenAmount      :: Text
   , tokenOrderId     :: Text
-  , tokenDescription :: Text -- <-- ADDED: Now optional
+  , tokenDescription :: Maybe Text -- <-- ADDED: Now optional
   , tokenTerminalKey :: Text
   , tokenSecret      :: Text
   } deriving (Show)
@@ -30,32 +31,32 @@ data Token = Token
 generatedToken :: Token -> Text
 generatedToken Token{..} =
     let
-        -- 1. Create a list of potential key-value pairs
-        -- We use a list of Maybe's to handle the optional Description field
-        maybePairs :: [(Text, Text)]
+        -- 1. Create a list of the key-value pairs FOR SIGNING.
+        maybePairs :: [Maybe (Text, Text)]
         maybePairs =
-            [ ("Amount",      tokenAmount)
-            , ("Description", tokenDescription)
-            , ("OrderId",     tokenOrderId)
-            , ("Password",    tokenSecret)
-            , ("TerminalKey", tokenTerminalKey)
+            [ Just ("Amount",      tokenAmount)
+            , ("Description",) <$> tokenDescription
+            , Just ("OrderId",     tokenOrderId)
+            , Just ("TerminalKey", tokenTerminalKey)
+            -- THIS IS THE FIX: The key must be "Password"
+            , Just ("Password",    tokenSecret)
             ]
-
-        -- 2. Create the final map from the valid pairs
-        -- 'catMaybes' filters out any Nothing values from the list.
+        
+        -- Filter out Nothing values (in case Description is empty)
         valueMap :: Map Text Text
-        valueMap = Map.fromList maybePairs
+        valueMap = Map.fromList (catMaybes maybePairs)
 
-        -- 3. Prepend the secret password to the concatenated sorted values
-        stringToSign = T.concat (Map.elems valueMap)
+        -- 2. Concatenate the sorted values. The Map ensures alphabetical key order.
+        -- Keys: Amount, Description, OrderId, TerminalKey
+        concatenatedValues = T.concat (Map.elems valueMap)
 
-        -- 4. Convert to ByteString for hashing
+        -- 3. Prepend the secret password to the concatenated string.
+        -- THIS IS THE CRUCIAL STEP FOR THE 'securepay' ENDPOINT.
+        stringToSign = concatenatedValues
+
+        -- 4. Hash the resulting string
         byteStringToSign = TE.encodeUtf8 stringToSign
-
-        -- 5. Hash with SHA-256
         digest :: Digest SHA256 = hash byteStringToSign
-
-        -- 6. Encode to lowercase hexadecimal Text
         hexEncodedHash = TE.decodeUtf8 $ Base16.encode $ convert digest
 
     in T.toLower hexEncodedHash

@@ -12,6 +12,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Time (formatTime, defaultTimeLocale, LocalTime)
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import qualified Data.Text as T
+import qualified Data.Char as C
 import Data.Text (Text)
 import Data.Maybe
 import Data.Bifunctor (first)
@@ -34,6 +35,8 @@ import Data.Coerce (coerce)
 import Data.Int (Int64)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
+import Data.Aeson.Encode.Pretty (encodePretty)
+
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
@@ -57,7 +60,8 @@ import Text (encodeToText)
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
-  | TinkoffPaymentLinkFailed HttpError     -- Failed to create a payment link
+  | TinkoffHttpError HttpError     -- Failed to create a payment link
+  | TinkoffPaymentLinkFailed Text     -- Failed to create a payment link with a textual error
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
@@ -98,9 +102,15 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
   let initReq = mkInitRequest orderId fabricPrice orderRequest tinkoffCred
-  tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffPaymentLinkFailed
+
+  $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
+  tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
 
   $(logTM) InfoS $ "Tinkoff response received. " <> ls (show tinkoffResp)
+
+  when (Tinkoff.irSuccess tinkoffResp == False) $ do
+    let errMsg = "Tinkoff Init API call failed: " <> fromMaybe "Unknown error" (Tinkoff.irMessage tinkoffResp)
+    void $ wrap (pure (Left ())) (const $ TinkoffPaymentLinkFailed errMsg)
 
   let Just paymentLink = Tinkoff.irPaymentURL tinkoffResp
   -- forward paymentId to the poller
@@ -256,59 +266,83 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
 toKopecks :: Double -> Int64
 toKopecks = round . (* 100)
 
+-- Helper function to remove characters that are not letters, numbers, punctuation, or spaces.
+-- This will strip out emojis and other symbols.
+sanitizeForGateway :: Text -> Text
+sanitizeForGateway = T.filter (\c -> C.isLetter c || C.isNumber c || C.isPunctuation c || C.isSpace c)
+
 mkInitRequest :: Text -> Double -> OrderRequest -> TinkoffCredentials -> Tinkoff.InitRequest
-mkInitRequest orderId pricePerMetre orderRequest tinkoffCred =
+mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
   let
-    -- 1. Determine the purchase type and calculate receipt/amount
-    -- This 'case' statement is the core of the fix
-    (receiptItems, totalAmount) = case (orLengthM orderRequest, orPreCutId orderRequest) of
+     -- 'fabricPrice' is the TOTAL price in rubles. Convert it to kopecks once.
+    totalAmountKopecks = toKopecks fabricPrice :: Int64
+
+    (receiptItems, description) = case (orLengthM orderRequest, orPreCutId orderRequest) of
+      
       -- CASE A: Roll Purchase
       (Just lengthM, Nothing) ->
         let
-          pricePerMeterKopecks = toKopecks pricePerMetre
-          totalAmountKopecks = round (fromIntegral pricePerMeterKopecks * lengthM)
+          -- 1. Back-calculate the price per meter
+          -- If total is 3750 and length is 2.5, price/m is 1500
+          pricePerMeter = if lengthM > 0 then fabricPrice / lengthM else 0
+          pricePerMeterKopecks = toKopecks pricePerMeter
+
           item = Tinkoff.ReceiptItem
-                  { riName = "Ткань на отрез: " <> orFabricName orderRequest
-                  , riPrice = pricePerMeterKopecks
-                  , riQuantity = lengthM
-                  , riAmount = totalAmountKopecks
+                  { riName = sanitizeForGateway (orFabricName orderRequest)
+                  , riPrice = pricePerMeterKopecks -- Price of ONE unit (1 meter)
+                  , riQuantity = lengthM            -- How many units
+                  , riAmount = totalAmountKopecks  -- The pre-calculated total
                   , riTax = Tinkoff.VAT20
                   , riPaymentMethod = Tinkoff.FullPayment
                   , riPaymentObject = Tinkoff.Commodity
                   }
-        in ([item], totalAmountKopecks)
+
+          desc = 
+            "Ткань на отрез: " <> 
+            sanitizeForGateway (orFabricName orderRequest) <> 
+            " (" <> 
+            T.pack (show lengthM) <> " м x " <> 
+            T.pack (show pricePerMeter) <> " руб/м)"
+
+        in ([item], desc)
 
       -- CASE B: Pre-Cut Purchase
-      (Nothing, Just preCutId) ->
+      (Nothing, Just _) ->
         let
-          totalPriceKopecks = toKopecks $ fromMaybe 0 (orPreCutLengthM orderRequest)
+          -- For a pre-cut, the total price IS the unit price
           item = Tinkoff.ReceiptItem
-                  { riName = "Мерный лоскут: " <> orFabricName orderRequest
-                  , riPrice = totalPriceKopecks -- For pre-cuts, price IS the total
+                  { riName = sanitizeForGateway (orFabricName orderRequest)
+                  , riPrice = totalAmountKopecks -- Price of the one "item"
                   , riQuantity = 1.0
-                  , riAmount = totalPriceKopecks
+                  , riAmount = totalAmountKopecks -- Total is the same
                   , riTax = Tinkoff.VAT20
                   , riPaymentMethod = Tinkoff.FullPayment
                   , riPaymentObject = Tinkoff.Commodity
                   }
-        in ([item], totalPriceKopecks)
-      
-      -- Error case, should not happen due to DB constraints
-      _ -> ([], 0)
+          
+          desc = 
+            "Мерный лоскут: " <> 
+            sanitizeForGateway (orFabricName orderRequest) <> 
+            " (1 шт. x " <> 
+            T.pack (show fabricPrice) <> " руб)"
 
-    -- 2. Prepare token generation data
+        in ([item], desc)
+      
+      _ -> ([], "Оплата заказа " <> orderId) -- Fallback
+
+    -- Prepare token generation data
     terminalKey = tinkoffTerminalKey tinkoffCred
     terminalSecret = tinkoffSecret tinkoffCred
-    token = Tinkoff.Token (T.pack (show totalAmount)) orderId (orFabricName orderRequest) terminalKey terminalSecret
-
+    tokenData = Tinkoff.Token (T.pack (show totalAmountKopecks)) orderId (Just description) terminalKey terminalSecret
+    signature = Tinkoff.generatedToken tokenData
   in
   -- 3. Construct the final request
   Tinkoff.InitRequest
     { Tinkoff.irOrderId = orderId
     , Tinkoff.irTerminalKey = terminalKey
-    , Tinkoff.irAmount = totalAmount
-    , Tinkoff.irDescription = Just $ "Оплата заказа " <> orderId
-    , Tinkoff.irToken = Tinkoff.generatedToken token
+    , Tinkoff.irAmount = totalAmountKopecks
+    , Tinkoff.irDescription = Just description
+    , Tinkoff.irToken = signature
     , Tinkoff.irData = Just $
         Tinkoff.CustomerData
         { Tinkoff.cdEmail = Nothing

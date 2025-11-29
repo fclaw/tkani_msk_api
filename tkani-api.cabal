@@ -51,6 +51,7 @@ library
       Infrastructure.Services.Tinkoff.Security
       Infrastructure.Services.Tinkoff.Types
       Infrastructure.Services.Tinkoff.Types.Enum
+      Infrastructure.Services.Tinkoff.Types.Enum.Modifier
       Infrastructure.Services.Tinkoff.Types.Init
       Infrastructure.Services.Types
       Infrastructure.Utils.Http
@@ -64,6 +65,7 @@ library
       src
   build-depends:
       aeson
+    , aeson-pretty
     , async
     , async-extra
     , base >=4.18 && <5

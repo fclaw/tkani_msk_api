@@ -52,8 +52,7 @@ initiateTinkoffPayment initReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager $ cfg
-  postReq @InitResponse httpManager (unpack url <> "/Init") initReq Nothing
-
+  postReq @InitResponse httpManager (unpack url <> "Init") initReq Nothing
 
 
 -- | Queries the Tinkoff Acquiring API to get the current status of a payment (`GetState` method).

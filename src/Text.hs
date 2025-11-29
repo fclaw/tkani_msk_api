@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase) where
+module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG) where
 
 import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
@@ -27,10 +27,13 @@ pascalCase (c:cs) = toUpper c : cs
 pascalCase mempty = mempty
 
 
-recordLabelModifier :: String -> String -> String
-recordLabelModifier prefix fieldName =
+recordLabelModifierG :: (String -> String) -> String -> String -> String
+recordLabelModifierG modifier prefix fieldName =
   let withoutPrefix = fromMaybe fieldName (stripPrefix prefix fieldName)
-  in camelToSnake withoutPrefix
+  in modifier withoutPrefix
+
+recordLabelModifier :: String -> String -> String
+recordLabelModifier = recordLabelModifierG camelToSnake
 
 -- | Converts any ToJSON instance directly to Strict Text
 encodeToText :: ToJSON a => a -> Text
