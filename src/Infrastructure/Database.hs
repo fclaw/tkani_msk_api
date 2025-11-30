@@ -41,7 +41,7 @@ import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
-import Control.Monad (join)
+import Control.Monad (join, void)
 import Data.Tuple.Ops (initT, app2, app3, app6, app7)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
@@ -570,8 +570,9 @@ updatePaymentStatusStatement =
       order_id = $1 :: text
   |]
 
-updatePaymentStatus :: Text -> Status -> Hasql.Pool -> IO (Either Text Int64)
-updatePaymentStatus orderId status pool = 
+updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> IO (Either Text Int)
+updatePaymentStatus orderId paymentStatus orderStatus pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $
-      (orderId, status, PENDING) `Hasql.statement` updatePaymentStatusStatement
+    runTransaction pool Hasql.Write $ do
+      void $ (orderId, paymentStatus, PENDING) `Hasql.statement` updatePaymentStatusStatement
+      (orderId, orderStatus) `Hasql.statement` updateOrderStatusStatement

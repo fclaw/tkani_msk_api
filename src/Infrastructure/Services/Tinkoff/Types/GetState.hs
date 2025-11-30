@@ -19,7 +19,7 @@ data Status
   | PENDING
   | FORMSHOWED
   | AUTHORIZING
-  | CANCELED         -- Payment was canceled by the merchant or user.
+  | CANCELLED         -- Payment was cancelled by the merchant or user.
   | CONFIRMED        -- One-step payment completed successfully.
   | AUTHORIZED       -- Two-step payment money held successfully.
   | REJECTED         -- Payment was rejected by the payment system or issuer.
@@ -37,7 +37,7 @@ instance FromJSON Status where
     "PENDING"          -> PENDING
     "FORMSHOWED"       -> FORMSHOWED
     "AUTHORIZING"      -> AUTHORIZING
-    "CANCELED"         -> CANCELED
+    "CANCELLED"        -> CANCELLED
     "CONFIRMED"        -> CONFIRMED
     "AUTHORIZED"       -> AUTHORIZED
     "REJECTED"         -> REJECTED
@@ -53,7 +53,7 @@ instance ToJSON Status where
     PENDING          -> "PENDING"
     FORMSHOWED       -> "FORMSHOWED"
     AUTHORIZING      -> "AUTHORIZING"
-    CANCELED         -> "CANCELED"
+    CANCELLED        -> "CANCELLED"
     CONFIRMED        -> "CONFIRMED"
     AUTHORIZED       -> "AUTHORIZED"
     REJECTED         -> "REJECTED"

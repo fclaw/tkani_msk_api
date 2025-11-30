@@ -29,6 +29,7 @@ import Control.Exception (SomeException)
 import Control.Exception.Lifted (catch)
 
 import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render, _tinkoffCred, tinkoffTerminalKey, tinkoffSecret)
+import  API.Types (OrderStatus (Cancelled))
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
 import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
@@ -145,7 +146,7 @@ processJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Red" template
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId REJECTED pool
+          eRes <- liftIO $ updatePaymentStatus orderId REJECTED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -160,7 +161,7 @@ processJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Yellow/Timeout" template
           currentTime >>= finalizeTelegram orderId "Timeout"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+          eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -168,14 +169,14 @@ processJob (orderId, getStateReq) = do
               pack (show (fromLeft undefined eRes))
           -- EXIT LOOP
         ------------------------------------------------------------
-        -- 4. CANCELED (Merchant or User aborted) (Stop Polling)
+        -- 4. CANCELLED (Merchant or User aborted) (Stop Polling)
         ------------------------------------------------------------
-        CANCELED -> do
-          $(logTM) InfoS $ ls $ "Order " <> orderId <> " CANCELED."
+        CANCELLED -> do
+          $(logTM) InfoS $ ls $ "Order " <> orderId <> " CANCELLED."
           -- Reuse Timeout or Failed template, or make a specific "Gray" one
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+          eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -197,9 +198,9 @@ processJob (orderId, getStateReq) = do
     $(logTM) WarningS $ ls $ "Order " <> orderId <> " TIMED OUT."
     currentTime >>= finalizeTelegram orderId "Timeout"
     pool <- fmap _appDBPool ask
-    eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+    eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
     when(isLeft eRes) $ 
-      $(logTM) ErrorS $ ls $ 
+      $(logTM) ErrorS $ ls $
         "error while updating payment status for Order " <> 
         orderId <> ": " <> 
         pack (show (fromLeft undefined eRes))
