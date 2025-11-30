@@ -71,6 +71,8 @@ formatTelegramMessage item =
         , logStr
         , "```"
         , if A.null payload then mempty else T.concat ["\n*Context:*\n```json\n", context, "\n```"]
+        -- 👇 attention block
+        , attentionLine 
         ]
         where
           toText = T.pack . show
@@ -84,6 +86,11 @@ formatTelegramMessage item =
           payload = payloadObject V2 (_itemPayload item)
           context :: T.Text
           context = TL.toStrict $ TLE.decodeUtf8 $ A.encode payload
+          -- 👇 DEFINITION LOGIC
+          -- We check if severity is in the list of "Bad" statuses
+          attentionLine :: T.Text
+          attentionLine | severity `elem` [ErrorS, AlertS, EmergencyS, CriticalS] = "‼️ @sclaw" -- You can also use emojis like "‼️ @sclaw"
+                        | otherwise = mempty
   in
     mainMessage <> timestampTag
 
