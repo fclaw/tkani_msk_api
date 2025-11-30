@@ -26,6 +26,8 @@ module Infrastructure.Database
   , checkFabricPreCuts
   , insertNewPaymentRecord
   , fetchPendingPayments
+  , updatePaymentStatusStatement
+  , updatePaymentStatus
   , module Types
   ) where
 
@@ -555,3 +557,21 @@ fetchPendingPaymentsStatement =
 
 fetchPendingPayments :: Hasql.Pool -> IO (Either Text [(Text, Text)])
 fetchPendingPayments pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ PENDING `Hasql.statement` fetchPendingPaymentsStatement
+
+updatePaymentStatusStatement :: Hasql.Statement (Text, Status, Status) Int64
+updatePaymentStatusStatement = 
+  dimap (app3 encodeToText . app2 encodeToText) fromIntegral $
+  [Hasql.rowsAffectedStatement|
+    UPDATE payments
+    SET status = CAST(LOWER($2 :: text) as payment_status)
+    WHERE 
+      status = CAST(LOWER($3 :: text) as payment_status) 
+    AND
+      order_id = $1 :: text
+  |]
+
+updatePaymentStatus :: Text -> Status -> Hasql.Pool -> IO (Either Text Int64)
+updatePaymentStatus orderId status pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $
+      (orderId, status, PENDING) `Hasql.statement` updatePaymentStatusStatement

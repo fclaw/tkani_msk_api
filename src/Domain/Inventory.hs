@@ -13,15 +13,16 @@ import Data.Bifunctor (first)
 import qualified Hasql.Transaction as Hasql
 import Data.Traversable (for)
 import Data.Aeson (Result (..))
-import Control.Monad (join)
+import Control.Monad (join, void)
 
 
 import App (AppM, _appDBPool, _thresholdMetres, render)
 import Control.Monad.Reader.Class (ask)
-import Infrastructure.Database (runTransaction, updateOrderStatusStatement, adjustFabric, AdjustFabric (..))
+import Infrastructure.Database (runTransaction, updateOrderStatusStatement, updatePaymentStatusStatement, adjustFabric, AdjustFabric (..))
 import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
 import qualified Data.HashMap.Strict as HM
+import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDING))
 
 
 data InventoryResult 
@@ -66,4 +67,7 @@ statements orderId thresholdMetres = do
   mId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
   -- adjust fabric
   adjFabric <- (orderId, thresholdMetres) `Hasql.statement` adjustFabric
+  -- update payment status to paid
+  void $ (orderId, CONFIRMED, PENDING) `Hasql.statement` updatePaymentStatusStatement
+
   return $ fmap (mId,) adjFabric

@@ -361,8 +361,8 @@ mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
     -- Prepare token generation data
     terminalKey = tinkoffTerminalKey tinkoffCred
     terminalSecret = tinkoffSecret tinkoffCred
-    tokenData = Tinkoff.Token (T.pack (show totalAmountKopecks)) orderId (Just description) terminalKey terminalSecret
-    signature = Tinkoff.generatedToken tokenData
+    tokenData = Tinkoff.InitToken (T.pack (show totalAmountKopecks)) orderId (Just description) terminalKey terminalSecret
+    signature = Tinkoff.generatedInitToken tokenData
   in
   -- 3. Construct the final request
   Tinkoff.InitRequest

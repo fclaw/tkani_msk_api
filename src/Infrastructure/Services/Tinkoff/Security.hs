@@ -4,10 +4,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Infrastructure.Services.Tinkoff.Security
-  ( generatedToken
+  ( generatedInitToken
   , generateGetStateToken
   , GetStateToken (..)
-  , Token(..)
+  , InitToken(..)
   ) where
 
 import           Data.Text (Text)
@@ -21,27 +21,27 @@ import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
 
 -- | Data required to generate the Tinkoff API signature token.
-data Token = Token
-  { tokenAmount      :: Text
-  , tokenOrderId     :: Text
-  , tokenDescription :: Maybe Text -- <-- ADDED: Now optional
-  , tokenTerminalKey :: Text
-  , tokenSecret      :: Text
+data InitToken = InitToken
+  { itAmount      :: Text
+  , itOrderId     :: Text
+  , itDescription :: Maybe Text -- <-- ADDED: Now optional
+  , itTerminalKey :: Text
+  , itSecret      :: Text
   } deriving (Show)
 
 -- | Generates the SHA-256 token required by the Tinkoff API.
-generatedToken :: Token -> Text
-generatedToken Token{..} =
+generatedInitToken :: InitToken -> Text
+generatedInitToken InitToken{..} =
     let
         -- 1. Create a list of the key-value pairs FOR SIGNING.
         maybePairs :: [Maybe (Text, Text)]
         maybePairs =
-            [ Just ("Amount",      tokenAmount)
-            , ("Description",) <$> tokenDescription
-            , Just ("OrderId",     tokenOrderId)
-            , Just ("TerminalKey", tokenTerminalKey)
+            [ Just ("Amount",      itAmount)
+            , ("Description",) <$> itDescription
+            , Just ("OrderId",     itOrderId)
+            , Just ("TerminalKey", itTerminalKey)
             -- THIS IS THE FIX: The key must be "Password"
-            , Just ("Password",    tokenSecret)
+            , Just ("Password",    itSecret)
             ]
         
         -- Filter out Nothing values (in case Description is empty)

@@ -30,7 +30,7 @@ import Control.Exception.Lifted (catch)
 
 import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render, _tinkoffCred, tinkoffTerminalKey, tinkoffSecret)
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
-import Infrastructure.Database (getChatDetails, fetchPendingPayments)
+import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..))
@@ -144,6 +144,13 @@ processJob (orderId, getStateReq) = do
           $(logTM) WarningS $ ls $ "Order " <> orderId <> " REJECTED (" <> pack (show s) <> ")."
           -- Update Telegram: Send "Red" template
           currentTime >>= finalizeTelegram orderId "Declined"
+          pool <- fmap _appDBPool ask
+          eRes <- liftIO $ updatePaymentStatus orderId REJECTED pool
+          when(isLeft eRes) $ 
+            $(logTM) ErrorS $ ls $ 
+              "error while updating payment status for Order " <> 
+              orderId <> ": " <> 
+              pack (show (fromLeft undefined eRes))
           -- EXIT LOOP
         ------------------------------------------------------------
         -- 3. EXPIRED / TIMEOUT (Bank side) (Stop Polling)
@@ -152,6 +159,13 @@ processJob (orderId, getStateReq) = do
           $(logTM) InfoS $ ls $ "Order " <> orderId <> " EXPIRED (Tinkoff)."
           -- Update Telegram: Send "Yellow/Timeout" template
           currentTime >>= finalizeTelegram orderId "Timeout"
+          pool <- fmap _appDBPool ask
+          eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+          when(isLeft eRes) $ 
+            $(logTM) ErrorS $ ls $ 
+              "error while updating payment status for Order " <> 
+              orderId <> ": " <> 
+              pack (show (fromLeft undefined eRes))
           -- EXIT LOOP
         ------------------------------------------------------------
         -- 4. CANCELED (Merchant or User aborted) (Stop Polling)
@@ -160,6 +174,13 @@ processJob (orderId, getStateReq) = do
           $(logTM) InfoS $ ls $ "Order " <> orderId <> " CANCELED."
           -- Reuse Timeout or Failed template, or make a specific "Gray" one
           currentTime >>= finalizeTelegram orderId "Declined"
+          pool <- fmap _appDBPool ask
+          eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+          when(isLeft eRes) $ 
+            $(logTM) ErrorS $ ls $ 
+              "error while updating payment status for Order " <> 
+              orderId <> ": " <> 
+              pack (show (fromLeft undefined eRes))
           -- EXIT LOOP
         ------------------------------------------------------------
         -- 5. CONTINUE POLLING (New, Processing, Unknown)

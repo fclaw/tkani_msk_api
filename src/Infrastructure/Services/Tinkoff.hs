@@ -14,7 +14,7 @@ import Data.Maybe (fromMaybe)
 
 import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
-import Infrastructure.Services.Tinkoff.Security (generatedToken, Token(..))
+import Infrastructure.Services.Tinkoff.Security (generatedInitToken, InitToken(..))
 import Infrastructure.Utils.Http (postReq, HttpError)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
 
