@@ -5,3 +5,4 @@
 00002.alter_table 2025-11-24T07:39:08Z System Administrator <root@Sonny.local> # add search to fabrics
 00003.alter_table 2025-11-26T08:52:41Z System Administrator <root@Sonny.local> # name, media_group_id to fabric
 00004.add_table 2025-11-28T15:35:19Z System Administrator <root@Sonny.local> # payment provider
+00005.alter_table 2025-11-30T12:12:26Z System Administrator <root@Sonny.local> # fabric: thumbnail url

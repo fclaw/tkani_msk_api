@@ -67,7 +67,12 @@ data Routes route = Routes
        :- "catalog"
        :> "by-date"
        :> QueryParam "date" CatalogDate
-       :> Get '[JSON] (ApiResponse CatalogSummary)     
+       :> Get '[JSON] (ApiResponse CatalogSummary)
+   , _searchFabrics 
+       :: route
+       :- "search"
+       :> QueryParam "query" Text
+       :> Get '[JSON] (ApiResponse [SearchTeaser])
   } deriving (Generic)
 
 

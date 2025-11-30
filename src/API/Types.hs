@@ -86,6 +86,7 @@ data RawIngestRequest =
     , rawMediaGroupId :: Maybe Text  -- ^ Album ID (null/None if single)
     , rawMediaType    :: MediaType   -- ^ Parsed via the Enum above
     , rawFileId       :: Maybe Text  -- ^ The file ID
+    , rawThumbnailUrl :: Maybe Text
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)
@@ -357,4 +358,16 @@ data CatalogSummary = CatalogSummary
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)
 
-data SearchItem
+-- | ADT for the lightweight search result list (Inline "Teaser" Mode)
+-- Contains just enough info for the bot to display a title, description, and thumbnail.
+data SearchTeaser = SearchTeaser
+  { stId           :: Int64
+  , stPreCutId     :: Maybe Int64
+  , stName         :: Text
+  , stArticle      :: Text
+  , stType         :: FabricType
+  , stPrice        :: Int       -- Can be price_per_meter or total_price
+  , stThumbnailUrl :: Maybe Text
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "st" } ''SearchTeaser)
