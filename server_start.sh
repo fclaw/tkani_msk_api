@@ -20,7 +20,7 @@ echo "🔄 Running Database Migrations..."
 docker compose run --rm migrator
 
 echo "🤖 Starting API..."
-docker compose up -d api
+docker compose up -d api nginx
 
 echo "🧹 Cleanup..."
 docker image prune -f
