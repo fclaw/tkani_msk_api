@@ -22,7 +22,7 @@ services:
       timeout: 5s
       retries: 5
     ports: # Optional: expose the port for local tools like sqitch
-      - "5432:5432"
+      - 5432:5432
 
   # ... db and api services ...
 
@@ -73,6 +73,24 @@ services:
         # This tells docker-compose: "Do NOT start the 'api' service until
         # the 'db' service reports that it is 'healthy'."
         condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: tkani-nginx
+    restart: always
+    ports:
+      - 80:80 # External Port 80 (Mac/Server) -> Internal Port 80 (Nginx)
+    volumes:
+      # 1. Mount configuration
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      
+      # 2. Mount your local media folder into the container
+      # Ensure ./public/media exists on your Mac/Server!
+      - ./public/media:/var/www/media:ro
+    networks:
+      - tkani-net
+    depends_on:
+      - api
 
 networks:
   tkani-net:
