@@ -196,6 +196,13 @@ processJob (orderId, getStateReq) = do
   when(isNothing mResult) $ do 
     $(logTM) WarningS $ ls $ "Order " <> orderId <> " TIMED OUT."
     currentTime >>= finalizeTelegram orderId "Timeout"
+    pool <- fmap _appDBPool ask
+    eRes <- liftIO $ updatePaymentStatus orderId CANCELED pool
+    when(isLeft eRes) $ 
+      $(logTM) ErrorS $ ls $ 
+        "error while updating payment status for Order " <> 
+        orderId <> ": " <> 
+        pack (show (fromLeft undefined eRes))
 
 -- Helper for strategy
 getAdaptiveDelay :: NominalDiffTime -> Int
