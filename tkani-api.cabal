@@ -34,6 +34,7 @@ library
       Handlers.GetProviders
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
+      Handlers.SearchFabricCard
       Handlers.SearchFabrics
       Handlers.SetTelegramMessage
       Handlers.TrackOrder

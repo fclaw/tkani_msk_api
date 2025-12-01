@@ -29,6 +29,7 @@ module Infrastructure.Database
   , updatePaymentStatusStatement
   , updatePaymentStatus
   , searchFabrics
+  , searchFabricCard
   , module Types
   ) where
 
@@ -617,3 +618,58 @@ updatePaymentStatus orderId paymentStatus orderStatus pool =
     runTransaction pool Hasql.Write $ do
       void $ (orderId, paymentStatus, PENDING) `Hasql.statement` updatePaymentStatusStatement
       (orderId, orderStatus) `Hasql.statement` updateOrderStatusStatement
+
+
+searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64) (Maybe CatalogSummaryItem)
+searchFabricCardStatement = 
+  dimap (first encodeToText) (fmap (fromRight undefined . convertFromJson))
+  [Hasql.maybeStatement|
+    WITH item AS (
+        SELECT
+          jsonb_build_object(
+            'id', f.id,
+            'name', f.name,
+            'article', f.article,
+            'type', 'roll',
+            'price_per_meter', f.price_per_meter,
+            'total_price', NULL,
+            'length_m', NULL,
+            'available_length', f.available_length_m,
+            'is_sold_out', f.is_sold,
+            'warehouse_message_id', f.warehouse_message_id,
+            'warehouse_chat_id', -1001234567890,
+            'warehouse_file_id', f.image_url,
+            'description', f.description,
+            'media_type', to_jsonb(f.media_type)
+              ) :: jsonb AS item_json
+        FROM fabrics AS f
+        WHERE $1 :: text = 'roll' AND f.id = $2 :: int8
+      UNION ALL
+        SELECT
+          jsonb_build_object(
+            'id', f.id,
+            'name', f.name || ' (отрез ' || pc.length_m || 'м)',
+            'article', f.article,
+            'type', 'pre_cut',
+            'price_per_meter', NULL,
+            'total_price', pc.price_rub,
+            'length_m', pc.length_m,
+            'is_sold_out', FALSE,
+            'warehouse_message_id', f.warehouse_message_id,
+            'warehouse_chat_id', -1001234567890,
+            'warehouse_file_id', f.image_url,
+            'description', f.description,
+            'media_type', to_jsonb(f.media_type)
+          ) :: jsonb AS item_json
+        FROM pre_cuts AS pc
+        JOIN fabrics AS f ON pc.fabric_id = f.id
+        WHERE $1 :: text = 'pre_cut' AND pc.id = $2 :: int8
+    )
+    SELECT item_json :: jsonb FROM item
+  |]
+
+searchFabricCard :: DWT.FabricType -> Int64 -> Hasql.Pool -> IO (Either Text (Maybe CatalogSummaryItem))
+searchFabricCard fabricType fabricId pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      (fabricType, fabricId) `Hasql.statement` searchFabricCardStatement

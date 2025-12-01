@@ -20,6 +20,8 @@ import qualified Handlers.SetTelegramMessage as SetTelegramMessage
 import qualified Handlers.TrackOrder as TrackOrder
 import qualified Handlers.GetCatalogSummary as GetCatalogSummary
 import qualified Handlers.SearchFabrics as SearchFabrics
+import qualified Handlers.SearchFabricCard as SearchFabricCard
+
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -34,4 +36,5 @@ apiHandlers = Routes
   , _trackOrder = TrackOrder.handler
   , _getCatalogSummary = GetCatalogSummary.handler
   , _searchFabrics = SearchFabrics.handler
+  , _searchFabricCard = SearchFabricCard.handler
   }

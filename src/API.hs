@@ -15,6 +15,7 @@ import Data.Int (Int64)
 
 import API.Types
 import API.WithField (WithField)
+import Domain.Warehouse.Types (FabricType)
 
 
 -- This 'data' definition IS our new API ADT.
@@ -73,6 +74,12 @@ data Routes route = Routes
        :- "search"
        :> QueryParam "query" Text
        :> Get '[JSON] (ApiResponse [SearchTeaser])
+   , _searchFabricCard 
+       :: route
+       :- "search"
+       :> Capture "type" FabricType
+       :> Capture "id" Int64
+       :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
   } deriving (Generic)
 
 
