@@ -431,7 +431,7 @@ searchFabricsStatement =
             CAST(f.total_length_m AS int4) > 0 AND
             CAST(f.available_length_m AS int4) > 0 AND
             (
-                f.search_vector @@ websearch_to_tsquery('russian', $1 :: text)
+                f.search_vector @@ to_tsquery('russian', $1 :: text)
                 OR f.article ILIKE ($1 :: text || '%')
             )
     )
@@ -459,7 +459,7 @@ searchFabricsStatement =
             CAST(f.total_length_m AS int4) = 0 AND
             CAST(f.available_length_m AS int4) = 0 AND
             (
-                f.search_vector @@ websearch_to_tsquery('russian', $1 :: text)
+                f.search_vector @@ to_tsquery('russian', $1 :: text)
                 OR f.article ILIKE ($1 :: text || '%')
             )
     )
