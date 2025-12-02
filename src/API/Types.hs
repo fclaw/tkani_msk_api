@@ -371,3 +371,18 @@ data SearchTeaser = SearchTeaser
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "st" } ''SearchTeaser)
+
+-- NEW: The Paginated Response Wrapper
+-- This is what your API will now return.
+data PaginatedResults a = PaginatedResults
+  { prItems      :: [a]   -- The list of items for the current page (e.g., [SearchTeaser])
+  , prTotal      :: Int   -- The TOTAL number of items found across ALL pages
+  , prPage       :: Int   -- The current page number
+  , prLimit      :: Int   -- The number of items per page
+  , prTotalPages :: Int   -- Calculated total pages (total / limit)
+  } deriving (Show, Eq, Generic)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pr" } ''PaginatedResults)
+
+defPaginatedResults = PaginatedResults [] 0 0 0 0

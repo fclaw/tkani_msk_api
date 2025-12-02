@@ -7,3 +7,4 @@
 00004.add_table 2025-11-28T15:35:19Z System Administrator <root@Sonny.local> # payment provider
 00005.alter_table 2025-11-30T12:12:26Z System Administrator <root@Sonny.local> # fabric: thumbnail url
 00006.alter_table 2025-12-01T18:11:24Z System Administrator <root@Sonny.local> # fabric: ts vector
+00007.add_function 2025-12-02T08:00:52Z System Administrator <root@Sonny.local> # search: pagination

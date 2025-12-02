@@ -405,72 +405,39 @@ markOrderAsInvalidStatement =
     RETURNING internal_notification_message_id :: int8, sdek_tracking_number :: text
   |]
 
+
+type SearchResultRow = (Int64, Value) -- (total_count, teaser_json)
+
+-- A pure helper function for the transformation logic
+processSearchResults :: [SearchResultRow] -> Either Text (Int, [SearchTeaser])
+processSearchResults [] = Right (0, []) -- Handle the case of no results
+processSearchResults allRows@((firstRowTotal, _):_) =
+  let
+      -- 1. Get the total count from the first row (it's the same in all rows)
+      total = fromIntegral firstRowTotal
+      -- 2. Map over all rows to decode the JSON blob into a SearchTeaser
+      teasers = first pack $ sequence $ map (convertFromJson @SearchTeaser . snd) allRows -- 'snd' gets the ByteString part
+  in fmap (total,) teasers
+
+
 -- 1. Full Text Search (Smart matching)
 -- 2. Fallback for strict matches (e.g. searching partial Article ID)
 -- Rank results by relevance (Name match > Description match)
-searchFabricsStatement :: Hasql.Statement (Text, Int32) (Either Text [SearchTeaser])
+searchFabricsStatement :: Hasql.Statement (Text, Int32, Int32) (Either Text (Int, [SearchTeaser]))
 searchFabricsStatement =
-  rmap (first pack . sequence . map (convertFromJson @SearchTeaser) . V.toList)
+  rmap (processSearchResults . V.toList)
   [Hasql.vectorStatement|
-    WITH res AS (
-    (
-        SELECT
-            f.updated_at,
-            jsonb_build_object(
-                'id', f.id,
-                'name', f.name,
-                'article', f.article,
-                'type', 'roll',
-                'price', f.price_per_meter,
-                'thumbnail_url', f.thumbnail_url
-            ) :: jsonb AS teaser_json
-        FROM 
-            fabrics AS f
-        WHERE
-            f.in_stock = TRUE AND f.is_sold = FALSE AND
-            CAST(f.total_length_m AS int4) > 0 AND
-            CAST(f.available_length_m AS int4) > 0 AND
-            (
-                f.search_vector @@ to_tsquery('russian', $1 :: text)
-                OR f.article ILIKE ($1 :: text || '%')
-            )
-    )
-
-    UNION ALL
-
-    (
-        SELECT
-            f.updated_at,
-            jsonb_build_object(
-                'id', f.id,
-                'pre_cut_id', pc.id,
-                'name', f.name || ' (отрез ' || pc.length_m || 'м)',
-                'article', f.article,
-                'type', 'pre_cut',
-                'price', pc.price_rub,
-                'thumbnail_url', f.thumbnail_url
-            ) :: jsonb AS teaser_json
-        FROM 
-            pre_cuts AS pc
-        JOIN 
-            fabrics AS f ON pc.fabric_id = f.id
-        WHERE
-            pc.in_stock = TRUE AND
-            CAST(f.total_length_m AS int4) = 0 AND
-            CAST(f.available_length_m AS int4) = 0 AND
-            (
-                f.search_vector @@ to_tsquery('russian', $1 :: text)
-                OR f.article ILIKE ($1 :: text || '%')
-            )
-    )
-    ORDER BY updated_at DESC
-    LIMIT $2 :: int4)
-    SELECT teaser_json :: jsonb FROM res
+    SELECT
+      sfp.total_count :: int8,
+      sfp.teaser_json :: jsonb
+    FROM search_fabrics_paginated($1 :: text, $2 :: int4, $3 :: int4) AS sfp
   |]
 
-
-searchFabrics :: Text -> Int32 -> Hasql.Pool -> IO (Either Text [SearchTeaser])
-searchFabrics query limit pool = fmap (join . first (pack . show)) $ runTransaction pool Hasql.Read $ (query, limit) `Hasql.statement` searchFabricsStatement
+searchFabrics :: Text -> Int -> Int -> Hasql.Pool -> IO (Either Text (Int, [SearchTeaser]))
+searchFabrics query limit offset pool = 
+  fmap (join . first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      (query, fromIntegral limit, fromIntegral offset) `Hasql.statement` searchFabricsStatement
 
 fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
 fetchCatalogSummaryItemStatement =

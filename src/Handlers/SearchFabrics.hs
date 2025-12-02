@@ -9,9 +9,10 @@ import qualified Data.Text as T
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (first)
+import Data.Maybe (fromMaybe)
 
 import App (AppM, _appDBPool)
-import API.Types (ApiResponse, SearchTeaser, mkError)
+import API.Types (ApiResponse, SearchTeaser, mkError, PaginatedResults (..), defPaginatedResults)
 import Infrastructure.Database (searchFabrics)
 
 
@@ -20,21 +21,38 @@ import Infrastructure.Database (searchFabrics)
 --    Output: "шерсть:* & burber:*"
 prepareTsQuery :: T.Text -> T.Text
 prepareTsQuery input = 
-    let 
-        -- Split by spaces, remove garbage
-        wordsList = filter (not . T.null) $ T.words $ T.strip input
-        -- Append ":*" to every word to enable Prefix Matching
-        -- "Dior" -> "Dior:*"
-        wildcarded = map (<> ":*") wordsList
-    in T.intercalate " & " wildcarded
+  let 
+     -- Split by spaces, remove garbage
+     wordsList = filter (not . T.null) $ T.words $ T.strip input
+     -- Append ":*" to every word to enable Prefix Matching
+     -- "Dior" -> "Dior:*"
+     wildcarded = map (<> ":*") wordsList
+  in T.intercalate " & " wildcarded
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: Maybe Text -> AppM (ApiResponse [SearchTeaser])
-handler Nothing = return $ Right []
-handler (Just query) | T.length query < 3 = return $ Right []
-handler (Just query) = do
+handler 
+  :: Maybe Text -- "query"
+  -> Maybe Int  -- "page"
+  -> Maybe Int  -- "limit"
+  -> AppM (ApiResponse (PaginatedResults SearchTeaser))
+handler Nothing _ _ = return $ Right defPaginatedResults
+handler (Just query) _ _ | T.length query < 3 = return $ Right defPaginatedResults
+handler (Just query) maybePage maybeLimit = do
+  -- 1. Set Defaults for pagination
+  let page = fromMaybe 1 maybePage
+  let limit = fromMaybe 10 maybeLimit
+  -- Calculate offset: For page 1, offset is 0. For page 2, offset is 10 (if limit is 10).
+  let offset = (page - 1) * limit
   let prepQuery = prepareTsQuery query
+  let paginatedResults = 
+       defPaginatedResults 
+       { prPage = page, prLimit = limit }
   $(logTM) InfoS $ ls $ "Request received for search, prepared query: " <> prepQuery
   pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ searchFabrics prepQuery 50 pool
+  fmap (first mkError) $ liftIO $ do 
+    eItems <- searchFabrics prepQuery limit offset pool
+    return $ flip fmap eItems $ \(total, teasers) ->
+      -- 3. Construct the final response object
+      let totalPages = (total + limit - 1) `div` limit
+      in paginatedResults { prItems = teasers, prTotal = total, prTotalPages = totalPages }

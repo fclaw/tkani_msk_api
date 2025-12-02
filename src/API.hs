@@ -73,7 +73,9 @@ data Routes route = Routes
        :: route
        :- "search"
        :> QueryParam "query" Text
-       :> Get '[JSON] (ApiResponse [SearchTeaser])
+       :> QueryParam "page" Int
+       :> QueryParam "limit" Int
+       :> Get '[JSON] (ApiResponse (PaginatedResults SearchTeaser))
    , _searchFabricCard 
        :: route
        :- "search"
