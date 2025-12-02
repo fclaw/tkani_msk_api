@@ -72,8 +72,9 @@ sendOrEditTelegramMessage
   -> ChatKey                      -- ^ The target chat
   -> Maybe Int                    -- ^ The target message_id
   -> Maybe Int
+  -> Maybe A.Value
   -> AppM (Either TelegramError MessageIdResponse)
-sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId = do
+sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId mReplyMarkup = do
   -- 1. Get the necessary config from our application environment
   bots <- fmap _bots ask
   let botsInfo = M.lookup chatKey bots
@@ -95,6 +96,7 @@ sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId = do
           , Just ("text"       A..= messageText)
           , Just ("parse_mode" A..= T.pack "MarkdownV2")
           , ("reply_to_message_id" A..=) <$> mbReplyId
+          , ("reply_markup" A..=) <$> mReplyMarkup
           ]
 
           -- Combine the base payload with the conditional message_id field

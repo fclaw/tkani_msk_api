@@ -86,7 +86,7 @@ handleSdekFailure orderId uuid (NetworkError ex) =
          for_ ePair $ \(msgId, trackN) -> do
           let msgData = HM.fromList [("orderNumber", orderId), ("trackingNumber", trackN)]
           message <- render $currentModule msgData
-          void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId)
+          void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
       -- SCENARIO B: SERVER ERROR (500, 502)
       -- SDEK is down. Do NOTHING to DB. Just log and wait for next poll.
       else

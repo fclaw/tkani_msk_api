@@ -227,14 +227,14 @@ finalizeTelegram orderId suffix tm = do
   let pool = _appDBPool cfg
   eMessageId <- liftIO $ getChatDetails orderId pool
   for_ eMessageId $ \messageId ->
-    void $ sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE messageId Nothing
+    void $ sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE messageId Nothing Nothing
   when(isLeft eMessageId) $ $(logTM) ErrorS $ ls $ "error while fetching chat details " <> pack (show eMessageId)
 
 
 notifyMessage :: Text -> AppM ()
-notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing
+notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing Nothing
 
 replyMessage :: Int -> AppM ()
 replyMessage msgId = do 
   message <- render ($currentModule <> ".Paid") mempty
-  void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId)
+  void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing

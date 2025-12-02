@@ -30,6 +30,8 @@ module Infrastructure.Database
   , updatePaymentStatus
   , searchFabrics
   , searchFabricCard
+  , saveAnnouncementDraft
+  , checkAnnouncementDraft
   , module Types
   ) where
 
@@ -550,7 +552,8 @@ insertNewPaymentRecord :: NewPaymentRecord -> Hasql.Pool -> IO (Either Text Int6
 insertNewPaymentRecord paymentRecord pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $
-      paymentRecord `Hasql.statement` insertNewPaymentRecordStatement
+      paymentRecord `Hasql.statement` 
+      insertNewPaymentRecordStatement
 
 
 fetchPendingPaymentsStatement :: Hasql.Statement Status [(Text, Text)]
@@ -639,4 +642,35 @@ searchFabricCard :: DWT.FabricType -> Int64 -> Hasql.Pool -> IO (Either Text (Ma
 searchFabricCard fabricType fabricId pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
-      (fabricType, fabricId) `Hasql.statement` searchFabricCardStatement
+      (fabricType, fabricId) `Hasql.statement` 
+        searchFabricCardStatement
+
+
+checkAnnouncementDraftStatement :: Hasql.Statement Day Bool
+checkAnnouncementDraftStatement = [Hasql.singletonStatement|SELECT EXISTS(SELECT 1 FROM daily_announcements WHERE announcement_date = $1 :: date) :: bool|]
+
+checkAnnouncementDraft :: Day -> Hasql.Pool -> IO (Either Text Bool)
+checkAnnouncementDraft day pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      day `Hasql.statement` checkAnnouncementDraftStatement
+
+saveAnnouncementDraftStatement :: Hasql.Statement (Day, Int64, Int64) ()
+saveAnnouncementDraftStatement =
+  rmap (const ())
+  [Hasql.rowsAffectedStatement|
+    INSERT INTO daily_announcements 
+    (announcement_date
+    , warehouse_chat_id
+    , warehouse_message_id)
+    VALUES ($1 :: date, $2 :: int8, $3 :: int8)
+    ON CONFLICT (announcement_date)
+    DO NOTHING
+  |]
+
+saveAnnouncementDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> IO (Either Text ())
+saveAnnouncementDraft day chatId messageId pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      (day, chatId, messageId) `Hasql.statement` 
+      saveAnnouncementDraftStatement
