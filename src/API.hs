@@ -82,6 +82,16 @@ data Routes route = Routes
        :> Capture "type" FabricType
        :> Capture "id" Int64
        :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
+   , _draftAnnouncement 
+       :: route
+       :- "announcement"
+       :> "draft"
+       :> Post '[JSON] ()
+    , _publishAnnouncement
+       :: route
+       :- "announcement"
+       :> "publish"
+       :> Post '[JSON] ()
   } deriving (Generic)
 
 

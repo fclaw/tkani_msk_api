@@ -28,6 +28,8 @@ library
       Domain.Inventory
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
+      Handlers.Announcement.Draft
+      Handlers.Announcement.Publish
       Handlers.GetCatalogSummary
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo

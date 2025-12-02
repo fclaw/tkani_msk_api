@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main where
 
@@ -238,8 +239,8 @@ main = do
               run (configApiPort config) $ 
                 simpleCors $  
                   serve tkaniApiProxy $
-                    hoistServer 
-                      tkaniApiProxy 
+                    hoistServer
+                      tkaniApiProxy
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
         -- Task 2: The SDEK Polling Worker

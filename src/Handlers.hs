@@ -21,6 +21,8 @@ import qualified Handlers.TrackOrder as TrackOrder
 import qualified Handlers.GetCatalogSummary as GetCatalogSummary
 import qualified Handlers.SearchFabrics as SearchFabrics
 import qualified Handlers.SearchFabricCard as SearchFabricCard
+import qualified Handlers.Announcement.Draft as Announcement.Draft
+import qualified Handlers.Announcement.Publish as Announcement.Publish
 
 
 -- This is the implementation of our server.
@@ -37,4 +39,6 @@ apiHandlers = Routes
   , _getCatalogSummary = GetCatalogSummary.handler
   , _searchFabrics = SearchFabrics.handler
   , _searchFabricCard = SearchFabricCard.handler
+  , _draftAnnouncement = Announcement.Draft.handler
+  , _publishAnnouncement = Announcement.Publish.handler
   }
