@@ -39,14 +39,15 @@ data SdekShipmentState
   
   -- Destination City / Last Mile
   | StatusAcceptedAtDeliveryWarehouse       -- "ACCEPTED_AT_DELIVERY_WAREHOUSE"
-  | StatusAcceptedAtPickUpPoint             -- "ACCEPTED_AT_PICK_UP_POINT" (Arrived at PVZ)
-  | StatusReadyForPickup                    -- "READY_FOR_PICKUP" (Client got SMS)
   | StatusTakenByCourier                    -- "TAKEN_BY_COURIER" (Out for delivery)
   
   -- Final States
+  | StatusAcceptedAtPickUpPoint             -- "ACCEPTED_AT_PICK_UP_POINT" (Arrived at PVZ)
   | StatusDelivered                         -- "DELIVERED"
   | StatusNotDelivered                      -- "NOT_DELIVERED" (Failed)
   | StatusReturned                          -- "RETURNED" (Sent back to sender)
+  | StatusPostomatPosted
+  | StatusPostomatReceived
   
   -- Fallback
   | StatusUnknown Text
@@ -73,10 +74,11 @@ instance FromJSON SdekShipmentState where
     -- Destination Side
     "ACCEPTED_AT_DELIVERY_WAREHOUSE"          -> StatusAcceptedAtDeliveryWarehouse
     "ACCEPTED_AT_PICK_UP_POINT"               -> StatusAcceptedAtPickUpPoint
-    "READY_FOR_PICKUP"                        -> StatusReadyForPickup
     "TAKEN_BY_COURIER"                        -> StatusTakenByCourier
+    "POSTOMAT_POSTED"                         -> StatusPostomatPosted
     
     -- Final
+    "POSTOMAT_RECEIVED"                       -> StatusPostomatReceived
     "DELIVERED"                               -> StatusDelivered
     "NOT_DELIVERED"                           -> StatusNotDelivered
     "RETURNED"                                -> StatusReturned

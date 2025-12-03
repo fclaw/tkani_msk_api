@@ -109,12 +109,12 @@ mapSdekToInternal (Just sdekState) current = case sdekState of
   -- ==========================================================
   -- A. PRE-TRANSIT
   -- ==========================================================
-  StatusCreated -> 
-    -- Don't downgrade if already Paid or moving
-    if current > Registered then current else Registered
+  -- Don't downgrade if already Paid or moving
+  StatusCreated                           -> if current > Registered 
+                                             then current 
+                                             else Registered
 
-  StatusRemoved -> 
-    Cancelled
+  StatusRemoved                           -> Cancelled
 
   -- ==========================================================
   -- B. ACTIVE TRANSIT (Any physical movement = OnRoute)
@@ -132,27 +132,22 @@ mapSdekToInternal (Just sdekState) current = case sdekState of
   
   -- Destination City / Last Mile
   StatusAcceptedAtDeliveryWarehouse       -> OnRoute
-  StatusAcceptedAtPickUpPoint             -> OnRoute
-  StatusReadyForPickup                    -> OnRoute
   StatusTakenByCourier                    -> OnRoute
 
   -- ==========================================================
   -- C. FINAL STAGES
   -- ==========================================================
-  StatusDelivered -> 
-    Delivered
+  StatusPostomatPosted                    -> Delivered
+  StatusPostomatReceived                  -> Completed
+  StatusAcceptedAtPickUpPoint             -> Delivered
+  StatusDelivered                         -> Completed
 
-  StatusNotDelivered -> 
-    -- Failed delivery attempt usually means it's still with the courier 
-    -- trying again, or waiting at warehouse. Keep OnRoute.
-    OnRoute 
+  StatusNotDelivered                      -> Cancelled 
 
-  StatusReturned -> 
-    -- Return to sender essentially cancels the sale.
-    Cancelled
+  -- Return to sender essentially cancels the sale.
+  StatusReturned                          -> Cancelled
 
   -- ==========================================================
   -- D. UNKNOWN / FALLBACK
   -- ==========================================================
-  StatusUnknown _ -> 
-    current
+  StatusUnknown _                         -> current       
