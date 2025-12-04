@@ -22,7 +22,7 @@ import Data.Maybe (fromMaybe)
 
 -- | Orchestrates the Python call.
 --   Returns the FilePath to the generated collage image.
-generateCollageViaPython :: [Text] -> Word32 -> IO (Maybe FilePath)
+generateCollageViaPython :: [Text] -> Word32 -> IO (Either Text FilePath)
 generateCollageViaPython urls jobId = do
     let tempDir = "/tmp/collage_job_" <> show jobId
     let outputImg = tempDir <> "_result.jpg"
@@ -43,7 +43,7 @@ generateCollageViaPython urls jobId = do
     -- 3. Call Python Script
     -- Usage: python collage_maker.py -f FOLDER -o OUTPUT -w WIDTH -c COLS
     putStrLn "Running Python script..."
-    result <- try $ callProcess "python3" 
+    result <- try $ callProcess "python3"
         [ scriptPath
         , "-f", tempDir      -- Folder containing images
         , "-o", outputImg    -- Output filename
@@ -55,15 +55,15 @@ generateCollageViaPython urls jobId = do
         Left err -> do
             putStrLn $ "Python script failed: " <> show err
             removeDirectoryRecursive tempDir -- Cleanup input files
-            return Nothing
+            return $ Left ("Python script failed: " <> T.pack (show err))
         
         Right _ -> do
             exists <- doesFileExist outputImg
             removeDirectoryRecursive tempDir -- Cleanup input files
             
             if exists 
-                then return (Just outputImg)
-                else return Nothing
+                then return $ Right outputImg
+                else return $ Left ("file doesn't exist " <> T.pack outputImg)
 
 -- | Helper to download a single URL and save to a file
 downloadAndSave :: FilePath -> (Int, Text) -> IO ()

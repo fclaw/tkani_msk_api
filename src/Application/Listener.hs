@@ -77,13 +77,13 @@ generateAndAttachCollageAndOPublish_worker :: (forall a. AppM a -> IO (Either Se
 generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..} = do
   putStrLn $ "Processing collage job for chat " ++ show cjChatId
   jobId <- randomIO @Word32
-  maybeFilePath <- generateCollageViaPython cjUrls jobId
-  case maybeFilePath of
-    Nothing -> void $ runAppM $ $(logTM) ErrorS $ "Failed to generate collage"
+  eitherFilePath <- generateCollageViaPython cjUrls jobId
+  case eitherFilePath of
+    Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
       -- Optionally, you could *edit the caption* to add an error note,
       -- but for simplicity, we'll just log it.
       
-    Just collagePath -> do
+    Right collagePath -> do
       putStrLn "Collage generated. Swapping media in message..."
 
       now <- getCurrentTime
