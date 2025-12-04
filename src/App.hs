@@ -135,6 +135,7 @@ data ChatKey =
         ORDER 
       | CONCIERGE 
       | WAREHOUSE
+      | MAIN
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int)
@@ -154,6 +155,7 @@ data Config = Config
   , configTemplateMap :: TemplateMap
   , _metroCityCodes :: HS.HashSet Int
   , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
+  , _dailyDigestImgStub :: Text
   }
 
 -- A helper type for parsing the YAML

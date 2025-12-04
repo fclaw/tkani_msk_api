@@ -4,10 +4,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Infrastructure.Services.Telegram
   ( sendOrEditTelegramMessage
   , deleteMessage
+  , sendPhotoToTelegram
+  , editMessageMediaWithPhoto
   , TelegramError(..)
   , MessageIdResponse (..)
   )
@@ -15,9 +19,9 @@ where
 
 
 -- Standard & Third-Party Imports
-import           Control.Exception       (SomeException, try)
+import           Control.Exception       (SomeException, try, toException, Exception)
 import           Control.Monad.IO.Class  (liftIO)
-import           Control.Monad           (void)
+import           Control.Monad           (void, when)
 import           Control.Monad.Reader.Class (ask)
 import qualified Data.Aeson              as A
 import           Data.Text               (Text)
@@ -33,6 +37,11 @@ import           Data.Maybe (fromMaybe, catMaybes)
 import           Data.Int (Int64)
 import qualified Data.Map.Strict         as M
 import           Data.Traversable        (for)
+import qualified Data.Text.Encoding      as TE
+import qualified Data.ByteString.Lazy    as BL
+import           Data.Bifunctor (first)
+import           Data.Either (isLeft)
+import qualified Network.Wreq as W
 
 -- (Assuming your AppM and Config are defined in App)
 import           App (Config(..), AppM, ChatKey)
@@ -46,6 +55,8 @@ data TelegramError
   | TelegramApiError Text           -- ^ Telegram returned ok:false with an error description
   | BotNotFound
   deriving (Show)
+
+deriving instance Exception TelegramError
 
 
 -- You'll need to define a FromJSON instance for this to parse the message_id
@@ -174,3 +185,78 @@ deleteMessage messageId chatKey = do
               else Left $ TelegramApiError (fromMaybe "Unknown API error" (trDescription tgResp))
 
   case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ res;    
+
+
+-- | Sends a photo from a local file path.
+sendPhotoToTelegram :: Text -> Text -> ChatKey -> Maybe A.Value -> FilePath -> AppM (Either TelegramError MessageIdResponse)
+sendPhotoToTelegram context caption chatKey mbKeyboard path = do
+  -- 1. Get the necessary config from our application environment
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  res <- for botsInfo $ \(bot, chat) -> do
+    httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+    let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendPhoto"
+    -- We need to build a multipart/form-data request
+    let part = partFile "photo" path & partContentType .~ Just "image/jpeg"
+    let payload = [ part
+                  , partBS "chat_id" (TE.encodeUtf8 (T.pack (show chat)))
+                  , partBS "caption" (TE.encodeUtf8 caption)
+                  , partBS "parse_mode" "MarkdownV2"
+                  ] ++ maybe [] (\k -> [partLBS "reply_markup" (A.encode k)]) mbKeyboard
+
+    -- Using wreq's 'post' with a list of 'Part's
+    eResult <- liftIO $ try' $  postWith (defaults & manager .~ Right httpManager) url payload
+    -- 5. Wrap the result in our custom error type for clean handling.
+    case eResult of
+      Right response -> do 
+        let mRes = A.eitherDecode @MessageIdResponse (response ^. responseBody)
+        return $ either (Left . JSONError . T.pack . show) Right mRes
+      Left err  -> do 
+        $(logTM) ErrorS $ "CRITICAL: Failed to send a notification for " <> ls context <> ". Error: " <> ls (show err)
+        pure $ Left (ApiRequestFailed err)
+    
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ res;
+
+-- | Replaces the media in an existing message. The caption is only updated if 'Just text' is provided.
+editMessageMediaWithPhoto
+    :: Text
+    -> Int64
+    -> Int64
+    -> ChatKey
+    -> Maybe Text  -- <<-- NEW: Caption is now optional
+    -> FilePath
+    -> AppM (Either TelegramError ())
+editMessageMediaWithPhoto context chatId msgId chatKey maybeNewCaption filePath = do
+  -- 1. Get the necessary config from our application environment
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  res <- for botsInfo $ \(bot, chat) -> do
+    httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+    let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/editMessageMedia"
+    
+    -- 1. Build the 'media' object. Aeson's 'object' with 'catMaybes'
+    -- is perfect for handling optional fields like 'caption'.
+    let mediaObject = A.object $ catMaybes
+            [ Just ("type"  A..= ("photo" :: Text))
+            , Just ("media" A..= ("attach://photo" :: Text))
+            , ("caption" A..=) <$> maybeNewCaption -- This line only adds 'caption' if it's 'Just'
+            ]
+            
+    -- 2. Build the multipart request
+    let payload =
+            [ W.partText "chat_id" (T.pack (show chatId))
+            , W.partText "message_id" (T.pack (show msgId))
+            , W.partText "media" (TE.decodeUtf8 (BL.toStrict (A.encode mediaObject)))
+            , W.partFile "photo" filePath
+            ]
+    -- Using wreq's 'post' with a list of 'Part's
+    eResult <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+    -- 3. Process the response (simplified)
+    case eResult of
+        Left httpErr -> return $ Left (ApiRequestFailed (toException httpErr))
+        Right response -> 
+            -- Check if response body contains {"ok":true}
+            if "\"ok\":true" `T.isInfixOf` (TE.decodeUtf8 . BL.toStrict $ response ^. W.responseBody)
+                then return $ Right ()
+                else return $ Left (TelegramApiError "Failed to edit media")
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ Right ();

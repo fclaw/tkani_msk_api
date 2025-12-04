@@ -18,6 +18,7 @@ library:
     - Workers.SdekOrderStatusPoller
     - Workers.TinkoffPaymentStatusPoller
     - Infrastructure.Services.Overpass
+    - Application.Listener
   dependencies:
     # This list should already be complete
     - aeson
@@ -67,6 +68,9 @@ library:
     - base16-bytestring
     - memory
     - aeson-pretty
+    - postgresql-simple
+    - process
+    - unliftio
 
 executables:
   tkani-api-exe:

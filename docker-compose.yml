@@ -63,10 +63,13 @@ services:
       SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
       SYSTEM_CERTIFICATE_PATH: /etc/ssl/certs/mounted-bundle.crt
       NIX_SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
+      # collage maker
+      COLLAGE_SCRIPT_PATH: /app/utils/make_grid.py
     env_file: .env
     volumes:
       - ./.env:/app/.env  # Mounts the file (so loadEnv works)
       - ./cacert.pem:/etc/ssl/certs/mounted-bundle.crt:ro
+      - ./make_grid.py:/app/utils/make_grid_py:ro
     depends_on:
       db:
         # --- THIS IS THE MAGIC ---

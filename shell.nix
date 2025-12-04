@@ -27,6 +27,10 @@ let
     '';
   };
 
+  pythonEnv = pkgs.python311.withPackages (ps: [
+    ps.pillow
+  ]);
+
 in
 pkgs.mkShell {
     # NATIVE inputs = Build tools (must exist during compilation)
@@ -50,6 +54,9 @@ pkgs.mkShell {
     pkgs.zlib.dev    # <--- CRITICAL: Headers for zlib
     pkgs.gmp
     pkgs.xz          # often needed for compression
+
+    # for a collage
+    pythonEnv
   ];
 
   # Configure the Nix path to our own `pkgs`, to ensure Stack-with-Nix uses the correct one rather than the global <nixpkgs> when looking for the right `ghc` argument to pass in `nix/stack-integration.nix`
@@ -66,6 +73,7 @@ pkgs.mkShell {
 
     # Ensure the linker finds the libraries
     export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.postgresql pkgs.zlib pkgs.gmp ]}:$LD_LIBRARY_PATH
+    export PYTHONPATH="${pythonEnv}/lib/${pythonEnv.libPrefix}/site-packages''${PYTHONPATH:+:}$PYTHONPATH"
     
     # Docker socket setup for macOS
     DOCKER_SOCKET_PATH="/var/run/docker.sock"

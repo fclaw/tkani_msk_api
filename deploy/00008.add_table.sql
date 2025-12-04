@@ -4,9 +4,9 @@ BEGIN;
 
 -- XXX Add DDLs here.
 -- migration_create_announcements.sql
-CREATE TYPE announcement_status AS ENUM ('draft', 'published', 'ready');
+CREATE TYPE daily_digests_status AS ENUM ('draft', 'published', 'ready');
 
-CREATE TABLE daily_announcements (
+CREATE TABLE daily_digests (
     id SERIAL PRIMARY KEY,
     
     -- The date this announcement is for
@@ -19,9 +19,11 @@ CREATE TABLE daily_announcements (
     -- The "coordinates" of the final post in the public channel
     public_chat_id BIGINT,
     public_message_id BIGINT,
+
+    final_draft TEXT,
     
     -- Lifecycle
-    status announcement_status NOT NULL DEFAULT 'draft',
+    status daily_digests_status NOT NULL DEFAULT 'draft',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at TIMESTAMPTZ
 );

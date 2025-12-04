@@ -22,14 +22,16 @@ library
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
       Infrastructure.Services.Overpass
+      Application.Listener
   other-modules:
       API.WithField
       Concurrency
       Domain.Inventory
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
-      Handlers.Announcement.Draft
-      Handlers.Announcement.Publish
+      Handlers.DailyDigest.Draft
+      Handlers.DailyDigest.New
+      Handlers.DailyDigest.Publish
       Handlers.GetCatalogSummary
       Handlers.GetDeliveryPoints
       Handlers.GetFabricInfo
@@ -63,6 +65,7 @@ library
       Text
       TH.Location
       TH.RecordToTuple
+      Utils.CollageMaker
       Utils.Telegram.Markdown
       Paths_tkani_api
   hs-source-dirs:
@@ -96,6 +99,8 @@ library
     , monad-control
     , monad-time
     , mtl
+    , postgresql-simple
+    , process
     , profunctors
     , random
     , regex-tdfa
@@ -109,6 +114,7 @@ library
     , transformers-base
     , tuple-sop
     , unix
+    , unliftio
     , unordered-containers
     , uuid
     , validation

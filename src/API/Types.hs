@@ -232,7 +232,7 @@ data OrderStatus
   | Cancelled
   deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
-$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake } ''OrderStatus)
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''OrderStatus)
 
 statusToSQL :: OrderStatus -> Text
 statusToSQL s = case s of
@@ -386,3 +386,20 @@ data PaginatedResults a = PaginatedResults
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pr" } ''PaginatedResults)
 
 defPaginatedResults = PaginatedResults [] 0 0 0 0
+
+data DailyDigestDraft =
+     DailyDigestDraft 
+     { dddChatId :: Int64
+     , dddMessageId :: Int64
+     , dddDraft :: Text
+     }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ddd" } ''DailyDigestDraft)
+
+data DailyDigestPublish =
+     DailyDigestPublish
+     { ddpChatId :: Int64
+     , ddpMessageId :: Int64
+     }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ddp" } ''DailyDigestPublish)

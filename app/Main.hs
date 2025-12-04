@@ -57,6 +57,17 @@ import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (orderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
+import Application.Listener (runCollageJobListener)
+
+
+
+data Workers = WebServer | Sdek | Tinkoff | CollageMaker
+
+instance Show Workers where
+  show WebServer = "Web Server"
+  show Sdek = "SDEK Poller"
+  show Tinkoff = "Tinkoff Poller"
+  show CollageMaker = "Collage Maker"
 
 
 handleYamlResult (Right providers) go = go providers
@@ -65,6 +76,8 @@ handleYamlResult (Left error) _ = throwError $ userError ("cannot open yaml: " <
 whenLeft :: Applicative m => Either a b -> (a -> m ()) -> m ()
 whenLeft (Left x) f = f x
 whenLeft _        _ = pure ()
+
+showErrorInWorker worker res = whenLeft res $ \e -> error $ show worker <> " failed with a servant error: " <> show e
 
 -- This is the "natural transformation" that converts our 'AppM' into a 'Handler'
 appToHandler :: forall a . Config -> TVar State -> AppM a -> Handler a
@@ -180,13 +193,16 @@ main = do
       sdekShipmentPoint <- fmap pack $ getEnv "SDEK_SHIPMENT_POINT" 
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
       conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
+      warehouseBotToken <- fmap pack $ getEnv "WAREHOUSE_BOT_TOKEN"
       conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
       warehouseChatId <- fmap read $ getEnv "WAREHOUSE_CHANNEL_ID"
+      mainChatId <- fmap read $ getEnv "MAIN_CHANNEL_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
       thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
       tinkoffTerminalKey <- fmap pack $ getEnv "TINKOFF_TERMINAL_KEY"
       tinkoffSecret <- fmap pack $ getEnv "TINKOFF_SECRET"
       tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
+      dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
       
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -202,12 +218,14 @@ main = do
                 M.fromList
                   [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
                    (ORDER, (orderBotToken, orderChatId)),
-                   (WAREHOUSE, (conciergeBotToken, warehouseChatId))
+                   (WAREHOUSE, (warehouseBotToken, warehouseChatId)),
+                   (MAIN, (conciergeBotToken, mainChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
             , _metroCityCodes = HS.fromList (map code cities)
             , _thresholdMetres = thresholdMetres
+            , _dailyDigestImgStub = dailyDigestImgStub
             }
 
       tchan <- newTChanIO
@@ -244,27 +262,29 @@ main = do
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
         -- Task 2: The SDEK Polling Worker
-        let sdekPoller = do
-              res <- runInIO orderStatusPoller 
-              whenLeft res $ \e -> error $ "SDEK Poller failed with a servant error: " ++ show e
+        let sdekPoller = runInIO orderStatusPoller >>= showErrorInWorker Sdek
         -- Task 2: The Tinkoff Polling Worker
-        let tinkoffPoller = do
-              res <- runInIO paymentStatusPoller 
-              whenLeft res $ \e -> error $ "Tinkoff Poller failed with a servant error: " ++ show e
-        let tasks :: [(String, IO ())]
+        let tinkoffPoller = runInIO paymentStatusPoller >>= showErrorInWorker Tinkoff
+        -- Task 3: Collage Maker
+        let connInfo = configConnInfo config
+        let collageMakerListener = do 
+              res <- runInIO (runCollageJobListener connInfo runInIO)
+              showErrorInWorker CollageMaker res
+        let tasks :: [(Workers, IO ())]
             tasks = 
-              [ ("Web Server", server)
-              , ("SDEK Poller", sdekPoller)
-              , ("Tinkoff Poller", tinkoffPoller)
+              [ (WebServer, server)
+              , (Sdek, sdekPoller)
+              , (Tinkoff, tinkoffPoller)
+              , (CollageMaker, collageMakerListener)
               ]
 
         putStrLn "Spawning concurrent workers..."
-        asyncs <- mapM (\(name, action) -> (name,) <$> async action) tasks
+        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) tasks
         putStrLn "All workers started. Waiting for any worker to exit."
 
         -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
         (taskName, _) <- waitAnyNamed asyncs
-        putStrLn $ "Worker '" ++ taskName ++ "' finished unexpectedly. Shutting down."
+        putStrLn $ "Worker '" <> taskName <> "' finished unexpectedly. Shutting down."
 
         -- Gracefully cancel all other workers on exit.
         mapM_ (cancel . snd) asyncs

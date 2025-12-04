@@ -30,8 +30,10 @@ module Infrastructure.Database
   , updatePaymentStatus
   , searchFabrics
   , searchFabricCard
-  , saveAnnouncementDraft
-  , checkAnnouncementDraft
+  , saveDailyDigestDraft
+  , checkDailyDigestDraft
+  , updateDailyDigestDraft
+  , publishDailyDigest
   , module Types
   ) where
 
@@ -46,7 +48,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app2, app3, app6, app7)
+import Data.Tuple.Ops (initT, app2, app3, app6, app7, snocT)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -646,21 +648,21 @@ searchFabricCard fabricType fabricId pool =
         searchFabricCardStatement
 
 
-checkAnnouncementDraftStatement :: Hasql.Statement Day Bool
-checkAnnouncementDraftStatement = [Hasql.singletonStatement|SELECT EXISTS(SELECT 1 FROM daily_announcements WHERE announcement_date = $1 :: date) :: bool|]
+checkDailyDigestStatement :: Hasql.Statement Day Bool
+checkDailyDigestStatement = [Hasql.singletonStatement|SELECT EXISTS(SELECT 1 FROM daily_digests WHERE announcement_date = $1 :: date) :: bool|]
 
-checkAnnouncementDraft :: Day -> Hasql.Pool -> IO (Either Text Bool)
-checkAnnouncementDraft day pool = 
+checkDailyDigestDraft :: Day -> Hasql.Pool -> IO (Either Text Bool)
+checkDailyDigestDraft day pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
-      day `Hasql.statement` checkAnnouncementDraftStatement
+      day `Hasql.statement` checkDailyDigestStatement
 
-saveAnnouncementDraftStatement :: Hasql.Statement (Day, Int64, Int64) ()
-saveAnnouncementDraftStatement =
+saveDailyDigestStatement :: Hasql.Statement (Day, Int64, Int64) ()
+saveDailyDigestStatement =
   rmap (const ())
   [Hasql.rowsAffectedStatement|
-    INSERT INTO daily_announcements 
-    (announcement_date
+    INSERT INTO daily_digests 
+    ( announcement_date
     , warehouse_chat_id
     , warehouse_message_id)
     VALUES ($1 :: date, $2 :: int8, $3 :: int8)
@@ -668,9 +670,40 @@ saveAnnouncementDraftStatement =
     DO NOTHING
   |]
 
-saveAnnouncementDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> IO (Either Text ())
-saveAnnouncementDraft day chatId messageId pool = 
+saveDailyDigestDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> IO (Either Text ())
+saveDailyDigestDraft day chatId messageId pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       (day, chatId, messageId) `Hasql.statement` 
-      saveAnnouncementDraftStatement
+      saveDailyDigestStatement
+
+updateDailyDigestStatement :: Hasql.Statement DailyDigestDraft ()
+updateDailyDigestStatement =
+  dimap $(recordToTuple ''DailyDigestDraft) (const ())
+  [Hasql.rowsAffectedStatement|
+    UPDATE daily_digests
+    SET final_draft = $3 :: text
+    WHERE warehouse_chat_id = $1 :: int8 
+    AND warehouse_message_id = $2 :: int8
+  |]
+
+
+updateDailyDigestDraft :: DailyDigestDraft -> Hasql.Pool -> IO (Either Text ())
+updateDailyDigestDraft draft pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      draft `Hasql.statement` 
+      updateDailyDigestStatement
+
+publishDailyDigestStatement :: Hasql.Statement DailyDigestPublish ()
+publishDailyDigestStatement = 
+  dimap ((\(x, y) -> (x, y, (encodeToText Ready))) . $(recordToTuple ''DailyDigestPublish)) (const ())
+  [Hasql.rowsAffectedStatement|
+    UPDATE daily_digests
+    SET status = CAST($3 :: text AS daily_digests_status)
+    WHERE warehouse_chat_id = $1 :: int8 
+    AND warehouse_message_id = $2 :: int8
+  |]
+
+publishDailyDigest :: DailyDigestPublish -> Hasql.Pool -> IO (Either Text ())
+publishDailyDigest publish pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ publish `Hasql.statement` publishDailyDigestStatement

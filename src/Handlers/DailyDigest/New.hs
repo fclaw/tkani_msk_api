@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Handlers.Announcement.Draft (handler) where
+module Handlers.DailyDigest.New (handler) where
 
 import Katip
 import qualified Data.Text as T
@@ -17,13 +17,18 @@ import qualified Data.HashMap.Strict as HM
 import Data.Bifunctor (second)
 import Data.Either (isLeft)
 import Control.Monad.IO.Class (liftIO)
+import System.Random (randomIO)
+import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
 
-import App (AppM, currentTime, ChatKey(WAREHOUSE), _bots, render, _appDBPool)
+import App (AppM, currentTime, ChatKey(WAREHOUSE), _bots, render, _appDBPool, _dailyDigestImgStub)
 import API.Types (ApiResponse)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse (..))
+import Infrastructure.Services.Telegram (sendPhotoToTelegram, MessageIdResponse (..))
 import TH.Location (currentModule)
-import Infrastructure.Database (saveAnnouncementDraft, checkAnnouncementDraft)
+import Infrastructure.Database (saveDailyDigestDraft, checkDailyDigestDraft)
+import Utils.CollageMaker (downloadAndSave)
+import System.FilePath ((</>))
+import Data.Word (Word32)
 
 
 handler :: AppM ()
@@ -35,7 +40,7 @@ handler = do
   -- Construct the Deep Link URL
   pool <- fmap _appDBPool ask
   
-  eRes <- liftIO $ checkAnnouncementDraft today pool
+  eRes <- liftIO $ checkDailyDigestDraft today pool
   for_ eRes $ \isAlready -> do
     when isAlready $ $(logTM) InfoS $ ls @String $ "announcement has already been registered"
     unless isAlready $ do
@@ -53,9 +58,18 @@ handler = do
                       ]
                 ]]
               ]
-        message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Draft") $ HM.fromList [("date", dateStr)]
-        eResp <- sendOrEditTelegramMessage $currentModule message WAREHOUSE Nothing Nothing (Just keyboard)
+
+        filePath <- fmap _dailyDigestImgStub ask
+        fId <- liftIO $ randomIO @Word32
+        let tmpDir = "/tmp/stub_" <> show fId
+        liftIO $ createDirectoryIfMissing True tmpDir
+        liftIO $ downloadAndSave tmpDir (1, filePath)
+        let img = tmpDir </> "img_" <> show 1 <> ".jpg"
+
+        message <- fmap escapeMarkdownV2 $ render $currentModule $ HM.fromList [("date", dateStr)]
+        eResp <- sendPhotoToTelegram $currentModule message WAREHOUSE (Just keyboard) img
+        liftIO $ removeDirectoryRecursive tmpDir
         for_ eResp $ \(MessageIdResponse messageId) -> do
-          eRes <- liftIO $ saveAnnouncementDraft today (fromIntegral chatId) (fromIntegral messageId) pool
+          eRes <- liftIO $ saveDailyDigestDraft today (fromIntegral chatId) (fromIntegral messageId) pool
           when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "drafting announcement has failed. " <> show eRes
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "drafting announcement has failed. " <> show eRes

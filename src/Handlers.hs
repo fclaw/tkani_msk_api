@@ -21,9 +21,9 @@ import qualified Handlers.TrackOrder as TrackOrder
 import qualified Handlers.GetCatalogSummary as GetCatalogSummary
 import qualified Handlers.SearchFabrics as SearchFabrics
 import qualified Handlers.SearchFabricCard as SearchFabricCard
-import qualified Handlers.Announcement.Draft as Announcement.Draft
-import qualified Handlers.Announcement.Publish as Announcement.Publish
-
+import qualified Handlers.DailyDigest.New as DailyDigest.New
+import qualified Handlers.DailyDigest.Draft as DailyDigest.Draft
+import qualified Handlers.DailyDigest.Publish as DailyDigest.Publish
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -39,6 +39,7 @@ apiHandlers = Routes
   , _getCatalogSummary = GetCatalogSummary.handler
   , _searchFabrics = SearchFabrics.handler
   , _searchFabricCard = SearchFabricCard.handler
-  , _draftAnnouncement = Announcement.Draft.handler
-  , _publishAnnouncement = Announcement.Publish.handler
+  , _putDailyDigest = DailyDigest.New.handler
+  , _draftDailyDigestDraft = DailyDigest.Draft.handler
+  , _publishDailyDigest = DailyDigest.Publish.handler
   }

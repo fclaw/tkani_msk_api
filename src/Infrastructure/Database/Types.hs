@@ -13,6 +13,7 @@ import           Control.Lens (makeLenses)
 import           Data.UUID (UUID) -- For the SDEK tracking UUID
 import           Data.Aeson.TH
 import           Data.Int (Int64)
+import           Data.Char (toLower)
 
 import Text (recordLabelModifier)
 import Infrastructure.Services.Types (PaymentProvider)
@@ -79,3 +80,8 @@ data NewPaymentRecord =
     , nprError              :: Maybe Text
     , nprToken              :: Text
     }
+
+
+data DailyDigestStatus = Draft | Published | Ready
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''DailyDigestStatus)

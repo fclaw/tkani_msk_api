@@ -15,11 +15,14 @@ import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Control.Exception (catch, IOException)
+import Database.PostgreSQL.Simple (ConnectInfo (..), defaultConnectInfo)
+
 
 -- | A data type to hold all our application's configuration.
 data AppConfig = AppConfig
   { configDBConnString :: Text
   , configApiPort      :: Int
+  , configConnInfo     :: ConnectInfo
   } deriving (Show)
 
 type EnvMap = Map.Map Text Text
@@ -79,4 +82,12 @@ loadConfig = do
   pure $ AppConfig
     { configDBConnString = connString
     , configApiPort      = apiPort
+    , configConnInfo = 
+        defaultConnectInfo 
+        { connectHost = T.unpack dbHost
+        , connectPort = fromIntegral (read (T.unpack dbPort))
+        , connectUser = T.unpack dbUser
+        , connectPassword = T.unpack dbPass
+        , connectDatabase = T.unpack dbName
+        }
     }

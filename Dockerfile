@@ -54,6 +54,8 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
+    python3 python3-pil \
+    python3-requests \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
