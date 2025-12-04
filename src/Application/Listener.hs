@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Notification as PG
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (forever, void, when)
+import Control.Monad (forever, void, when, join)
 import Data.Int (Int64)
 import Data.Aeson.TH
 import Data.Aeson (eitherDecode, (.=), object)
@@ -29,10 +29,12 @@ import Servant.Server (ServerError)
 import System.Directory (removeFile)
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
+import Data.Bifunctor (first)
+
 
 import App (AppM, ChatKey(MAIN, WAREHOUSE)) -- Your AppM types
 import Text (recordLabelModifier) 
-import Utils.CollageMaker (generateCollageViaPython)
+import Utils.CollageMaker (generateCollageViaService)
 import Infrastructure.Services.Telegram (sendPhotoToTelegram, deleteMessage)
 import TH.Location (currentModule)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
@@ -77,7 +79,7 @@ generateAndAttachCollageAndOPublish_worker :: (forall a. AppM a -> IO (Either Se
 generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..} = do
   putStrLn $ "Processing collage job for chat " ++ show cjChatId
   jobId <- randomIO @Word32
-  eitherFilePath <- generateCollageViaPython cjUrls jobId
+  eitherFilePath <- fmap (join . first (T.pack . show)) $ runAppM $ generateCollageViaService cjUrls jobId
   case eitherFilePath of
     Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
       -- Optionally, you could *edit the caption* to add an error note,
@@ -104,7 +106,7 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..} = do
       -- We call the helper with 'Nothing' for the caption.
       -- Telegram will automatically keep the existing caption.
       let finalText = escapeMarkdownV2 $ cleanDigestText cjFinalDraft
-      eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText WAREHOUSE (Just keyboard) collagePath
+      eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
       when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
       removeFile collagePath
       void $ runAppM $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE

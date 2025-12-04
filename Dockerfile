@@ -39,6 +39,7 @@ RUN mkdir -p /deploy/nix/store && \
 # ==========================================
 FROM debian:stable-slim
 
+
 WORKDIR /app
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
@@ -54,9 +55,6 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
-    python3 \
-    python3-pil \
-    python3-requests \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
@@ -69,8 +67,6 @@ COPY --from=builder /root/.local/bin/tkani-api-exe /app/server
 COPY providers.yaml /app/
 COPY templates /app/templates
 COPY data /app/data
-COPY app/utils /app/utils
-
 
 # 5. THE FIX: Update Entrypoint to look in System Folders too
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
@@ -84,5 +80,7 @@ RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
     # Run
     echo "exec ./server" >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
+
+# or move shell.nix and nix-shell ./shell.nix -- stack exec tkani-api-exe -- no-metro
 
 CMD ["/app/entrypoint.sh"]

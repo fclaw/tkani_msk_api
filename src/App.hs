@@ -156,6 +156,7 @@ data Config = Config
   , _metroCityCodes :: HS.HashSet Int
   , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
   , _dailyDigestImgStub :: Text
+  , _collageServiceUrl :: Text
   }
 
 -- A helper type for parsing the YAML

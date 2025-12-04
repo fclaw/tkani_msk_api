@@ -1,9 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 
-module Utils.CollageMaker (generateCollageViaPython, downloadAndSave) where
+module Utils.CollageMaker (generateCollageViaService, downloadImage) where
 
 import System.Process (callProcess)
-import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive, doesFileExist)
+import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
 import System.FilePath ((</>))
 import qualified Data.ByteString.Lazy as BL
 import Network.Wreq (get, responseBody, Response)
@@ -14,60 +19,102 @@ import UnliftIO.Async (pooledMapConcurrentlyN)
 import Control.Exception (try, SomeException)
 import Data.Word (Word32)
 import Data.Foldable (for_)
-import System.Environment (getExecutablePath)
-import System.Environment (lookupEnv)
+import Control.Monad.Reader.Class (ask)
+import GHC.Generics (Generic)
+import Data.Aeson
+import Katip
+import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 
 
+import App (AppM, _configHttpManager, _configCollageServiceUrl)
+import Infrastructure.Utils.Http (postReq)
 
--- | Orchestrates the Python call.
---   Returns the FilePath to the generated collage image.
-generateCollageViaPython :: [Text] -> Word32 -> IO (Either Text FilePath)
-generateCollageViaPython urls jobId = do
-    let tempDir = "/tmp/collage_job_" <> show jobId
-    let outputImg = tempDir <> "_result.jpg"
 
-    -- Read the script path from an environment variable.
-    -- Default to the Docker path if the variable is not set.
-    maybeScriptPath <- lookupEnv "COLLAGE_SCRIPT_PATH"
-    let scriptPath = fromMaybe "/app/utils/make_grid.py" maybeScriptPath
+-- Define the request and response ADTs
+data CollageRequest = CollageRequest
+  { imagePaths     :: [Text]
+  , outputFilename :: Text
+  , width          :: Int
+  } deriving (Generic, ToJSON)
 
-    -- --- END OF NEW LOGIC ---
+data CollageResponse = CollageResponse
+  { ok          :: Bool
+  , resultPath  :: Maybe Text
+  , error       :: Maybe Text
+  } deriving (Generic, FromJSON)
 
-    createDirectoryIfMissing True tempDir
 
-    -- 2. Download Images to Temp Directory
-    putStrLn $ "Downloading " <> show (length urls) <> " images..."
-    _ <- pooledMapConcurrentlyN 5 (downloadAndSave tempDir) (zip [1..] urls)
+showt :: Show a => a -> T.Text
+showt = T.pack . show
 
-    -- 3. Call Python Script
-    -- Usage: python collage_maker.py -f FOLDER -o OUTPUT -w WIDTH -c COLS
-    putStrLn "Running Python script..."
-    result <- try $ callProcess "python3"
-        [ scriptPath
-        , "-f", tempDir      -- Folder containing images
-        , "-o", outputImg    -- Output filename
-        , "-w", "1200"       -- Width
-        ] :: IO (Either SomeException ())
+generateCollageViaService :: [Text] -> Word32 -> AppM (Either Text FilePath)
+generateCollageViaService urls jobId = do
+    cfg <- ask
+    let collageServiceUrl = T.unpack $ _collageServiceUrl cfg
+    
+    -- 1. Define paths within the shared volume (from the API container's perspective)
+    let sharedVolumePath = "/app/tmp" -- The mount point in the tkani-api container
+    let jobDir = sharedVolumePath </> ("collage_job_" <> show jobId)
+    let outputFilename = "collage_result_" <> showt jobId <> ".jpg"
 
-    -- 4. Cleanup and Return
-    case result of
-        Left err -> do
-            putStrLn $ "Python script failed: " <> show err
-            removeDirectoryRecursive tempDir -- Cleanup input files
-            return $ Left ("Python script failed: " <> T.pack (show err))
-        
-        Right _ -> do
-            exists <- doesFileExist outputImg
-            removeDirectoryRecursive tempDir -- Cleanup input files
+    -- Create a temporary directory for the downloaded images
+    liftIO $ createDirectoryIfMissing True jobDir
+
+    -- 2. Download all images from Telegram concurrently
+    $(logTM) InfoS $ ls $ "Downloading " <> showt (length urls) <> " images for job " <> showt jobId
+    -- 'downloadImage' is a helper that takes a file_id and saves it to a path
+    -- It returns the final path. We need to handle potential errors.
+    eDownloadedPaths <- liftIO $ try $ pooledMapConcurrentlyN 5 (downloadImage jobDir) (zip [1..] urls)
+
+    case eDownloadedPaths of
+        Left (dlErr :: SomeException) -> do
+            liftIO $ removeDirectoryRecursive jobDir -- Cleanup on failure
+            return $ Left ("Failed to download images: " <> showt dlErr)
+
+        Right downloadedPaths -> do
+            -- 3. Create the request for the Python service
+            -- We send paths *relative* to the shared volume root.
+            let relativePaths = map (makeRelative sharedVolumePath) downloadedPaths
             
-            if exists 
-                then return $ Right outputImg
-                else return $ Left ("file doesn't exist " <> T.pack outputImg)
+            let requestPayload = CollageRequest
+                  { imagePaths = relativePaths
+                  , outputFilename = outputFilename
+                  , width = 1200
+                  }
+
+            $(logTM) InfoS "Calling collage service..."
+            let mgr = _configHttpManager cfg
+            eResult <- postReq @CollageResponse mgr (collageServiceUrl <> "/generate-collage") requestPayload Nothing
+
+            -- 4. Clean up the temporary input images immediately
+            liftIO $ removeDirectoryRecursive jobDir
+            
+            -- 5. Process the response from the collage service
+            case eResult of
+                Left httpErr -> 
+                  return $ Left ("Collage service connection failed: " <> showt httpErr)
+                Right (CollageResponse True (Just relativePath) _) -> 
+                  return $ Right (sharedVolumePath </> T.unpack relativePath)
+                    
+
 
 -- | Helper to download a single URL and save to a file
-downloadAndSave :: FilePath -> (Int, Text) -> IO ()
-downloadAndSave dir (index, url) = do
+downloadImage :: FilePath -> (Int, Text) -> IO FilePath
+downloadImage dir (index, url) = do
     let filename = dir </> "img_" <> show index <> ".jpg"
     eResp <- try $ get (T.unpack url) :: IO (Either SomeException (Network.Wreq.Response BL.ByteString))
     for_ eResp $ \r -> BL.writeFile filename (r ^. responseBody)
+    return filename
+
+-- | Strips the shared volume's base path to create a relative path.
+--   Example: makeRelative "/app/tmp" "/app/tmp/job_123/1.jpg" -> "job_123/1.jpg"
+makeRelative :: FilePath -> FilePath -> Text
+makeRelative basePath fullPath =
+  let
+    baseText = T.pack basePath
+    fullText = T.pack fullPath
+  in
+    -- T.stripPrefix returns a Maybe, so we handle the case where the prefix
+    -- doesn't match (which would indicate a bug).
+    fromMaybe fullText (T.stripPrefix (baseText <> "/") fullText)

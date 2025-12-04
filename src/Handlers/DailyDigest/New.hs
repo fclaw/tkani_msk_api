@@ -26,7 +26,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendPhotoToTelegram, MessageIdResponse (..))
 import TH.Location (currentModule)
 import Infrastructure.Database (saveDailyDigestDraft, checkDailyDigestDraft)
-import Utils.CollageMaker (downloadAndSave)
+import Utils.CollageMaker (downloadImage)
 import System.FilePath ((</>))
 import Data.Word (Word32)
 
@@ -63,7 +63,7 @@ handler = do
         fId <- liftIO $ randomIO @Word32
         let tmpDir = "/tmp/stub_" <> show fId
         liftIO $ createDirectoryIfMissing True tmpDir
-        liftIO $ downloadAndSave tmpDir (1, filePath)
+        liftIO $ downloadImage tmpDir (1, filePath)
         let img = tmpDir </> "img_" <> show 1 <> ".jpg"
 
         message <- fmap escapeMarkdownV2 $ render $currentModule $ HM.fromList [("date", dateStr)]

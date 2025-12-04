@@ -203,6 +203,7 @@ main = do
       tinkoffSecret <- fmap pack $ getEnv "TINKOFF_SECRET"
       tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
       dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
+      collageServiceUrl <- fmap pack $ getEnv "COLLAGE_SERVICE_URL"
       
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -226,6 +227,7 @@ main = do
             , _metroCityCodes = HS.fromList (map code cities)
             , _thresholdMetres = thresholdMetres
             , _dailyDigestImgStub = dailyDigestImgStub
+            , _collageServiceUrl = collageServiceUrl
             }
 
       tchan <- newTChanIO
