@@ -45,8 +45,7 @@ services:
 
   # The API Service
   api:
-    image: ba4c197f1735703370fdaf20936fafcc8aa554e52005065ddfcfacc993796776 
-    # -- europe-west10-docker.pkg.dev/tkani-479219/tkani-api/tkani-api:latest
+    image: europe-west10-docker.pkg.dev/tkani-479219/tkani-api/tkani-api:latest
     # build: . # Build the image from the Dockerfile in the current directory
     container_name: tkani-api-container
     restart: unless-stopped
