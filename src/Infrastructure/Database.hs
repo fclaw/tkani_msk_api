@@ -343,7 +343,9 @@ adjustFabric =
                 f.available_length_m < $2 :: float8
             ) :: bool,
             
-            'rem_length', f.available_length_m :: float8
+            'rem_length', f.available_length_m :: float8,
+
+            'warehouse_message_id', f.warehouse_message_id
         ) :: jsonb
   |]
 

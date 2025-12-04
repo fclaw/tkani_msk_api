@@ -85,7 +85,7 @@ upsertFabricQuery =
       $9 :: float8,
       $10 :: text?
     )
-    ON CONFLICT (article) DO UPDATE 
+    ON CONFLICT (article) DO UPDATE
     SET 
         name = EXCLUDED.name,
         price_per_meter = EXCLUDED.price_per_meter,

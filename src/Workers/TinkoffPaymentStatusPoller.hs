@@ -32,7 +32,7 @@ import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey
 import  API.Types (OrderStatus (Cancelled))
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
 import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage)
 import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..))
 import Infrastructure.Services.Tinkoff.Types.GetState
@@ -132,10 +132,11 @@ processJob (orderId, getStateReq) = do
           eInventoryResult <- adjustInventoryForOrder orderId
           for_ eInventoryResult $ \case
             StockOK msgId -> replyMessage msgId
-            FabricSoldOutOrPrecut msgId renderMessage -> do 
+            FabricSoldOutOrPrecut msgId maybeMsgId renderMessage -> do 
               msg <- renderMessage
               notifyMessage msg
               replyMessage msgId
+              for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------

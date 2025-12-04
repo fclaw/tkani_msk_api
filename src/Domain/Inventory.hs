@@ -18,7 +18,12 @@ import Control.Monad (join, void)
 
 import App (AppM, _appDBPool, _thresholdMetres, render)
 import Control.Monad.Reader.Class (ask)
-import Infrastructure.Database (runTransaction, updateOrderStatusStatement, updatePaymentStatusStatement, adjustFabric, AdjustFabric (..))
+import Infrastructure.Database 
+       ( runTransaction
+       , updateOrderStatusStatement
+       , updatePaymentStatusStatement
+       , adjustFabric
+       , AdjustFabric (..))
 import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
 import qualified Data.HashMap.Strict as HM
@@ -27,7 +32,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDIN
 
 data InventoryResult 
   = StockOK Int
-  | FabricSoldOutOrPrecut Int (AppM Text) -- We pass info back to create a nice message
+  | FabricSoldOutOrPrecut Int (Maybe Int) (AppM Text) -- We pass info back to create a nice message
 
 
 adjustInventoryForOrder :: Text -> AppM (Either Text InventoryResult)
@@ -35,29 +40,36 @@ adjustInventoryForOrder orderId = do
   cfg <- ask
   let pool = _appDBPool cfg
   let thresholdMetres =  _thresholdMetres cfg
-  eResult <- liftIO $ fmap (first (pack . show)) $ runTransaction pool Write $ statements orderId thresholdMetres
+  eResult <- liftIO $ 
+    fmap (first (pack . show)) $ 
+      runTransaction pool Write $ 
+        statements orderId thresholdMetres
   fmap join $ for eResult $ \aesonRes -> do
     res <- for aesonRes $ \(mId, AdjustFabric {..}) ->
-      if afIsSold == False &&
-         afIsPreCutReq == False 
-      then
-        return $ StockOK mId
-      else 
-        if afIsSold == True && 
-           afIsPreCutReq == False 
-        then let templateData = 
-                   HM.fromList 
-                   [("fabricName", afName), 
-                    ("article", afArticle)
-                   ]
-             in return $ FabricSoldOutOrPrecut mId (render ($currentModule <> ".Sold") templateData)
-        else let templateData = 
-                   HM.fromList 
-                   [("fabricName", afName), 
-                    ("article", afArticle), 
-                    ("remainingLength", pack (show afRemLength))
-                   ]   
-             in return $ FabricSoldOutOrPrecut mId (render ($currentModule <> ".Precut") templateData)
+      return $ 
+        if afIsSold == False &&
+          afIsPreCutReq == False 
+        then
+          StockOK mId
+        else
+            let mkFabricSoldOutOrPrecut wMId tpl tplData = 
+                  FabricSoldOutOrPrecut mId wMId (render ($currentModule <> tpl) tplData)
+            in 
+              if afIsSold == True && 
+                 afIsPreCutReq == False
+              then let templateData = 
+                         HM.fromList 
+                         [("fabricName", afName), 
+                          ("article", afArticle)
+                         ]
+                   in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
+              else let templateData = 
+                         HM.fromList 
+                         [ ("fabricName", afName), 
+                           ("article", afArticle), 
+                           ("remainingLength", pack (show afRemLength))
+                         ]   
+                   in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
     return $ case res of
       Success inventory -> Right inventory
       Error err -> Left $ pack err

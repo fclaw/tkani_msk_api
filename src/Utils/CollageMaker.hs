@@ -43,7 +43,7 @@ generateCollageViaPython urls jobId = do
     -- 3. Call Python Script
     -- Usage: python collage_maker.py -f FOLDER -o OUTPUT -w WIDTH -c COLS
     putStrLn "Running Python script..."
-    result <- try $ callProcess "python" 
+    result <- try $ callProcess "python3" 
         [ scriptPath
         , "-f", tempDir      -- Folder containing images
         , "-o", outputImg    -- Output filename

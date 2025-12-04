@@ -65,6 +65,7 @@ data AdjustFabric =
      , afIsSold :: Bool
      , afIsPreCutReq :: Bool
      , afRemLength :: Double
+     , afWarehouseMessageId :: Int
      } deriving (Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "af" } ''AdjustFabric)
