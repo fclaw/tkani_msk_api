@@ -69,6 +69,8 @@ COPY --from=builder /root/.local/bin/tkani-api-exe /app/server
 COPY providers.yaml /app/
 COPY templates /app/templates
 COPY data /app/data
+COPY app/utils /app/utils
+
 
 # 5. THE FIX: Update Entrypoint to look in System Folders too
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \

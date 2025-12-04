@@ -69,7 +69,6 @@ services:
     volumes:
       - ./.env:/app/.env  # Mounts the file (so loadEnv works)
       - ./cacert.pem:/etc/ssl/certs/mounted-bundle.crt:ro
-      - ./make_grid.py:/app/utils/make_grid.py:ro
     depends_on:
       db:
         # --- THIS IS THE MAGIC ---
