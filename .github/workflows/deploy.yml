@@ -57,7 +57,7 @@ jobs:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "docker-compose.yml,cacert.pem,server_start.sh,sqitch.conf,sqitch.plan,deploy,revert,verify"
+        source: "docker-compose.yml,cacert.pem,server_start.sh,sqitch.conf,sqitch.plan,deploy,revert,verify,collage-service"
         target: "/home/${{ secrets.SSH_USERNAME }}/tkani-api"
 
     # 5. SSH into Server and Restart
