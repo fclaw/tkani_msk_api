@@ -27,7 +27,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 
 
-import App (AppM, _configHttpManager, _configCollageServiceUrl)
+import App (AppM, _configHttpManager, _collageServiceUrl)
 import Infrastructure.Utils.Http (postReq)
 
 
@@ -94,8 +94,13 @@ generateCollageViaService urls jobId = do
             case eResult of
                 Left httpErr -> 
                   return $ Left ("Collage service connection failed: " <> showt httpErr)
-                Right (CollageResponse True (Just relativePath) _) -> 
-                  return $ Right (sharedVolumePath </> T.unpack relativePath)
+                Right (CollageResponse isOk maybeRelativePath maybeError) ->
+                  if isOk then do 
+                    let Just relativePath = maybeRelativePath
+                    return $ Right (sharedVolumePath </> T.unpack relativePath)
+                  else do
+                    let Just error = maybeError
+                    return $ Left ("Collage service error: " <> error)
                     
 
 
