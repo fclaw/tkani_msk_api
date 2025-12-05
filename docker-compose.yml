@@ -83,6 +83,8 @@ services:
     ports:
       # We only need to expose the port to the internal docker network
       - 5001:5001
+    networks:
+      - tkani-net # Joins the network
 
 
 networks:

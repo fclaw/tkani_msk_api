@@ -1,7 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE DeriveGeneric   #-}
-{-# LANGUAGE DeriveAnyClass  #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 
@@ -20,15 +18,15 @@ import Control.Exception (try, SomeException)
 import Data.Word (Word32)
 import Data.Foldable (for_)
 import Control.Monad.Reader.Class (ask)
-import GHC.Generics (Generic)
-import Data.Aeson
 import Katip
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
+import Data.Aeson.TH
 
 
 import App (AppM, _configHttpManager, _collageServiceUrl)
 import Infrastructure.Utils.Http (postReq)
+import Text (camelToSnake)
 
 
 -- Define the request and response ADTs
@@ -36,14 +34,17 @@ data CollageRequest = CollageRequest
   { imagePaths     :: [Text]
   , outputFilename :: Text
   , width          :: Int
-  } deriving (Generic, ToJSON)
+  }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''CollageRequest)
 
 data CollageResponse = CollageResponse
   { ok          :: Bool
   , resultPath  :: Maybe Text
   , error       :: Maybe Text
-  } deriving (Generic, FromJSON)
+  }
 
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''CollageResponse)
 
 showt :: Show a => a -> T.Text
 showt = T.pack . show
