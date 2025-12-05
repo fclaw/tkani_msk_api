@@ -273,7 +273,8 @@ formatStatus status = case status of
 data OrderConfirmationDetails = OrderConfirmationDetails
   { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
   , paymentLink      :: Text
-  , trackingNumber   :: Text -- delivery provider tracking number   
+  , trackingNumber   :: Text -- delivery provider tracking number
+  , linkToQr         :: Maybe Text
   } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)

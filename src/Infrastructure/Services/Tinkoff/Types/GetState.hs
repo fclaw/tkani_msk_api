@@ -17,7 +17,7 @@ import Text (camelToSnake, recordLabelModifierG, pascalCase)
 data Status
  =  NEW              -- Payment session initiated.
   | PENDING
-  | FORMSHOWED
+  | FORM_SHOWED
   | AUTHORIZING
   | CANCELLED         -- Payment was cancelled by the merchant or user.
   | CONFIRMED        -- One-step payment completed successfully.
@@ -35,7 +35,7 @@ instance FromJSON Status where
   parseJSON = withText "Status" $ \t -> return $ case t of
     "NEW"              -> NEW
     "PENDING"          -> PENDING
-    "FORMSHOWED"       -> FORMSHOWED
+    "FORM_SHOWED"      -> FORM_SHOWED
     "AUTHORIZING"      -> AUTHORIZING
     "CANCELLED"        -> CANCELLED
     "CONFIRMED"        -> CONFIRMED
@@ -51,7 +51,7 @@ instance ToJSON Status where
   toJSON s = case s of
     NEW              -> "NEW"
     PENDING          -> "PENDING"
-    FORMSHOWED       -> "FORMSHOWED"
+    FORM_SHOWED      -> "FORM_SHOWED"
     AUTHORIZING      -> "AUTHORIZING"
     CANCELLED        -> "CANCELLED"
     CONFIRMED        -> "CONFIRMED"

@@ -24,6 +24,9 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
 
+import           Text (encodeToText)
+import Infrastructure.Services.Tinkoff.Types.Enum (QrDataType)
+
 -- | Data required to generate the Tinkoff API signature token.
 data InitToken = InitToken
   { itAmount      :: Text
@@ -96,7 +99,7 @@ data GetQrToken = GetQrToken
   { gqrPaymentId   :: Text
   , gqrTerminalKey :: Text
   , gqrSecret      :: Text
-  , gqrDataType    :: Text
+  , gqrDataType    :: QrDataType
   }
 
 -- NEW: Function to generate the token for GetQr
@@ -106,15 +109,13 @@ generateGetQrToken GetQrToken{..} =
         -- 1. Create the map with ONLY the required fields for GetQr
         valueMap :: Map Text Text
         valueMap = Map.fromList
-            [ ("DataType",    gqrDataType)
+            [ ("DataType",    encodeToText gqrDataType)
             , ("PaymentId",   gqrPaymentId)
             , ("TerminalKey", gqrTerminalKey)
             , ("Password",    gqrSecret)
             ]
-
         -- 2. Concatenate the sorted values (Password, PaymentId, TerminalKey)
         stringToSign = T.concat (Map.elems valueMap)
-        
         -- 3. Hash and encode
         digest :: Digest SHA256 = hash (TE.encodeUtf8 stringToSign)
     in T.toLower $ TE.decodeUtf8 $ Base16.encode $ convert digest

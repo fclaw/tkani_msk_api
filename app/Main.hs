@@ -204,7 +204,7 @@ main = do
       tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
       dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
       collageServiceUrl <- fmap pack $ getEnv "COLLAGE_SERVICE_URL"
-      
+
       -- 6. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool

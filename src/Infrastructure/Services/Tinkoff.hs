@@ -15,6 +15,7 @@ import Data.Bifunctor (second)
 import Katip
 import Data.Traversable (for)
 import Data.Maybe (fromMaybe)
+import Control.Monad.IO.Class (liftIO)
 
 import App (AppM, _tinkoffCred, _configHttpManager, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
@@ -149,6 +150,7 @@ getTinkoffQRCode qrReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
+  liftIO $ print $ "qr url -> " <> (show HTTPS <> unpack url <> "/v2/GetQr")
   postReq @GetQrResponse httpManager (show HTTPS <> unpack url <> "/v2/GetQr") qrReq Nothing
 
 

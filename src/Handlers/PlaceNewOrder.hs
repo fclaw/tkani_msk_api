@@ -127,19 +127,24 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let qrReq = 
         Tinkoff.defGetQrRequest 
         { Tinkoff.gqrTerminalKey = tinkoffTerminalKey tinkoffCred
-        , Tinkoff.gqrPaymentId = tinkoffPaymentId 
+        , Tinkoff.gqrPaymentId = read @Int64 (T.unpack tinkoffPaymentId)
         , Tinkoff.gqrToken =
            Tinkoff.generateGetQrToken $
               Tinkoff.GetQrToken
-              (encodeToText Tinkoff.PAYLOAD)
               tinkoffPaymentId
               (tinkoffTerminalKey tinkoffCred)
               (tinkoffSecret tinkoffCred)
+              Tinkoff.PAYLOAD
         }
 
+  
+  $(logTM) InfoS $ ls $ "QR req: " <> encodePretty qrReq
   tinkoffQrResp :: Tinkoff.GetQrResponse <- wrap (Tinkoff.getTinkoffQRCode qrReq) TinkoffHttpError   
 
-  $(logTM) InfoS $ "Tinkoff QR response received. " <> ls (show tinkoffQrResp)
+  when(Tinkoff.gqrrSuccess tinkoffQrResp == False) $
+    $(logTM) ErrorS $ "Tinkoff QR fails. " <> ls (show tinkoffQrResp)
+
+  let linkToQr = Tinkoff.gqrrData tinkoffQrResp
 
   -- STEP D. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed

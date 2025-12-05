@@ -19,14 +19,14 @@ import Infrastructure.Services.Tinkoff.Types.Enum
 -- | The request body for the /v2/GetQr endpoint.
 data GetQrRequest = GetQrRequest
   { gqrTerminalKey :: Text
-  , gqrPaymentId   :: Text
+  , gqrPaymentId   :: Int64
   , gqrDataType    :: QrDataType
   , gqrToken       :: Text -- The signature token
   } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "gqr"} ''GetQrRequest)
 
-defGetQrRequest = GetQrRequest mempty mempty PAYLOAD mempty
+defGetQrRequest = GetQrRequest mempty 0 PAYLOAD mempty
 
 -- | Represents the response from the T-Bank /v2/GetQr endpoint.
 data GetQrResponse = GetQrResponse
