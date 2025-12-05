@@ -52,6 +52,7 @@ import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.GetState as Tinkoff
+import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import Infrastructure.Utils.Http (HttpError)
@@ -63,6 +64,7 @@ data PlaceOrderError
   | SdekConfirmationTimeout                -- The poller took too long to get a final status
   | TinkoffHttpError HttpError     -- Failed to create a payment link
   | TinkoffPaymentLinkFailed Text     -- Failed to create a payment link with a textual error
+  | TinkoffQrCodeFailed Text         -- Failed to generate QR code
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
@@ -119,18 +121,38 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
       Nothing -> pure (Left ())
     ) (const $ TinkoffPaymentLinkFailed "Tinkoff Init API did not return a payment URL.")
    
-  -- STEP C. Notify the telegram channel
+  let tinkoffPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
+
+  -- STEP C. Generate QR code
+  let qrReq = 
+        Tinkoff.defGetQrRequest 
+        { Tinkoff.gqrTerminalKey = tinkoffTerminalKey tinkoffCred
+        , Tinkoff.gqrPaymentId = tinkoffPaymentId 
+        , Tinkoff.gqrToken =
+           Tinkoff.generateGetQrToken $
+              Tinkoff.GetQrToken
+              (encodeToText Tinkoff.PAYLOAD)
+              tinkoffPaymentId
+              (tinkoffTerminalKey tinkoffCred)
+              (tinkoffSecret tinkoffCred)
+        }
+
+  tinkoffQrResp :: Tinkoff.GetQrResponse <- wrap (Tinkoff.getTinkoffQRCode qrReq) TinkoffHttpError   
+
+  $(logTM) InfoS $ "Tinkoff QR response received. " <> ls (show tinkoffQrResp)
+
+  -- STEP D. Notify the telegram channel
   telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
   liftIO $ telegramIdVar `putMVar` telegramMsgId
 
-  -- STEP D. Save the order in database
+  -- STEP E. Save the order in database
   let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
   void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed
 
   let newPaymentRecord = NewPaymentRecord
         { nprOrderId = orderId
         , nprProvider = Tinkoff
-        , nprProviderPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
+        , nprProviderPaymentId = tinkoffPaymentId
         , nprAmountKopecks = round fabricPrice
         , nprPaymentUrl = paymentLink
         , nprError = Nothing
@@ -141,11 +163,11 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   -- forward paymentId to the poller
   let getStateRequest = 
         Tinkoff.GetStateRequest
-        { gsrqPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
+        { gsrqPaymentId = tinkoffPaymentId
         , gsrqToken = 
             Tinkoff.generateGetStateToken $
               Tinkoff.GetStateToken
-              (fromJust (Tinkoff.irPaymentId tinkoffResp))
+              tinkoffPaymentId
               (tinkoffTerminalKey tinkoffCred)
               (tinkoffSecret tinkoffCred)
         , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred

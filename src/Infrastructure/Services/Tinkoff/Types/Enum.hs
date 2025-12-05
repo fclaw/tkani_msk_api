@@ -15,26 +15,32 @@ import Infrastructure.Services.Tinkoff.Types.Enum.Modifier
 
 
 data Tax = None | VAT0 | VAT10 | VAT20 | VAT110 | VAT120
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq)
 
 -- For 'Tax', the conversion is simpler: just lowercase. 'None' -> "none", 'VAT0' -> "vat0"
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''Tax)
 
 
 data Taxation = OSN | USNIncome | USNIncomeOutcome | ENVD | ESN | Patent
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { constructorTagModifier = modifier, sumEncoding = UntaggedValue } ''Taxation)
 
 
 data PaymentObject = Commodity | Service | Job | Payment
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq)
 
 -- This just needs simple lowercasing.
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''PaymentObject)
 
 
 data PaymentMethod = FullPayment | FullPrepayment | Prepayment | Advance | Credit
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { constructorTagModifier = modifier, sumEncoding = UntaggedValue } ''PaymentMethod)
+
+-- | Specifies the desired format for the QR code data.
+data QrDataType = PAYLOAD | IMAGE 
+  deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = id, sumEncoding = UntaggedValue } ''QrDataType)

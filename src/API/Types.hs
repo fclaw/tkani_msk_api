@@ -403,3 +403,7 @@ data DailyDigestPublish =
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ddp" } ''DailyDigestPublish)
+
+data CancelOrder = CancelOrder { coOrderId :: Text }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "co" } ''CancelOrder)

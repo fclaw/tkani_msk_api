@@ -101,6 +101,12 @@ data Routes route = Routes
        :> "publish"
        :> ReqBody '[JSON] DailyDigestPublish
        :> Post '[JSON] (ApiResponse ())
+  , _cancelOrder
+       :: route
+       :- "order"
+       :> "cancel"
+       :> ReqBody '[JSON] CancelOrder
+       :> Post '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

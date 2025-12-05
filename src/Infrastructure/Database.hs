@@ -34,6 +34,7 @@ module Infrastructure.Database
   , checkDailyDigestDraft
   , updateDailyDigestDraft
   , publishDailyDigest
+  , fetchPaymentId
   , module Types
   ) where
 
@@ -709,3 +710,15 @@ publishDailyDigestStatement =
 
 publishDailyDigest :: DailyDigestPublish -> Hasql.Pool -> IO (Either Text ())
 publishDailyDigest publish pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ publish `Hasql.statement` publishDailyDigestStatement
+
+
+fetchPaymentIdStatement :: Hasql.Statement Text (Maybe Text)
+fetchPaymentIdStatement = 
+  [Hasql.maybeStatement|
+    SELECT provider_payment_id :: text
+    FROM payments 
+    WHERE order_id = $1 :: text
+  |]
+
+fetchPaymentId :: Text -> Hasql.Pool -> IO (Either Text (Maybe Text))
+fetchPaymentId order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ order `Hasql.statement` fetchPaymentIdStatement

@@ -29,6 +29,7 @@ library
       Domain.Inventory
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
+      Handlers.CancelOrder
       Handlers.DailyDigest.Draft
       Handlers.DailyDigest.New
       Handlers.DailyDigest.Publish
@@ -55,10 +56,12 @@ library
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Security
+      Infrastructure.Services.Tinkoff.Types.Cancel
       Infrastructure.Services.Tinkoff.Types.Enum
       Infrastructure.Services.Tinkoff.Types.Enum.Modifier
       Infrastructure.Services.Tinkoff.Types.GetState
       Infrastructure.Services.Tinkoff.Types.Init
+      Infrastructure.Services.Tinkoff.Types.QR
       Infrastructure.Services.Types
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId

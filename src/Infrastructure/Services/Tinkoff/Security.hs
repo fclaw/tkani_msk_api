@@ -6,8 +6,12 @@
 module Infrastructure.Services.Tinkoff.Security
   ( generatedInitToken
   , generateGetStateToken
+  , generateGetQrToken
+  , generateCancelToken
   , GetStateToken (..)
   , InitToken(..)
+  , GetQrToken (..)
+  , CancelToken (..)
   ) where
 
 import           Data.Text (Text)
@@ -63,10 +67,6 @@ generatedInitToken InitToken{..} =
 
     in T.toLower hexEncodedHash
 
-
-
-
-
 data GetStateToken = GetStateToken
   { gstPaymentId   :: Text -- PaymentId as Text for signing
   , gstTerminalKey :: Text
@@ -82,6 +82,58 @@ generateGetStateToken GetStateToken{..} =
             [ ("PaymentId",   gstPaymentId)
             , ("TerminalKey", gstTerminalKey)
             , ("Password",    gstSecret)
+            ]
+        
+        stringToSign = T.concat (Map.elems valueMap)
+        
+        digest :: Digest SHA256 = hash (TE.encodeUtf8 stringToSign)
+        hexEncodedHash = TE.decodeUtf8 $ Base16.encode $ convert digest
+    
+    in T.toLower hexEncodedHash
+
+-- NEW: Data for GetQr token
+data GetQrToken = GetQrToken
+  { gqrPaymentId   :: Text
+  , gqrTerminalKey :: Text
+  , gqrSecret      :: Text
+  , gqrDataType    :: Text
+  }
+
+-- NEW: Function to generate the token for GetQr
+generateGetQrToken :: GetQrToken -> Text
+generateGetQrToken GetQrToken{..} =
+    let
+        -- 1. Create the map with ONLY the required fields for GetQr
+        valueMap :: Map Text Text
+        valueMap = Map.fromList
+            [ ("DataType",    gqrDataType)
+            , ("PaymentId",   gqrPaymentId)
+            , ("TerminalKey", gqrTerminalKey)
+            , ("Password",    gqrSecret)
+            ]
+
+        -- 2. Concatenate the sorted values (Password, PaymentId, TerminalKey)
+        stringToSign = T.concat (Map.elems valueMap)
+        
+        -- 3. Hash and encode
+        digest :: Digest SHA256 = hash (TE.encodeUtf8 stringToSign)
+    in T.toLower $ TE.decodeUtf8 $ Base16.encode $ convert digest
+
+data CancelToken = CancelToken
+  { cPaymentId   :: Text -- PaymentId as Text for signing
+  , cTerminalKey :: Text
+  , cSecret      :: Text
+  }
+
+-- This is a NEW signing function
+generateCancelToken :: CancelToken -> Text
+generateCancelToken CancelToken{..} =
+    let
+        -- For GetState, it's a simpler set of fields
+        valueMap = Map.fromList
+            [ ("PaymentId",   cPaymentId)
+            , ("TerminalKey", cTerminalKey)
+            , ("Password",    cSecret)
             ]
         
         stringToSign = T.concat (Map.elems valueMap)

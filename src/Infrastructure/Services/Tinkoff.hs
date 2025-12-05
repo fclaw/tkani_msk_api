@@ -3,7 +3,11 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Infrastructure.Services.Tinkoff (initiateTinkoffPayment, checkTinkoffPaymentStatus) where
+module Infrastructure.Services.Tinkoff 
+       ( initiateTinkoffPayment
+       , checkTinkoffPaymentStatus
+       , getTinkoffQRCode
+       , cancelTinkoffPayment) where
 
 import Data.Text (Text, unpack, pack)
 import Control.Monad.Reader.Class (ask)
@@ -17,6 +21,8 @@ import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedInitToken, InitToken(..))
 import Infrastructure.Utils.Http (postReq, HttpError)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
+import Infrastructure.Services.Tinkoff.Types.QR
+import Infrastructure.Services.Tinkoff.Types.Cancel
 
 
 
@@ -57,7 +63,7 @@ initiateTinkoffPayment initReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  postReq @InitResponse httpManager (show HTTPS <> unpack url <> "/Init") initReq Nothing
+  postReq @InitResponse httpManager (show HTTPS <> unpack url <> "/v2/Init") initReq Nothing
 
 
 -- | Queries the Tinkoff Acquiring API to get the current status of a payment (`GetState` method).
@@ -98,7 +104,7 @@ checkTinkoffPaymentStatus getStateReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  eResp <- postReq @GetStateResponse httpManager (show HTTPS <> unpack url <> "/GetState") getStateReq Nothing
+  eResp <- postReq @GetStateResponse httpManager (show HTTPS <> unpack url <> "/v2/GetState") getStateReq Nothing
   $(logTM) InfoS $ ls $ "Tinkoff GetState response: " <> pack (show eResp)
   for eResp $ \resp -> do 
     let isSuccess = gsrpSuccess resp
@@ -107,3 +113,50 @@ checkTinkoffPaymentStatus getStateReq = do
       let errCode = maybe "Unknown error" id (gsrpErrorCode resp) in
       error $ "Tinkoff GetState API call failed with error code: " <> unpack errCode
     else return $ fromMaybe undefined $ gsrpStatus resp
+
+  
+-- | Makes a request to the T-Bank '/v2/GetQr' endpoint to generate a payment QR code. 
+--   https://developer.tbank.ru/eacq/api/get-qr
+--
+-- This function is called immediately after a successful 'Init' request. It takes the
+-- 'PaymentId' from the initial session and requests the corresponding QR data from
+-- Tinkoff for payment via SBP (Faster Payments System).
+--
+-- The function handles the necessary authentication by generating a specific 'Token'
+-- signature for the GetQr request. The signature is composed of the 'PaymentId',
+-- 'TerminalKey', and the terminal's secret password.
+--
+-- __Workflow:__
+--
+-- 1. Construct a 'GetQrRequest' with the 'PaymentId' from a previous 'Init' call.
+-- 2. This function is called with the request object.
+-- 3. It makes a POST request to the '/v2/GetQr' endpoint.
+-- 4. On success, it returns a 'Right GetQrResponse' containing either:
+--    - A URL payload (`DataType = PAYLOAD`).
+--    - An SVG image string (`DataType = IMAGE`).
+-- 5. On failure (network error, invalid token, etc.), it returns a 'Left HttpError'.
+--
+-- The returned SVG or payload can then be sent to the user in the Telegram bot
+-- to complete the payment.
+--
+-- @param qrReq The 'GetQrRequest' data transfer object containing the 'PaymentId',
+--              'TerminalKey', desired 'DataType', and the pre-computed 'Token'.
+-- @return An 'Either HttpError GetQrResponse' representing the outcome of the API call.
+getTinkoffQRCode
+  :: GetQrRequest
+  -> AppM (Either HttpError GetQrResponse)
+getTinkoffQRCode qrReq = do
+  cfg <- ask
+  let url = tinkoffUrl $ _tinkoffCred cfg
+  let httpManager = _configHttpManager cfg
+  postReq @GetQrResponse httpManager (show HTTPS <> unpack url <> "/v2/GetQr") qrReq Nothing
+
+
+cancelTinkoffPayment 
+  :: CancelRequest
+  -> AppM (Either HttpError CancelResponse)
+cancelTinkoffPayment cancelReq = do
+  cfg <- ask
+  let url = tinkoffUrl $ _tinkoffCred cfg
+  let httpManager = _configHttpManager cfg
+  postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq Nothing 

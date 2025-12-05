@@ -24,12 +24,13 @@ import qualified Handlers.SearchFabricCard as SearchFabricCard
 import qualified Handlers.DailyDigest.New as DailyDigest.New
 import qualified Handlers.DailyDigest.Draft as DailyDigest.Draft
 import qualified Handlers.DailyDigest.Publish as DailyDigest.Publish
+import qualified Handlers.CancelOrder as CancelOrder
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
 apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
-  {  _getFabricInfo = GetFabricInfo.handler -- Assign the handler function to the field
+  { _getFabricInfo = GetFabricInfo.handler -- Assign the handler function to the field
   , _putNewFabric = PutNewFabric.handler
   , _getDeliveryPoints = GetDeliveryPoints.handler
   , _getProviders = GetProviders.handler
@@ -42,4 +43,5 @@ apiHandlers = Routes
   , _putDailyDigest = DailyDigest.New.handler
   , _draftDailyDigestDraft = DailyDigest.Draft.handler
   , _publishDailyDigest = DailyDigest.Publish.handler
+  , _cancelOrder = CancelOrder.handler
   }
