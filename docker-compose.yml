@@ -74,6 +74,14 @@ services:
         # This tells docker-compose: "Do NOT start the 'api' service until
         # the 'db' service reports that it is 'healthy'."
         condition: service_healthy
+      # 👇 ADD THIS BLOCK 👇
+    logging:
+      driver: gcplogs
+      options:
+        gcp-project: "tkani-479219"
+        mode: non-blocking       # Don't crash app if Google is slow
+        max-buffer-size: "2m"    # Buffer logs before sending
+        labels: "service=api"    # Helps you search in the dashboard
 
   collage-service:
     build: ./collage-service
