@@ -617,7 +617,8 @@ searchFabricCardStatement =
             'warehouse_chat_id', -1001234567890,
             'warehouse_file_id', f.image_url,
             'description', f.description,
-            'media_type', to_jsonb(f.media_type)
+            'media_type', to_jsonb(f.media_type),
+            'width', f.width
               ) :: jsonb AS item_json
         FROM fabrics AS f
         WHERE $1 :: text = 'roll' AND f.id = $2 :: int8
@@ -636,7 +637,8 @@ searchFabricCardStatement =
             'warehouse_chat_id', -1001234567890,
             'warehouse_file_id', f.image_url,
             'description', f.description,
-            'media_type', to_jsonb(f.media_type)
+            'media_type', to_jsonb(f.media_type),
+            'width', f.width
           ) :: jsonb AS item_json
         FROM pre_cuts AS pc
         JOIN fabrics AS f ON pc.fabric_id = f.id
