@@ -19,6 +19,7 @@ data Fabric = Fabric
   , fDescription :: Text
   , fType        :: FabricType
   , fLength      :: Double
+  , fWidth       :: Int
   } deriving (Show, Eq)
 
 data FabricType = Roll | PreCut

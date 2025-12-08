@@ -42,7 +42,8 @@ ingestFabricDB fabric req = do
       rawMediaGroupId req,             -- $7 warehouse_media_group_id
       encodeToText (rawMediaType req), -- $8 warehouse_media_type
       rollLength,                      -- $9 Length (Only for rolls)
-      rawThumbnailUrl req              -- $10 preview on a search list
+      rawThumbnailUrl req,             -- $10 preview on a search list
+      fromIntegral (fWidth fabric)     -- $11 the width of a fabric
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -56,7 +57,7 @@ ingestFabricDB fabric req = do
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text) Int64
+upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32) Int64
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -70,7 +71,8 @@ upsertFabricQuery =
       media_type,
       total_length_m,
       available_length_m,
-      thumbnail_url
+      thumbnail_url,
+      width
     ) 
     VALUES (
       $1 :: text, 
@@ -83,7 +85,8 @@ upsertFabricQuery =
       $8 :: text,
       $9 :: float8,
       $9 :: float8,
-      $10 :: text?
+      $10 :: text?,
+      $11 :: int4
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -100,7 +103,8 @@ upsertFabricQuery =
         available_length_m = 
           fabrics.available_length_m + 
           COALESCE(EXCLUDED.available_length_m, 0),
-        thumbnail_url = EXCLUDED.thumbnail_url,  
+        thumbnail_url = EXCLUDED.thumbnail_url,
+        width = EXCLUDED.width,
         updated_at = NOW(),
         in_stock = TRUE,
         is_sold = FALSE

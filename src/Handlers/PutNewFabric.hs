@@ -17,7 +17,7 @@ import Control.Monad (join, when)
 import Data.Either (isLeft)
 
 import App (AppM, _appDBPool, _thresholdMetres)
-import API.Types (ApiResponse, RawIngestRequest (rawText), mkError, errorCode)
+import API.Types (ApiResponse, RawIngestRequest (rawText), mkError, errorCode, ApiError (ApiError), wrongModelErrorCode)
 import Infrastructure.Database (putNewFabric, checkFabricPreCuts)
 import Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither)
 import Domain.Warehouse.Types (Fabric (..), FabricType (..))
@@ -75,4 +75,4 @@ handler rawIngestReq = do
           when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
           return $ first (const (mkError "server error")) dbRes     
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
-  return $ join $ first (mkError . renderValidationErrors) res
+  return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res

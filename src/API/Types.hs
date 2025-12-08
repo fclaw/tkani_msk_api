@@ -66,6 +66,8 @@ instance {-# OVERLAPPING #-} ToJSON a => ToJSON (ApiResponse a) where
            ]
 
 
+wrongModelErrorCode = "400" :: Text
+
 mkError e = (ApiError mempty e)
 
 -- | 1. Supported Media Types
@@ -342,6 +344,11 @@ data CatalogSummaryItem = CatalogSummaryItem
     -- | The description text for this fabric.
   , csiDescription         :: Text
   , csiMediaType           :: MediaType
+    -- | The **working width** of the fabric in centimeters.
+    --   This is the usable width of the material, excluding the selvedges (кромки).
+    --   It is the most critical measurement for tailoring and pattern layout, as selvedges
+    --   are typically cut off and discarded.
+  , csiWidth               :: Int
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)

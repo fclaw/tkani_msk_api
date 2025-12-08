@@ -54,7 +54,7 @@ import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import qualified Data.Vector as V
-import Data.Either (fromRight)
+import Data.Either (fromRight, either)
 import Data.Time (Day)
 
 
@@ -448,7 +448,7 @@ searchFabrics query limit offset pool =
 
 fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
 fetchCatalogSummaryItemStatement =
-  rmap (V.toList . V.map (fromRight undefined . convertFromJson)) $
+  rmap (V.toList . V.map (either error id . convertFromJson)) $
   [Hasql.vectorStatement|
     SELECT item_json :: jsonb
       FROM (
@@ -468,7 +468,8 @@ fetchCatalogSummaryItemStatement =
                   'warehouse_chat_id', -1001234567890,
                   'warehouse_file_id', f.image_url,
                   'description', f.description,
-                  'media_type', to_jsonb(f.media_type)
+                  'media_type', to_jsonb(f.media_type),
+                  'width', f.width
               ) :: jsonb AS item_json
           FROM 
               fabrics AS f
@@ -494,7 +495,8 @@ fetchCatalogSummaryItemStatement =
                   'warehouse_chat_id', -1001234567890,
                   'warehouse_file_id', f.image_url,
                   'description', f.description,
-                  'media_type', to_jsonb(f.media_type)
+                  'media_type', to_jsonb(f.media_type),
+                  'width', f.width
               ) :: jsonb AS item_json
           FROM 
               pre_cuts AS pc

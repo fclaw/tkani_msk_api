@@ -22,17 +22,19 @@ rollTemplate =
     "📄 **Standard Roll Format**\n" <>
     "`Name (Line 1)`\n" <>
     "`Длина рулона: 50 м (Line 2)`\n" <>
-    "`Цена: 1500 руб/метр (Line 3)`\n" <>
-    "`ART-123 (Line 4)`\n" <>
+    "`Ширина: 140 см (Line 3)`\n" <>
+    "`Цена: 1500 руб/метр (Line 4)`\n" <>
+    "`ART-123 (Line 5)`\n" <>
     "`Description...`"
 
 preCutTemplate :: Text
 preCutTemplate =
-    "✂️ **Pre-Cut Format (must include #отрез)**\n" <>
+    "✂️ **Pre-Cut Format (#отрез)**\n" <>
     "`Name (Line 1)`\n" <>
     "`Длина: 1.2 м (Line 2)`\n" <>
-    "`Цена: 2400 руб (Line 3)`\n" <>
-    "`ART-123 (Line 4)`\n" <>
+    "`Ширина: 140 см (Line 3)`\n" <>
+    "`Цена: 2400 руб (Line 4)`\n" <>
+    "`ART-123 (Line 5)`\n" <>
     "`Description...`\n" <>
     "`#отрез`"
 
@@ -66,11 +68,12 @@ validateRoll lines threshold
   | otherwise =
       Fabric
         <$> pure (lines !! 0)                      -- Name
-        <*> validatePrice Roll (lines !! 2)        -- Price (Line 3)
-        <*> validateArticle (lines !! 3)           -- Article (Line 4)
-        <*> pure (T.unlines (drop 4 lines))        -- Description
+        <*> validatePrice Roll (lines !! 3)        -- Price (Line 3)
+        <*> validateArticle (lines !! 4)           -- Article (Line 4)
+        <*> pure (T.unlines (drop 5 lines))        -- Description
         <*> pure Roll
         <*> validateLength Roll (lines !! 1) (Just threshold) -- Length (Line 2)
+        <*> validateWidth Roll (lines !! 2) 
 
 -- | Validator for the Pre-Cut pattern (Name, Length, Price, Article)
 validatePreCut :: [Text] -> Validation [ParseError] Fabric
@@ -79,11 +82,12 @@ validatePreCut lines
   | otherwise =
       Fabric
         <$> pure (lines !! 0)                         -- Name
-        <*> validatePrice PreCut (lines !! 2)         -- Price (Line 3)
-        <*> validateArticle (lines !! 3)              -- Article (Line 4)
-        <*> pure (T.unlines (drop 4 lines))           -- Description
+        <*> validatePrice PreCut (lines !! 3)         -- Price (Line 3)
+        <*> validateArticle (lines !! 4)              -- Article (Line 4)
+        <*> pure (T.unlines (drop 5 lines))           -- Description
         <*> pure PreCut
         <*> validateLength PreCut (lines !! 1) Nothing -- Length (Line 2)
+        <*> validateWidth PreCut (lines !! 2)
 
 --------------------------------------------------------------------------------
 -- FIELD-LEVEL VALIDATORS & HELPERS
@@ -117,6 +121,15 @@ validateLength fType raw threshold =
           else Failure [ValueError fType "length must be > 1 for rolls"]
         Nothing -> Failure [ValueError fType ("Could not parse number from length line: " <> raw)]
   else Failure [ValueError fType ("Length line must start with 'Длина:'. Got: " <> raw)]
+
+-- Validate width
+validateWidth :: FabricType -> Text -> Validation [ParseError] Int
+validateWidth fType raw =
+  if "Ширина" `T.isPrefixOf` raw
+    then case extractInt raw of -- Width is usually an integer (cm)
+      Just w  -> Success w
+      Nothing -> Failure [ValueError fType ("Could not parse number from width line: " <> raw)]
+  else Failure [ValueError fType ("Width line must start with 'Ширина:'. Got: " <> raw)]
 
 -- | Helper to extract an Int from a string like "Цена: 1 500 руб".
 extractInt :: Text -> Maybe Int
