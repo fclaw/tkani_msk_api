@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG) where
+module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG, tshow) where
 
 import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
@@ -38,3 +38,6 @@ recordLabelModifier = recordLabelModifierG camelToSnake
 -- | Converts any ToJSON instance directly to Strict Text
 encodeToText :: ToJSON a => a -> Text
 encodeToText val = T.replace "\"" "" $ LT.toStrict (TE.decodeUtf8 (encode val))
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show

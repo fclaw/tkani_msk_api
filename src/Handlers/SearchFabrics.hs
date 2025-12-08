@@ -14,6 +14,7 @@ import Data.Maybe (fromMaybe)
 import App (AppM, _appDBPool)
 import API.Types (ApiResponse, SearchTeaser, mkError, PaginatedResults (..), defPaginatedResults)
 import Infrastructure.Database (searchFabrics)
+import Text (tshow)
 
 
 -- 1. Function to sanitize and format input for Postgres TSQuery
@@ -45,13 +46,12 @@ handler (Just query) maybePage maybeLimit = do
   -- Calculate offset: For page 1, offset is 0. For page 2, offset is 10 (if limit is 10).
   let offset = (page - 1) * limit
   let prepQuery = prepareTsQuery query
-  let paginatedResults = 
-       defPaginatedResults 
-       { prPage = page, prLimit = limit }
+  let paginatedResults = defPaginatedResults { prPage = page, prLimit = limit }
   $(logTM) InfoS $ ls $ "Request received for search, prepared query: " <> prepQuery
   pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ do 
-    eItems <- searchFabrics prepQuery limit offset pool
+  fmap (first mkError) $ do
+    eItems <- liftIO $ searchFabrics prepQuery limit offset pool
+    $(logTM) InfoS $ ls $ "found " <> tshow (length eItems) <> " for query: " <> prepQuery
     return $ flip fmap eItems $ \(total, teasers) ->
       -- 3. Construct the final response object
       let totalPages = (total + limit - 1) `div` limit
