@@ -347,7 +347,7 @@ mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
                   , riPrice = pricePerMeterKopecks -- Price of ONE unit (1 meter)
                   , riQuantity = lengthM            -- How many units
                   , riAmount = totalAmountKopecks  -- The pre-calculated total
-                  , riTax = Tinkoff.VAT20
+                  , riTax = Tinkoff.None
                   , riPaymentMethod = Tinkoff.FullPayment
                   , riPaymentObject = Tinkoff.Commodity
                   }
@@ -407,7 +407,7 @@ mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
         Tinkoff.ReceiptData
         { rdEmail = Nothing
         , rdPhone = Just (orCustomerPhone orderRequest)
-        , rdTaxation = Tinkoff.OSN -- Or your specific system
+        , rdTaxation = Tinkoff.USNIncome -- Or your specific system
         , rdItems = receiptItems
         }
     }
