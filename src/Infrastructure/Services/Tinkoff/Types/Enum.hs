@@ -26,14 +26,10 @@ data Taxation =
       OSN
       -- USNIncome (Simplified: Income / УСН Доходы): 
       -- Simplified regime where tax is paid on total revenue (usually 6%). Expenses are ignored 
-    | USNIncome
+    | UsnIncome
       -- USNIncomeOutcome (Simplified: Income - Expenses / УСН Доходы минус Расходы): 
       -- Simplified regime where tax is paid on the net profit (Revenue minus Expenses), usually at 15%.
-    | USNIncomeOutcome
-     -- ENVD (Single Tax on Imputed Income / ЕНВД): A flat tax based on physical indicators 
-     -- (floor space, headcount) rather than actual revenue. 
-     -- (Note: Officially abolished in Russia as of 2021, but exists in legacy code).
-    | ENVD
+    | UsnIncomeOutcome
       -- ESN (Unified Agricultural Tax / ЕСХН): 
       -- A special tax regime specifically for agricultural producers and farmers.
     | ESN

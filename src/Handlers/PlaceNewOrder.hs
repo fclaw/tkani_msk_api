@@ -407,7 +407,7 @@ mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
         Tinkoff.ReceiptData
         { rdEmail = Nothing
         , rdPhone = Just (orCustomerPhone orderRequest)
-        , rdTaxation = Tinkoff.USNIncome -- Or your specific system
+        , rdTaxation = Tinkoff.UsnIncome -- Or your specific system
         , rdItems = receiptItems
         }
     }

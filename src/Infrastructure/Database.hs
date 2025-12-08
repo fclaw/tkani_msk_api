@@ -198,9 +198,6 @@ placeNewOrderStatement =
     WITH inserted_order AS (
       INSERT INTO orders (
        id,
-       fabric_id,
-       length_m,
-       pre_cut_id,
        customer_full_name,
        customer_phone,
        delivery_provider_id,
@@ -213,10 +210,7 @@ placeNewOrderStatement =
        updated_at,
        status
       ) VALUES (
-       $1 :: text, 
-       $2 :: int8, 
-       $3 :: float8?,
-       $4 :: int8?,
+       $1 :: text,
        $5 :: text,
        $6 :: text,
        $7 :: text,
@@ -229,19 +223,19 @@ placeNewOrderStatement =
        now(),
        'registered'
       )
-      RETURNING id, fabric_id, length_m, pre_cut_id
+      RETURNING id
     )
     INSERT INTO order_fabric_bindings (
         order_id, 
-        fabric_id, 
+        fabric_id,
         length_m,
         pre_cut_id
     ) 
-    SELECT 
+    SELECT
         id, 
-        fabric_id, 
-        length_m, 
-        pre_cut_id 
+        $2 :: int8, 
+        $3 :: float8?,
+        $4 :: int8? 
     FROM inserted_order
     RETURNING order_id :: text
   |]
