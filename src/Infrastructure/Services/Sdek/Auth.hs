@@ -102,7 +102,7 @@ getValidSdekToken = do
     -- A token exists. Is it fresh?
     Just token | isTokenFresh now token -> do
       now <- currentTime
-      let secondsLeft = diffUTCTime (expiryTime token) now
+      let secondsLeft = round $ diffUTCTime (expiryTime token) now
       $(logTM) InfoS $ ls $ "SDEK token is fresh. Reusing. Seconds left: " <> pack (show secondsLeft)
       pure token
 
