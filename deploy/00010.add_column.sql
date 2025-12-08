@@ -4,5 +4,5 @@ BEGIN;
 
 -- XXX Add DDLs here.
 ALTER TABLE fabrics ADD COLUMN width INT NOT NULL DEFAULT 0;
- 
+
 COMMIT;
