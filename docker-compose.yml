@@ -63,6 +63,11 @@ services:
       SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
       SYSTEM_CERTIFICATE_PATH: /etc/ssl/certs/mounted-bundle.crt
       NIX_SSL_CERT_FILE: /etc/ssl/certs/mounted-bundle.crt
+      # TWEAKING HASKELL MEMORY MANAGER
+      # -N2: Use 2 CPU Cores
+      # -I2: If idle for 2 seconds, run Major GC (Clean up aggressively)
+      # -Fd2: Return memory to OS more eagerly
+      GHCRTS: "-N2 -I2"
     env_file: .env
     volumes:
       - ./.env:/app/.env  # Mounts the file (so loadEnv works)
