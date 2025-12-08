@@ -404,13 +404,13 @@ data DailyDigestDraft =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ddd" } ''DailyDigestDraft)
 
-data DailyDigestPublish =
-     DailyDigestPublish
-     { ddpChatId :: Int64
-     , ddpMessageId :: Int64
+data DailyDigest =
+     DailyDigest
+     { ddChatId :: Int64
+     , ddMessageId :: Int64
      }
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ddp" } ''DailyDigestPublish)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "dd" } ''DailyDigest)
 
 data CancelOrder = CancelOrder { coOrderId :: Text }
 

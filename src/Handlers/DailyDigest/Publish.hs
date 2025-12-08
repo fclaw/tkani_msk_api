@@ -5,11 +5,12 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Bifunctor (first)
 
 import App (AppM, _appDBPool)
-import API.Types (DailyDigestPublish, ApiResponse, mkError)
-import Infrastructure.Database (publishDailyDigest)
+import API.Types (DailyDigest, ApiResponse, mkError)
+import Infrastructure.Database (setDailyDigestStatus)
+import Infrastructure.Database.Types (DailyDigestStatus (Ready))
 
 
-handler :: DailyDigestPublish -> AppM (ApiResponse ())
+handler :: DailyDigest -> AppM (ApiResponse ())
 handler dailyDigest = do
   pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ publishDailyDigest dailyDigest pool
+  fmap (first mkError) $ liftIO $ setDailyDigestStatus dailyDigest Ready pool

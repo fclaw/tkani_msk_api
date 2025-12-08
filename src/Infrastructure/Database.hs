@@ -33,7 +33,7 @@ module Infrastructure.Database
   , saveDailyDigestDraft
   , checkDailyDigestDraft
   , updateDailyDigestDraft
-  , publishDailyDigest
+  , setDailyDigestStatus
   , fetchPaymentId
   , module Types
   ) where
@@ -702,9 +702,9 @@ updateDailyDigestDraft draft pool =
       draft `Hasql.statement` 
       updateDailyDigestStatement
 
-publishDailyDigestStatement :: Hasql.Statement DailyDigestPublish ()
-publishDailyDigestStatement = 
-  dimap ((\(x, y) -> (x, y, (encodeToText Ready))) . $(recordToTuple ''DailyDigestPublish)) (const ())
+setDailyDigestStatusStatement :: DailyDigestStatus -> Hasql.Statement DailyDigest ()
+setDailyDigestStatusStatement status = 
+  dimap (snocT (encodeToText status) . $(recordToTuple ''DailyDigest)) (const ())
   [Hasql.rowsAffectedStatement|
     UPDATE daily_digests
     SET status = CAST($3 :: text AS daily_digests_status)
@@ -712,8 +712,11 @@ publishDailyDigestStatement =
     AND warehouse_message_id = $2 :: int8
   |]
 
-publishDailyDigest :: DailyDigestPublish -> Hasql.Pool -> IO (Either Text ())
-publishDailyDigest publish pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ publish `Hasql.statement` publishDailyDigestStatement
+setDailyDigestStatus :: DailyDigest -> DailyDigestStatus -> Hasql.Pool -> IO (Either Text ())
+setDailyDigestStatus publish status pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      publish `Hasql.statement` (setDailyDigestStatusStatement status)
 
 
 fetchPaymentIdStatement :: Hasql.Statement Text (Maybe Text)

@@ -32,12 +32,15 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Bifunctor (first)
 
 
-import App (AppM, ChatKey(MAIN, WAREHOUSE)) -- Your AppM types
+import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool) -- Your AppM types
+import API.Types (DailyDigest(DailyDigest)) 
 import Text (recordLabelModifier) 
 import Utils.CollageMaker (generateCollageViaService)
 import Infrastructure.Services.Telegram (sendPhotoToTelegram, deleteMessage)
 import TH.Location (currentModule)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Database (setDailyDigestStatus)
+import Infrastructure.Database.Types (DailyDigestStatus (Published))
 
 
 data CollageJobs =
@@ -110,6 +113,8 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..} = do
       when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
       removeFile collagePath
       void $ runAppM $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
+      -- publish status
+      void $ runAppM $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
 
 -- | Removes known digest tags and surrounding whitespace from the input text.
 --   It handles multiple possible tags like #digest

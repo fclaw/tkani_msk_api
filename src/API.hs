@@ -99,7 +99,7 @@ data Routes route = Routes
        :- "warehouse"
        :> "daily-digest"
        :> "publish"
-       :> ReqBody '[JSON] DailyDigestPublish
+       :> ReqBody '[JSON] DailyDigest
        :> Post '[JSON] (ApiResponse ())
   , _cancelOrder
        :: route
