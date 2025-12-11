@@ -15,10 +15,11 @@ import Infrastructure.Database (clearOldCarts)
 
 
 runCartsCleaner :: AppM ()
-runCartsCleaner = forever $ do
-  -- Run the core logic within our application's monad to get access to the DB, logger, etc.
-  $(logTM) InfoS "Carts Cleaner starts..."
-  pool <- fmap _appDBPool ask
-  eRes <- liftIO $ clearOldCarts pool
-  when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "runCartsCleaner error: " <> show eRes
-  liftIO $ threadDelay (60 * 1000000)
+runCartsCleaner = do
+  $(logTM) InfoS "Carts Cleaner starts..." 
+  forever $ do
+    -- Run the core logic within our application's monad to get access to the DB, logger, etc.
+    pool <- fmap _appDBPool ask
+    eRes <- liftIO $ clearOldCarts pool
+    when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "runCartsCleaner error: " <> show eRes
+    liftIO $ threadDelay (60 * 1000000)
