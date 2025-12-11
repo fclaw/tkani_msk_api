@@ -11,13 +11,13 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Text (pack, Text)
 import Data.Int (Int64)
 import Control.Monad.Reader.Class (ask)
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Traversable (for)
 import Control.Monad (join, when)
 import Data.Either (isLeft)
 
 import App (AppM, _appDBPool, _thresholdMetres)
-import API.Types (ApiResponse, RawIngestRequest (rawText), mkError, errorCode, ApiError (ApiError), wrongModelErrorCode)
+import API.Types (ApiResponse, RawIngestRequest (rawText), mkError, errorCode, ApiError (ApiError), wrongModelErrorCode, NewFabric (..))
 import Infrastructure.Database (putNewFabric, checkFabricPreCuts)
 import Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither)
 import Domain.Warehouse.Types (Fabric (..), FabricType (..))
@@ -26,7 +26,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: RawIngestRequest -> AppM (ApiResponse Int64)
+handler :: RawIngestRequest -> AppM (ApiResponse NewFabric)
 handler rawIngestReq = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new fabric"
@@ -66,13 +66,13 @@ handler rawIngestReq = do
                 fArticle fabric <>
                 " is already sold in Pre-Cuts. Cannot add as Cut-to-Order.") 
               { errorCode = "400" }
-            else do
-              dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
-              when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-              return $ first (const (mkError "server error")) dbRes
-        else do
-          dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
-          when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-          return $ first (const (mkError "server error")) dbRes     
+          else do
+            dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
+            when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
+            return $ first (const (mkError "server error")) $ second ((`NewFabric` (fType fabric))) dbRes
+      else do
+        dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
+        when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
+        return $ first (const (mkError "server error")) $ second ((`NewFabric` (fType fabric))) dbRes     
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res

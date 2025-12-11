@@ -58,16 +58,23 @@ import Workers.SdekOrderStatusPoller (orderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
+import Application.Cart (runCartsCleaner)
 
 
 
-data Workers = WebServer | Sdek | Tinkoff | CollageMaker
+data Workers = 
+        WebServer 
+      | Sdek 
+      | Tinkoff 
+      | CollageMaker 
+      | CartsCleaner
 
 instance Show Workers where
   show WebServer = "Web Server"
   show Sdek = "SDEK Poller"
   show Tinkoff = "Tinkoff Poller"
   show CollageMaker = "Collage Maker"
+  show CartsCleaner = "Carts Cleaner"
 
 
 handleYamlResult (Right providers) go = go providers
@@ -272,12 +279,17 @@ main = do
         let collageMakerListener = do 
               res <- runInIO (runCollageJobListener connInfo runInIO)
               showErrorInWorker CollageMaker res
+        let cartsCleaner = do 
+              res <- runInIO runCartsCleaner
+              showErrorInWorker CartsCleaner res
+
         let tasks :: [(Workers, IO ())]
             tasks = 
               [ (WebServer, server)
               , (Sdek, sdekPoller)
               , (Tinkoff, tinkoffPoller)
               , (CollageMaker, collageMakerListener)
+              , (CartsCleaner, cartsCleaner)
               ]
 
         putStrLn "Spawning concurrent workers..."

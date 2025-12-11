@@ -1,26 +1,25 @@
-📦 *Новый Заказ\!*
+📦 *Новый Заказ!*
 
 *ID Заказа:* `{{orderId}}`
 *Время:* `{{timestamp}}`
 
-\-\-\-
+---
 *Клиент:*
 `{{customerName}}`
 `{{customerPhone}}`
-\-\-\-
+---
 
-\-\-\-
-*Состав Заказа:*
-• *Тип:* `{{purchaseType}}`
-• *Длина:* `{{length}} метра`
+---
 
-[Посмотреть товар в Telegram]({{telegramLink}})
-\-\-\-
+*Состав Заказа: ({{itemCount}} поз.):*
 
-\-\-\-
+{{itemsBlock}}
+---
+
+---
 *Доставка:*
 • *Служба:* `{{deliveryProvider}}`
 • *Пункт выдачи:* `{{deliveryPoint}}`
-\-\-\-
+---
 
-*Статус:* **{{status}}** \(\#registered\)
+*Статус:* **{{status}}** (#registered)

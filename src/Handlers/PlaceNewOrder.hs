@@ -46,7 +46,7 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessag
 import TH.Location (currentModule)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
-import Infrastructure.Database (getFinalOrderItemPrice, placeNewOrder, insertNewPaymentRecord, NewPaymentRecord (..))
+import Infrastructure.Database (getOrderItems, placeNewOrder, insertNewPaymentRecord, clearCart, NewPaymentRecord (..))
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
@@ -57,6 +57,8 @@ import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import Infrastructure.Utils.Http (HttpError)
 import Text (encodeToText)
+import Domain.Warehouse.Types (FabricType (..))
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
 data PlaceOrderError
@@ -68,6 +70,7 @@ data PlaceOrderError
   | DatabaseFailed Text -- Could not save the final order
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
+  | CartEmpty
   deriving (Show)
 
 
@@ -85,9 +88,12 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let tariffCode = _sdekTariffCode cfg
   let shipmentPoint = _sdekShipmentPoint cfg
   -- fetch total price for a given fabric
-  fabricPrice <- wrap (liftIO (getFinalOrderItemPrice orFabricId orPreCutId orLengthM pool)) DatabaseFailed
+  items <- wrap (liftIO (getOrderItems orTelegramUserId pool)) DatabaseFailed
+
+  when (length items == 0) $ except $ Left CartEmpty
+
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest fabricPrice tariffCode shipmentPoint
+  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items tariffCode shipmentPoint
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
   orderId <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
@@ -104,7 +110,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
-  let initReq = mkInitRequest orderId fabricPrice orderRequest tinkoffCred
+  let initReq = mkInitRequest orderId items orCustomerPhone tinkoffCred
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
@@ -147,25 +153,26 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let linkToQr = Tinkoff.gqrrData tinkoffQrResp
 
   -- STEP D. Notify the telegram channel
-  telegramMsgId <- wrap (notifyOrdersChannel orderRequest orderId) NotificationSendFailed
+  telegramMsgId <- wrap (notifyOrdersChannel orderRequest items orderId) NotificationSendFailed
   liftIO $ telegramIdVar `putMVar` telegramMsgId
 
   -- STEP E. Save the order in database
   let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
   void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed
 
+  let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
   let newPaymentRecord = NewPaymentRecord
         { nprOrderId = orderId
         , nprProvider = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks = round fabricPrice
+        , nprAmountKopecks = round totalPrice
         , nprPaymentUrl = paymentLink
         , nprError = Nothing
         , nprToken = Tinkoff.irToken initReq
         }
   void $ wrap (liftIO (insertNewPaymentRecord newPaymentRecord pool)) DatabaseFailed
 
-  -- forward paymentId to the poller
+  -- STEP F. forward paymentId to the poller
   let getStateRequest = 
         Tinkoff.GetStateRequest
         { gsrqPaymentId = tinkoffPaymentId
@@ -179,6 +186,9 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , gsrqIP = Nothing
         }
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (orderId, getStateRequest)) . _tinkoffPaymentChan)
+
+  -- clear out the cart
+  void $ wrap (liftIO (clearCart orTelegramUserId pool)) DatabaseFailed
 
   return OrderConfirmationDetails {..}
 
@@ -243,77 +253,81 @@ handler newOrderRequest@OrderRequest {..} = do
       return $ Left $ mkError "Failed to place order. See server logs for details."  
 
 
-notifyOrdersChannel :: OrderRequest -> Text -> AppM (Either T.Text MessageIdResponse)
-notifyOrdersChannel order orderId = do
+notifyOrdersChannel :: OrderRequest -> [DB.OrderItem] -> Text -> AppM (Either T.Text MessageIdResponse)
+notifyOrdersChannel order items orderId = do
   tm <- currentTime
   tz <- liftIO getCurrentTimeZone
   let localTime = utcToLocalTime tz tm
   -- Automatically finds and renders 'templates/Handlers/PlaceNewOrder.tpl'
-  messageText <- render $currentModule $ buildTemplateData order localTime orderId
-  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) messageText ORDER Nothing Nothing Nothing
-
--- | Escapes characters within a URL that can conflict with MarkdownV2 link parsing.
---   Primarily, we only need to worry about the closing parenthesis.
-urlEncodeMarkdown :: T.Text -> T.Text
-urlEncodeMarkdown = T.replace ")" "\\)"
+  messageText <- render $currentModule $ buildTemplateData orderId localTime order items
+  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage ("new order: " <> orderId) (escapeMarkdownV2 messageText) ORDER Nothing Nothing Nothing
 
 
--- | Builds a key-value map of template data from an order request and other context.
---   This map is used by the templating engine to render the final notification message.
+-- | Builds the key-value map for the multi-item admin notification template.
 buildTemplateData
-  :: OrderRequest   -- ^ The original request data from the API call
-  -> LocalTime      -- ^ The localized timestamp for the order
-  -> Text           -- ^ The newly generated unique order ID
+  :: Text             -- ^ The generated Order ID
+  -> LocalTime        -- ^ The localized timestamp
+  -> OrderRequest     -- ^ Contains customer & delivery info
+  -> [DB.OrderItem]   -- ^ The list of items in the cart
   -> HashMap Text Text
-buildTemplateData order localTime orderId =
+buildTemplateData orderId localTime orderReq items =
   let
-    -- Format timestamp safely
+    -- 1. Format common values
     timeStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" localTime
+    itemCount = T.pack $ show $ length items
 
-    -- Determine purchase type
-    purchaseType = if isJust (orLengthM order) then "Отрез по длине" else "Готовый отрез"
-
-    -- Get length. We can use 'show' because the result will be a simple string.
-    -- The 'asum' here is a clever way to pick the first 'Just' value.
-    lengthStr = T.pack $ show $ fromMaybe 0 (asum [orPreCutLengthM order, orLengthM order])
-
-    -- Safely construct the Telegram link for the template
-    telegramLink = urlEncodeMarkdown (orTelegramUrl order)
+    -- 2. Build the 'itemsBlock' by mapping over the list
+    itemLines = map formatOrderItemLine items
+    itemsBlock = T.unlines itemLines
     
   in
-    -- Use HM.fromList for a clean construction of the map
+    -- 3. Construct the final HashMap
     HM.fromList
       [ ("orderId", orderId)
       , ("timestamp", timeStr)
-      , ("customerName", orCustomerFullName order)
-      , ("customerPhone", orCustomerPhone order)
-      -- fabricId is missing from your screenshot's OrderRequest, assuming it's available
-      -- , ("fabricId", T.pack $ show $ orFabricId order) 
-      , ("purchaseType", purchaseType)
-      , ("length", lengthStr)
-      , ("telegramLink", telegramLink)
-      , ("deliveryProvider", T.pack $ show $ orDeliveryProviderId order)
-      , ("deliveryPoint", orDeliveryPointId order)
-      -- You might pass the status in, or hardcode it in the calling function
-      , ("status", formatStatus Registered)
+      , ("customerName", orCustomerFullName orderReq)
+      , ("customerPhone", orCustomerPhone orderReq)
+      
+      -- NEW: Variables for the item list
+      , ("itemCount", itemCount)
+      , ("itemsBlock", itemsBlock)
+
+      -- Delivery & Status
+      , ("deliveryProvider", T.pack $ show $ orDeliveryProviderId orderReq) -- Assuming this is already Text
+      , ("deliveryPoint", orDeliveryPointId orderReq)
+      , ("status", formatStatus Registered) -- You can format this from an Enum if you have one
       ]
+
+-- | Helper function to format a single line in the 'itemsBlock'.
+--   (This can be in the same module or imported)
+formatOrderItemLine :: DB.OrderItem -> Text
+formatOrderItemLine item =
+    let
+        name = DB.oiName item -- Assume it's already sanitized
+        -- Create a detail string for rolls
+        details = case DB.oiFabricType item of -- Assuming DB.OrderItem has an 'oiType'
+            Roll ->
+                let len = fromMaybe 0.0 (DB.oiLengthM item)
+                in "(Отрез " <> T.pack (show len) <> "м)"
+            PreCut ->
+                -- For pre-cuts, the name often already includes the length
+                ""
+    in
+    "• " <> name <> " " <> details <> " | " <> DB.oiTelegramUrl item <> "\n"
 
 
 mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
 mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   DB.Order 
   { DB._orderId = orderId
-  , DB._orderFabricId = orFabricId
-  , DB._orderLengthM = orLengthM
-  , DB._orderPreCutId = orPreCutId
   , DB._orderCustomerFullName = orCustomerFullName
   , DB._orderCustomerPhone = orCustomerPhone
   , DB._orderDeliveryProviderId = encodeToText orDeliveryProviderId
   , DB._orderDeliveryPointId = orDeliveryPointId
-  , DB._orderTelegramUrl = orTelegramUrl
   , DB._orderSdekRequestUuid = trackingUuid
   , DB._orderSdekTrackingNumber = trackingNumber
   , DB._orderInternalNotificationMessageId = fromIntegral @Int @Int64 (coerce telegramMsgId)
+  , DB._orderTelegramUserId = orTelegramUserId
   }
 
 
@@ -326,72 +340,96 @@ toKopecks = round . (* 100)
 sanitizeForGateway :: Text -> Text
 sanitizeForGateway = T.filter (\c -> C.isLetter c || C.isNumber c || C.isPunctuation c || C.isSpace c)
 
-mkInitRequest :: Text -> Double -> OrderRequest -> TinkoffCredentials -> Tinkoff.InitRequest
-mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
+
+-- | Converts a single internal OrderItem into a Tinkoff ReceiptItem for fiscalization.
+mkReceiptItem :: DB.OrderItem -> Tinkoff.ReceiptItem
+mkReceiptItem DB.OrderItem{..} =
+  -- Use the explicit type field to determine the logic.
+  case oiFabricType of
+    
+    -- === It's a Roll cut ===
+    Roll ->
+      let
+        -- For a roll, the 'price' is per meter.
+        pricePerMeterKopecks = toKopecks (fromMaybe 0 oiPricePerMetre)
+        totalAmountKopecks = toKopecks oiTotalPrice
+        lengthM = fromMaybe 0 oiLengthM
+      in
+      Tinkoff.ReceiptItem
+        { riName = sanitizeForGateway oiName
+        , riPrice = pricePerMeterKopecks -- Price of ONE unit (1 meter)
+        , riQuantity = lengthM            -- How many units were purchased
+        , riAmount = totalAmountKopecks   -- The total for this line item
+        , riTax = Tinkoff.None
+        , riPaymentMethod = Tinkoff.FullPayment
+        , riPaymentObject = Tinkoff.Commodity
+        }
+        
+    -- === It's a Pre-Cut ===
+    PreCut ->
+      let
+        -- For a pre-cut, the total price IS the unit price.
+        totalPriceKopecks = toKopecks oiTotalPrice
+      in
+      Tinkoff.ReceiptItem
+        { riName = sanitizeForGateway oiName
+        , riPrice = totalPriceKopecks -- Unit price is the total price
+        , riQuantity = 1.0              -- We are selling 1 "piece"
+        , riAmount = totalPriceKopecks   -- Total is the same
+        , riTax = Tinkoff.None
+        , riPaymentMethod = Tinkoff.FullPayment
+        , riPaymentObject = Tinkoff.Commodity
+        }
+
+-- | Formats a single OrderItem into a short, descriptive line for the Description field.
+formatDescriptionLine :: (Int, DB.OrderItem) -> Text
+formatDescriptionLine (index, item) =
+    let
+        -- Keep the name short for the description
+        itemName = T.take 50 (DB.oiName item) -- Truncate long names
+        details = case DB.oiFabricType item of
+            Roll   -> 
+              T.pack (show (fromMaybe 0.0 (DB.oiLengthM item))) <> 
+              "м x " <> 
+              T.pack (show (fromJust (DB.oiPricePerMetre item))) <> 
+              " руб/м"
+            PreCut -> "1 шт. x " <> T.pack (show (DB.oiTotalPrice item)) <> " руб"
+    in
+    (T.pack $ show index) <> ". " <> itemName <> " (" <> details <> ")\n"
+
+
+-- | Main function to construct the Tinkoff InitRequest for a multi-item order.
+mkInitRequest :: Text -> [DB.OrderItem] -> Text -> TinkoffCredentials -> Tinkoff.InitRequest
+mkInitRequest orderId items customerPhone tinkoffCred =
   let
-     -- 'fabricPrice' is the TOTAL price in rubles. Convert it to kopecks once.
-    totalAmountKopecks = toKopecks fabricPrice :: Int64
+    -- 1. Create a fiscal receipt item for EACH item in the cart.
+    receiptItems = map mkReceiptItem items
 
-    (receiptItems, description) = case (orLengthM orderRequest, orPreCutId orderRequest) of
-      
-      -- CASE A: Roll Purchase
-      (Just lengthM, Nothing) ->
-        let
-          -- 1. Back-calculate the price per meter
-          -- If total is 3750 and length is 2.5, price/m is 1500
-          pricePerMeter = if lengthM > 0 then fabricPrice / lengthM else 0
-          pricePerMeterKopecks = toKopecks pricePerMeter
+    -- 2. Calculate the total amount for the entire order.
+    totalAmountKopecks = sum $ map Tinkoff.riAmount receiptItems
 
-          item = Tinkoff.ReceiptItem
-                  { riName = sanitizeForGateway (orFabricName orderRequest)
-                  , riPrice = pricePerMeterKopecks -- Price of ONE unit (1 meter)
-                  , riQuantity = lengthM            -- How many units
-                  , riAmount = totalAmountKopecks  -- The pre-calculated total
-                  , riTax = Tinkoff.None
-                  , riPaymentMethod = Tinkoff.FullPayment
-                  , riPaymentObject = Tinkoff.Commodity
-                  }
+    -- 3. === BUILD THE DESCRIPTION LIST ===
+    --    First, format each item into a line.
+    --    We use 'zip [1..]' to get item numbers (1., 2., 3., etc.).
+    itemLines = map formatDescriptionLine (zip [1..] items)
+    --    Combine the lines into a single block.
+    itemListText = T.unlines itemLines
+    --    Create the final description, truncating if it's too long to be safe.
+    --    Tinkoff's limit is usually ~250 chars. We'll use 240 as a safe buffer.
+    description = T.take 240 ("Заказ " <> orderId <> ":\n" <> itemListText)
 
-          desc = 
-            "Ткань на отрез: " <> 
-            sanitizeForGateway (orFabricName orderRequest) <> 
-            " (" <> 
-            T.pack (show lengthM) <> " м x " <> 
-            T.pack (show pricePerMeter) <> " руб/м)"
-
-        in ([item], desc)
-
-      -- CASE B: Pre-Cut Purchase
-      (Nothing, Just _) ->
-        let
-          -- For a pre-cut, the total price IS the unit price
-          item = Tinkoff.ReceiptItem
-                  { riName = sanitizeForGateway (orFabricName orderRequest)
-                  , riPrice = totalAmountKopecks -- Price of the one "item"
-                  , riQuantity = 1.0
-                  , riAmount = totalAmountKopecks -- Total is the same
-                  , riTax = Tinkoff.VAT20
-                  , riPaymentMethod = Tinkoff.FullPayment
-                  , riPaymentObject = Tinkoff.Commodity
-                  }
-          
-          desc = 
-            "Мерный лоскут: " <> 
-            sanitizeForGateway (orFabricName orderRequest) <> 
-            " (1 шт. x " <> 
-            T.pack (show fabricPrice) <> " руб)"
-
-        in ([item], desc)
-      
-      _ -> ([], "Оплата заказа " <> orderId) -- Fallback
-
-    -- Prepare token generation data
+    -- 4. Prepare data for token generation.
     terminalKey = tinkoffTerminalKey tinkoffCred
     terminalSecret = tinkoffSecret tinkoffCred
-    tokenData = Tinkoff.InitToken (T.pack (show totalAmountKopecks)) orderId (Just description) terminalKey terminalSecret
+    tokenData = Tinkoff.InitToken
+                  (T.pack $ show totalAmountKopecks)
+                  orderId
+                  (Just description)
+                  terminalKey
+                  terminalSecret
     signature = Tinkoff.generatedInitToken tokenData
   in
-  -- 3. Construct the final request
+  -- 5. Construct the final request.
   Tinkoff.InitRequest
     { Tinkoff.irOrderId = orderId
     , Tinkoff.irTerminalKey = terminalKey
@@ -401,13 +439,13 @@ mkInitRequest orderId fabricPrice orderRequest tinkoffCred =
     , Tinkoff.irData = Just $
         Tinkoff.CustomerData
         { Tinkoff.cdEmail = Nothing
-        , Tinkoff.cdPhone = Just (orCustomerPhone orderRequest)
+        , Tinkoff.cdPhone = Just customerPhone
         }
     , Tinkoff.irReceipt = Just $
         Tinkoff.ReceiptData
         { rdEmail = Nothing
-        , rdPhone = Just (orCustomerPhone orderRequest)
-        , rdTaxation = Tinkoff.UsnIncome -- Or your specific system
+        , rdPhone = Just customerPhone
+        , rdTaxation = Tinkoff.UsnIncome
         , rdItems = receiptItems
         }
     }

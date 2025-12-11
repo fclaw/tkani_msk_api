@@ -11,7 +11,7 @@ import Katip (logTM, Severity(..))
 
 import App (AppM) -- Your custom monad
 import API (Routes (..)) -- Import our new ApiWithDocs
-import qualified Handlers.GetFabricInfo as GetFabricInfo
+import qualified Handlers.GetFabricPreview as GetFabricPreview
 import qualified Handlers.PutNewFabric as PutNewFabric
 import qualified Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified Handlers.GetProviders as GetProviders
@@ -25,12 +25,16 @@ import qualified Handlers.DailyDigest.New as DailyDigest.New
 import qualified Handlers.DailyDigest.Draft as DailyDigest.Draft
 import qualified Handlers.DailyDigest.Publish as DailyDigest.Publish
 import qualified Handlers.CancelOrder as CancelOrder
+import qualified Handlers.CheckCartItem as CheckCartItem
+import qualified Handlers.AddToCart as AddToCart
+import qualified Handlers.ClearCart as ClearCart
+import qualified Handlers.ViewCart as ViewCart
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
 apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
-  { _getFabricInfo = GetFabricInfo.handler -- Assign the handler function to the field
+  { _getFabricPreview = GetFabricPreview.handler -- Assign the handler function to the field
   , _putNewFabric = PutNewFabric.handler
   , _getDeliveryPoints = GetDeliveryPoints.handler
   , _getProviders = GetProviders.handler
@@ -44,4 +48,8 @@ apiHandlers = Routes
   , _draftDailyDigestDraft = DailyDigest.Draft.handler
   , _publishDailyDigest = DailyDigest.Publish.handler
   , _cancelOrder = CancelOrder.handler
+  , _checkCartItem = CheckCartItem.handler
+  , _addToCart = AddToCart.handler
+  , _clearCart = ClearCart.handler
+  , _viewCart = ViewCart.handler
   }

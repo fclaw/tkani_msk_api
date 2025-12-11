@@ -28,6 +28,7 @@ import Data.Time (UTCTime, diffUTCTime)
 import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
+import Data.Traversable (for)
 
 import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
 import API.Types
@@ -39,7 +40,7 @@ import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
 import Infrastructure.Services.Sdek.Types
 import Data.Maybe (fromMaybe)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
-
+import Infrastructure.Database.Types (OrderItem (..))
 
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
@@ -97,19 +98,6 @@ data MinimalOrderRequestData = MinimalOrderRequestData
     --   Source: User input from the bot's 'GET_PHONE' state.
   , mordPhone       :: Text
 
-    -- | The human-readable name of the fabric being purchased (e.g., "Пальтовый кашемир от Dior").
-    --   Source: Bot context, from the product the user initially selected.
-  , mordFabricName  :: Text
-
-    -- | The unique article number or SKU for the fabric in our internal system.
-    --   This is crucial for SDEK fiscalization and our own database records.
-    --   Source: Bot context, from the product the user initially selected.
-  , mordWareKey     :: Text
-
-    -- | The final calculated price for the specific cut or piece of fabric.
-    --   Source: Bot context, calculated based on length/pre-cut choice.
-  , mordFabricPrice :: Double
-
     -- | The unique code for the chosen SDEK delivery point (e.g., "MSK622").
     --   Note: This should be the code *without* any "sdek_" prefix.
     --   Source: User selection from the paginated list of delivery points.
@@ -117,6 +105,7 @@ data MinimalOrderRequestData = MinimalOrderRequestData
 
   , mordTariffCode :: Int
   , mordShipmentPoint :: Text
+  , mordItems :: [OrderItem]
   }
 
 
@@ -130,17 +119,15 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> Double -> Int -> Text -> MinimalOrderRequestData
-makeMinimalOrderRequestData OrderRequest {..} fabricPrice tariffCode shipmentPoint =
+makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Text -> MinimalOrderRequestData
+makeMinimalOrderRequestData OrderRequest {..} items tariffCode shipmentPoint =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
-  , mordFabricName = orFabricName
-  , mordWareKey = orArticle
-  , mordFabricPrice = fabricPrice
   , mordDeliveryPointCode = fromMaybe orDeliveryPointId (T.stripPrefix "sdek_" orDeliveryPointId)
   , mordTariffCode = tariffCode
   , mordShipmentPoint = shipmentPoint
+  , mordItems = items
   }
 
 -- | Builds the minimal SdekOrderRequest payload needed to register an order.
@@ -155,14 +142,17 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       }
 
     -- 2. Item info. Create a single, generic item for the fabric.
-    item = SdekPackageItem
-      { pkiName = mordFabricName -- A generic name is fine for your manual workflow
-      , pkiWareKey = mordWareKey -- Use your internal fabric ID
+    items = flip map mordItems $ \OrderItem {..} ->
+      SdekPackageItem
+      { pkiName = oiName -- A generic name is fine for your manual workflow
+      , pkiWareKey = oiArticle -- Use your internal fabric ID
       , pkiPayment = SdekPayment { payValue = 100 }
       , pkiWeight = 500 -- A sensible default weight in grams
       , pkiAmount = 1   -- It's one "item" (one piece of fabric)
-      , pkiCost = round mordFabricPrice
+      , pkiCost = round oiTotalPrice
       }
+
+    totalPrice = sum [oiTotalPrice item | item <- mordItems]     
 
     -- 3. Create a default package payload
     --    You MUST provide an estimated weight. You can't skip this.
@@ -170,7 +160,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
     package = SdekPackage
       { pkgNumber = "1" -- Simple default for one-package orders
       , pkgWeight = 1 -- Default weight in grams
-      , pkgItems = [item]
+      , pkgItems = items
       }
   in
     -- 3. Assemble the final request
@@ -181,7 +171,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       , sorPackages = [package]
       , sorShipmentPoint = mordShipmentPoint
       , sorDeliveryPoint = mordDeliveryPointCode
-      , sorServices = [SdekService INSURANCE (Just (T.pack (show (mordFabricPrice + 1))))]
+      , sorServices = [SdekService INSURANCE (Just (T.pack (show (totalPrice + 1))))]
       }
 
 

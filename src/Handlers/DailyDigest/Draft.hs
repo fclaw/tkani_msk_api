@@ -11,6 +11,4 @@ import Infrastructure.Database (updateDailyDigestDraft)
 
 
 handler :: DailyDigestDraft -> AppM (ApiResponse ())
-handler draft = do
-  pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ updateDailyDigestDraft draft pool
+handler draft = fmap (first mkError) $ fmap _appDBPool ask >>= (liftIO . updateDailyDigestDraft draft)

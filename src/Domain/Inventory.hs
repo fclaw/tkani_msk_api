@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Domain.Inventory (adjustInventoryForOrder, InventoryResult(..)) where
 
@@ -14,6 +15,7 @@ import qualified Hasql.Transaction as Hasql
 import Data.Traversable (for)
 import Data.Aeson (Result (..))
 import Control.Monad (join, void)
+import Data.Either (lefts)
 
 
 import App (AppM, _appDBPool, _thresholdMetres, render)
@@ -23,6 +25,7 @@ import Infrastructure.Database
        , updateOrderStatusStatement
        , updatePaymentStatusStatement
        , adjustFabric
+       , getOrderItemsForAdjustStatement
        , AdjustFabric (..))
 import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
@@ -32,44 +35,49 @@ import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDIN
 
 data InventoryResult 
   = StockOK Int
-  | FabricSoldOutOrPrecut Int (Maybe Int) (AppM Text) -- We pass info back to create a nice message
+  | FabricSoldOutOrPrecut Int [(Maybe Int, AppM Text)] -- We pass info back to create a nice message
 
 
 adjustInventoryForOrder :: Text -> AppM (Either Text InventoryResult)
 adjustInventoryForOrder orderId = do
   cfg <- ask
   let pool = _appDBPool cfg
-  let thresholdMetres =  _thresholdMetres cfg
+  let thresholdMetres = _thresholdMetres cfg
   eResult <- liftIO $ 
     fmap (first (pack . show)) $ 
       runTransaction pool Write $ 
         statements orderId thresholdMetres
   fmap join $ for eResult $ \aesonRes -> do
-    res <- for aesonRes $ \(mId, AdjustFabric {..}) ->
-      return $ 
-        if afIsSold == False &&
-          afIsPreCutReq == False 
-        then
-          StockOK mId
-        else
-            let mkFabricSoldOutOrPrecut wMId tpl tplData = 
-                  FabricSoldOutOrPrecut mId wMId (render ($currentModule <> tpl) tplData)
-            in 
-              if afIsSold == True && 
-                 afIsPreCutReq == False
-              then let templateData = 
-                         HM.fromList 
-                         [("fabricName", afName), 
-                          ("article", afArticle)
-                         ]
-                   in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
-              else let templateData = 
-                         HM.fromList 
-                         [ ("fabricName", afName), 
-                           ("article", afArticle), 
-                           ("remainingLength", pack (show afRemLength))
-                         ]   
-                   in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
+    res <- for aesonRes $ \(mId, adjFabrics) -> do
+      let soldOutOrPrecut :: AdjustFabric -> Either (Maybe Int, AppM Text) ()
+          soldOutOrPrecut AdjustFabric {..} =
+            if afIsSold == False &&
+               afIsPreCutReq == False 
+            then
+              Right ()
+            else
+                let mkFabricSoldOutOrPrecut wMId tpl tplData = 
+                      Left (wMId, render ($currentModule <> tpl) tplData)
+                in 
+                  if afIsSold == True && 
+                     afIsPreCutReq == False
+                  then let templateData = 
+                            HM.fromList 
+                            [("fabricName", afName), 
+                             ("article", afArticle)
+                            ]
+                       in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
+                  else let templateData = 
+                            HM.fromList 
+                            [ ("fabricName", afName), 
+                              ("article", afArticle), 
+                              ("remainingLength", pack (show afRemLength))
+                            ]   
+                       in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
+      let res = lefts $ map soldOutOrPrecut adjFabrics
+      return $ case res of 
+        [] -> StockOK mId
+        xs -> FabricSoldOutOrPrecut mId xs     
     return $ case res of
       Success inventory -> Right inventory
       Error err -> Left $ pack err
@@ -77,9 +85,11 @@ adjustInventoryForOrder orderId = do
 statements orderId thresholdMetres = do
   -- update order to paid
   mId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
-  -- adjust fabric
-  adjFabric <- (orderId, thresholdMetres) `Hasql.statement` adjustFabric
+  -- adjust fabric, orderId
+  items <- orderId `Hasql.statement` getOrderItemsForAdjustStatement
+  adjFabrics <- for items $ \(fId, prId, length) -> 
+    (fId, prId, length, thresholdMetres) `Hasql.statement` adjustFabric
   -- update payment status to paid
   void $ (orderId, CONFIRMED, PENDING) `Hasql.statement` updatePaymentStatusStatement
 
-  return $ fmap (mId,) adjFabric
+  return $ fmap (mId,) $ sequence adjFabrics

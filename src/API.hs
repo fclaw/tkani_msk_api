@@ -28,12 +28,14 @@ data Routes route = Routes
        :> "fabric"
        :> "ingest"
        :> ReqBody '[JSON] RawIngestRequest
-       :> Post '[JSON] (ApiResponse Int64)
-  , _getFabricInfo 
+       :> Post '[JSON] (ApiResponse NewFabric)
+  , _getFabricPreview 
        :: route 
-       :- "fabric" 
-       :> Capture "id" Int64
-       :> Get '[JSON] (ApiResponse FullFabric)
+       :- "fabric"
+       :> "preview" 
+       :> QueryParam "fabric_id" Int64
+       :> QueryParam "fabric_type" FabricType
+       :> Get '[JSON] (ApiResponse FabricPreview)
   , _getDeliveryPoints
        :: route 
        :- "providers"
@@ -107,6 +109,31 @@ data Routes route = Routes
        :> "cancel"
        :> ReqBody '[JSON] CancelOrder
        :> Post '[JSON] (ApiResponse ())
+  , _checkCartItem
+       :: route
+       :- "cart"
+       :> "check-item"
+       :> QueryParam "user_id" Int64
+       :> QueryParam "fabric_id" Int64
+       :> QueryParam "fabric_type" FabricType
+       :> Get '[JSON] (ApiResponse CheckItemInCart)
+  , _addToCart 
+       :: route
+       :- "cart"
+       :> "add"
+       :> ReqBody '[JSON] CartNewFabric
+       :> Post '[JSON] (ApiResponse ())
+  , _clearCart
+       :: route
+       :- "cart"
+       :> "clear"
+       :> QueryParam "user_id" Int64
+       :> Get '[JSON] (ApiResponse ())
+  , _viewCart
+       :: route
+       :- "cart"
+       :> QueryParam "user_id" Int64
+       :> Get '[JSON] (ApiResponse ViewCart)
   } deriving (Generic)
 
 

@@ -19,6 +19,7 @@ library:
     - Workers.TinkoffPaymentStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Listener
+    - Application.Cart
   dependencies:
     # This list should already be complete
     - aeson

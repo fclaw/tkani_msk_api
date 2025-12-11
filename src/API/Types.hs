@@ -21,8 +21,6 @@ import Data.Aeson.TH
 import Data.Int (Int64)
 import Data.Time (Day, parseTimeM, defaultTimeLocale)
 
-
-import API.WithField (WithField)
 import Text (camelToSnake, recordLabelModifier) 
 import Domain.Warehouse.Types (FabricType)
 
@@ -67,6 +65,8 @@ instance {-# OVERLAPPING #-} ToJSON a => ToJSON (ApiResponse a) where
 
 
 wrongModelErrorCode = "400" :: Text
+wrongParamsErrorCode = "401" :: Text
+cartLimitExceeded = "402" :: Text
 
 mkError e = (ApiError mempty e)
 
@@ -94,6 +94,15 @@ data RawIngestRequest =
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)
 
 
+
+data NewFabric = 
+     NewFabric
+     { nfId :: Int64
+     , nfType :: FabricType
+     }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "nf" } ''NewFabric)
+
 -- | Represents a specific, fixed-length pre-cut of a fabric.
 --   This corresponds to the 'pre_cuts' table in the database.
 data PreCut = PreCut
@@ -107,26 +116,19 @@ data PreCut = PreCut
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pc" } ''PreCut)
 
 
--- | Represents the full information for a fabric type, including any
---   available pre-cuts. This is a combined view, not a direct table mapping.
-data Fabric = Fabric
-  { -- Fabric Properties (from the 'fabrics' table)
-    fDescription        :: Text
-  , fTotalLengthM       :: Int
-  , fPricePerMeter      :: Int    -- In kopecks/cents
-    -- Inventory Status
-  , fAvailableLengthM   :: Double -- Amount available for "cut-to-order"
-  , fArticle            :: Text
-  , fWarehouseMessageId :: Int
-  , fMediaType          :: MediaType
-    -- List of associated pre-cuts for this fabric.
-  , fPreCuts            :: Maybe [WithField "id" Int PreCut]
-  } deriving (Show, Generic)
+-- | A unified, minimal preview for any sellable item (Roll or PreCut).
+--   Provides just enough info for the bot to confirm the item and check stock.
+data FabricPreview = FabricPreview
+  { -- | The user-facing name for confirmation (e.g., "Шелк Армани" or "Отрез Шелк Армани 1.2м").
+    fpName            :: Text
+    -- | The price of one unit (EITHER per meter for a Roll, OR total for a PreCut).
+  , fpPrice           :: Int
+    -- | The available quantity (EITHER meters for a Roll, OR just 'True'/'False' for a PreCut).
+    --   We can represent this as a Double for length, or 1.0/0.0 for PreCut availability.
+  , fpStockAvailable  :: Double -- For a PreCut, this will be 1.0 if in stock, 0.0 if not.
+  } deriving (Show, Eq, Generic)
 
-
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "f" } ''Fabric)
-
-type FullFabric = WithField "is_sold" Bool (WithField "id" Int Fabric)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricPreview)
 
 
 data Providers = SDEK | NONE
@@ -198,26 +200,14 @@ instance FromJSON ProviderInfo where
 -- | Represents a customer order request before payment and confirmation.
 -- This is the data structure your bot will build and send to the API.
 data OrderRequest = OrderRequest
-  { -- Core Product Information
-    orFabricId      :: Int64          -- The ID of the fabric being ordered. REQUIRED.
-
-  , orFabricName   :: Text
-  , orArticle      :: Text
-
-    -- Purchase Details (exactly one of these should be Just)
-  , orLengthM       :: Maybe Double   -- Length in meters for a custom cut.
-  , orPreCutId      :: Maybe Int64      -- The ID of the specific pre-cut piece.
-  , orPreCutLengthM :: Maybe Double
-
-    -- Customer & Delivery Information
+  { -- Customer & Delivery Information
+    orTelegramUserId   :: Int64 
   , orCustomerFullName :: Text       -- Full name as a single string (e.g., "Иванов Иван Иванович").
   , orCustomerPhone    :: Text       -- Phone number, normalized (e.g., "+79211234567").
   
-  , orDeliveryProviderId :: Providers          -- The code for the provider, e.g., "sdek".
-  , orDeliveryPointId    :: Text    -- The unique ID of the chosen delivery point.
-
-   -- link to telegram where the fabric image and description is situated
-  , orTelegramUrl :: Text
+    -- delivery provider info
+  , orDeliveryProviderId :: Providers  -- The code for the provider, e.g., "sdek".
+  , orDeliveryPointId    :: Text       -- The unique ID of the chosen delivery point.
   , orChatId      :: Int64
   } deriving (Show, Generic)
 
@@ -232,6 +222,7 @@ data OrderStatus
   | Delivered           -- Customer has received the package.
   | Completed
   | Cancelled
+  | Cart                -- the order may consists of several fabrics, notion of cart with lifetime of 30 min
   deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''OrderStatus)
@@ -244,6 +235,7 @@ statusToSQL s = case s of
     Delivered  -> "delivered"
     Completed  -> "completed"
     Cancelled  -> "cancelled"
+    Cart       -> "Cart"
     -- etc...
 
 -- | Converts an OrderStatus into a human-readable, formatted Russian Text
@@ -415,3 +407,59 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "dd" } ''
 data CancelOrder = CancelOrder { coOrderId :: Text }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "co" } ''CancelOrder)
+
+
+data CartCheckStatus = 
+        CartExpired
+      | ItemInCart 
+      | OkToAdd 
+      | NoCartExists
+  deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''CartCheckStatus)
+
+data CheckItemInCart = CheckItemInCart { ciicCartStatus :: CartCheckStatus }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ciic" } ''CheckItemInCart)
+
+data CartNewFabric =
+     CartNewFabric
+     { cnfTelegramUserId :: Int64
+     , cnfFabricId       :: Int64
+     , cnfFabricLength   :: Maybe Double
+     , cnfFabricType     :: FabricType
+     , cnfTelegramUrl    :: Text
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cnf" } ''CartNewFabric)
+
+--          roll
+--         "id": 123, // This is the cart_item_id, useful for editing
+--         "name": "Шелк Армани",
+--         "type": "roll",
+--         "length_m": 1.5,
+--         "price": 2250
+--          precut
+--          "id": 124,
+--          "name": "Шерсть (отрез 2.0м)",
+--          "type": "pre_cut",
+--          "price": 2400
+data ViewCartItem = 
+     ViewCartItem
+     { vciId :: Int64
+     , vciName :: Text
+     , vciType :: FabricType
+     , vciLengthM :: Maybe Double
+     , vciPrice :: Int
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "vci" } ''ViewCartItem)
+
+data ViewCart =
+     ViewCart
+     { vcItemsCount :: Int 
+     , vcTotalPrice :: Int
+     , vcItems :: [ViewCartItem]
+     }  deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "vc" } ''ViewCart)

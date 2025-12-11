@@ -9,9 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Infrastructure.Database
-  ( getFabricInfoById
+  ( getFabricPreview
   , putNewFabric
-  , getFinalOrderItemPrice
+  , getOrderItems
   , placeNewOrder
   , setTelegramMessage
   , getChatDetails
@@ -35,6 +35,13 @@ module Infrastructure.Database
   , updateDailyDigestDraft
   , setDailyDigestStatus
   , fetchPaymentId
+  , isItemInCart
+  , addToCart
+  , clearCart
+  , clearCartStatement
+  , clearOldCarts
+  , fetchCartItems
+  , getOrderItemsForAdjustStatement
   , module Types
   ) where
 
@@ -49,7 +56,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app2, app3, app6, app7, snocT)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -68,6 +75,7 @@ import Infrastructure.Database.Fabric (ingestFabricDB)
 import qualified Domain.Warehouse.Types as DWT
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
+import Domain.Warehouse.Types (FabricType)
 
 --------------------------------------------------------------------------------
 -- Template Haskell Magic: Generate our statement functions automatically
@@ -85,72 +93,48 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
-getFabricStatement :: Hasql.Statement (Int64, Double) (Either String FullFabric)
-getFabricStatement =
-  dimap (first fromIntegral) (maybe (Left "fabric not found") id . fmap (convertFromJson @FullFabric))
+getFabricPreviewStatement :: Hasql.Statement (Int64, FabricType, Double) (Either Text FabricPreview)
+getFabricPreviewStatement =
+  dimap (app1 fromIntegral . app2 encodeToText) (maybe (Left @Text "fabric not found") (first pack) . fmap (convertFromJson @FabricPreview))
   [Hasql.maybeStatement|
-    SELECT jsonb_build_object(
-        'id', f.id,
-        'description', f.name,
-        'total_length_m', CAST(f.total_length_m AS int4),
-        'price_per_meter', f.price_per_meter,
-        'available_length_m', f.available_length_m,
-        'is_sold', f.is_sold,
-        'article', f.article,
-        'pre_cuts', pc_data.json_val,
-        'warehouse_message_id', f.warehouse_message_id,
-        'media_type', to_jsonb(f.media_type) :: jsonb
-    ) :: jsonb
-    FROM fabrics AS f
-    CROSS JOIN LATERAL (
-        SELECT coalesce(
-            jsonb_agg(
-                jsonb_build_object(
-                    'id', pc.id,
-                    'length_m', pc.length_m,
-                    'price_rub', pc.price_rub,
-                    'in_stock', pc.in_stock
-                )
-            ),
-            '[]'::jsonb
-        ) AS json_val
-        FROM pre_cuts AS pc
-        WHERE pc.fabric_id = f.id 
-          AND pc.in_stock = TRUE
-    ) AS pc_data
-
+    SELECT
+      jsonb_build_object(
+        'name', f.name :: text,
+        'price', f.price_per_meter :: int4,
+        'stock_available', f.available_length_m :: float8
+      ) :: jsonb
+    FROM 
+      fabrics AS f
     WHERE 
-      f.id = $1 :: int8 
-      AND (
-        f.available_length_m >= $2 :: float8
-        
-        OR 
-        
-        (
-          f.total_length_m > 0 AND
-          f.available_length_m > 0.1 AND
-          f.available_length_m < $2 :: float8 AND
-          jsonb_array_length(pc_data.json_val) > 0
-        )
+      f.id = $1 :: int8
+      AND $2 :: text = 'roll'
+      AND f.available_length_m >= $3 :: float8
 
-        OR
+    UNION ALL
 
-        (
-          CAST(f.available_length_m AS int4) = 0 AND
-          CAST(f.total_length_m AS int4) = 0 AND
-          jsonb_array_length(pc_data.json_val) > 0
-        )
-      )
+    SELECT
+      jsonb_build_object(
+        'name', f.name || ' (отрез ' || pc.length_m || 'м)' :: text,
+        'price', pc.price_rub :: int4,
+        'stock_available', pc.length_m
+      ) :: jsonb
+    FROM 
+      pre_cuts AS pc
+    JOIN
+      fabrics AS f ON pc.fabric_id = f.id
+    WHERE 
+      pc.id = $1 :: int8
+      AND $2 :: text = 'pre_cut'
+      AND pc.in_stock IS TRUE
   |]
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
-getFabricInfoById :: Int64 -> Double -> Hasql.Pool -> IO (Either Text (Either Text FullFabric))
-getFabricInfoById fabricId threshold pool = 
+getFabricPreview :: Int64 -> FabricType -> Double -> Hasql.Pool -> IO (Either Text (Either Text FabricPreview))
+getFabricPreview fabricId fabricType threshold pool = 
   fmap (first (pack . show)) $
     runTransaction pool Hasql.Read $ 
-      fmap (first pack) $ (fabricId, threshold) `Hasql.statement` getFabricStatement
-
+      (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
 putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text Int64)
 putNewFabric fabric req pool = 
@@ -159,42 +143,63 @@ putNewFabric fabric req pool =
       ingestFabricDB fabric req
 
 
-getFinalOrderItemPriceStatement :: Hasql.Statement (Int64, Maybe Int64, Maybe Double) Double
-getFinalOrderItemPriceStatement = 
-  [Hasql.singletonStatement|
+getOrderItemsStatement :: Hasql.Statement Int64 [OrderItem]
+getOrderItemsStatement =
+  rmap (either error id . sequence . map (convertFromJson @OrderItem) . V.toList)
+  [Hasql.vectorStatement|
     SELECT
-      (CASE
-        WHEN $2 :: int8? is not null THEN
-          (SELECT pc.price_rub
-           FROM pre_cuts pc
-           WHERE pc.id = $2 :: int8? AND 
-           pc.fabric_id = $1 :: int8)
-        WHEN $2 :: int8? is null AND 
-             $3 :: float8? is not null THEN
-          (SELECT f.price_per_meter * $3 :: float8?
-           FROM fabrics f
-           WHERE f.id = $1 :: int8)
-        ELSE 0.0
-      END) :: float8
-    FROM fabrics
-    WHERE id = $1 :: int8
+      jsonb_build_object(
+        'name', f.name,
+        'article', f.article,
+        'total_price', f.price_per_meter * ci.length_m,
+        'fabric_type', ci.item_type,
+        'price_per_metre', f.price_per_meter,
+        'length_m', ci.length_m,
+        'telegram_url', ci.telegram_url
+       ) :: jsonb
+     FROM carts AS c
+     INNER JOIN cart_items AS ci
+     ON c.id = ci.cart_id
+     INNER JOIN fabrics AS f
+     ON f.id = ci.fabric_id
+     WHERE c.telegram_user_id = $1 :: int8
+
+    UNION ALL
+
+    SELECT
+      jsonb_build_object(
+        'name', f.name,
+        'article', f.article,
+        'total_price', pc.price_rub,
+        'fabric_type', ci.item_type,
+        'price_per_metre', null,
+        'length_m', null,
+        'telegram_url', ci.telegram_url
+      ) :: jsonb
+    FROM carts AS c
+    INNER JOIN cart_items AS ci
+    ON c.id = ci.cart_id
+    INNER JOIN pre_cuts AS pc
+    ON pc.id = ci.pre_cut_id
+    INNER JOIN fabrics AS f
+    ON f.id = pc.fabric_id
+    WHERE c.telegram_user_id = $1 :: int8
+
   |]
 
 -- | Fetches the final, calculated price for a fabric order item.
 --   The entire calculation (per-meter vs. fixed price) is handled by the SQL query.
 --   Returns 'Nothing' if the fabric or pre-cut is not found.
-getFinalOrderItemPrice :: Int64 -> Maybe Int64 -> Maybe Double -> Hasql.Pool -> IO (Either Text Double)
-getFinalOrderItemPrice fabricId preCutId lengthM pool = 
+getOrderItems :: Int64 -> Hasql.Pool -> IO (Either Text [OrderItem])
+getOrderItems userId pool = 
   fmap (first (pack . show)) $
     runTransaction pool Hasql.Write $ 
-      params `Hasql.statement` getFinalOrderItemPriceStatement
-  where params = (fromIntegral fabricId, fmap fromIntegral preCutId, lengthM)
-
+      userId `Hasql.statement` getOrderItemsStatement
 
 placeNewOrderStatement :: Hasql.Statement Order ()
 placeNewOrderStatement = 
-  dimap $(recordToTuple ''Order) (const ())
-  [Hasql.singletonStatement|
+  lmap $(recordToTuple ''Order)
+  [Hasql.resultlessStatement|
     WITH inserted_order AS (
       INSERT INTO orders (
        id,
@@ -202,7 +207,6 @@ placeNewOrderStatement =
        customer_phone,
        delivery_provider_id,
        delivery_point_id,
-       telegram_url,
        sdek_request_uuid,
        sdek_tracking_number,
        internal_notification_message_id,
@@ -211,14 +215,13 @@ placeNewOrderStatement =
        status
       ) VALUES (
        $1 :: text,
+       $2 :: text,
+       $3 :: text,
+       $4 :: text,
        $5 :: text,
-       $6 :: text,
+       $6 :: uuid,
        $7 :: text,
-       $8 :: text,
-       $9 :: text,
-       $10 :: uuid,
-       $11 :: text,
-       $12 :: int8,
+       $8 :: int8,
        now(),
        now(),
        'registered'
@@ -232,12 +235,16 @@ placeNewOrderStatement =
         pre_cut_id
     ) 
     SELECT
-        id, 
-        $2 :: int8, 
-        $3 :: float8?,
-        $4 :: int8? 
-    FROM inserted_order
-    RETURNING order_id :: text
+      (SELECT id FROM inserted_order),
+      COALESCE(ci.fabric_id, pc.fabric_id),
+      ci.length_m,
+      ci.pre_cut_id 
+    FROM carts AS c
+    INNER JOIN cart_items AS ci
+    ON c.id = ci.cart_id
+    LEFT JOIN pre_cuts AS pc
+    ON pc.id = ci.pre_cut_id
+    WHERE c.telegram_user_id = $9 :: int8 
   |]
 
 placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text ())
@@ -282,49 +289,36 @@ updateOrderStatus orderId status pool = fmap (first (pack . show)) $ runTransact
 --    - Subtracts length only if it was a Roll purchase.
 --    - Calculates 'is_sold' based on zero length (for Rolls) or no-siblings (for Pre-Cuts).
 -- 4. Returns JSON with new status and flags for admin notification.
-adjustFabric :: Hasql.Statement (Text, Double) (Result AdjustFabric)
+adjustFabric :: Hasql.Statement (Int64, Maybe Int64, Maybe Double, Double) (Result AdjustFabric)
 adjustFabric =
   rmap (fromJSON @AdjustFabric)
   [Hasql.singletonStatement|
-    WITH order_info AS (
-        SELECT
-            ofb.fabric_id, 
-            ofb.length_m, 
-            ofb.pre_cut_id AS pre_cut_id 
-        FROM order_fabric_bindings ofb
-        WHERE ofb.order_id = $1 :: text
-        LIMIT 1
-    ),
-
-    update_pc AS (
+    WITH update_pc AS (
         UPDATE pre_cuts 
-        SET in_stock = FALSE 
-        FROM order_info
-        WHERE pre_cuts.id = order_info.pre_cut_id
+        SET in_stock = FALSE
+        WHERE pre_cuts.id = $2 :: int8?
     )
 
     UPDATE fabrics f
     SET 
         available_length_m = CASE 
-            WHEN order_info.pre_cut_id IS NULL 
-            THEN f.available_length_m - order_info.length_m
+            WHEN $2 :: int8? IS NULL 
+            THEN f.available_length_m - $3 :: float8?
             ELSE f.available_length_m
         END,
 
         is_sold = CASE 
-            WHEN order_info.pre_cut_id IS NULL THEN 
-                 (f.available_length_m - order_info.length_m) <= 0.01
+            WHEN $2 :: int8? IS NULL THEN 
+              (f.available_length_m - $3 :: float8?) <= 0.01
             
             ELSE NOT EXISTS (
                 SELECT 1 FROM pre_cuts pc 
-                WHERE pc.fabric_id = order_info.fabric_id 
+                WHERE pc.fabric_id = $1 :: int8
                   AND pc.in_stock = TRUE 
-                  AND pc.id <> order_info.pre_cut_id 
+                  AND pc.id <> $2 :: int8?
             )
         END
-
-    FROM order_info
-    WHERE f.id = order_info.fabric_id
+    WHERE f.id = $1 :: int8
 
     RETURNING
         jsonb_build_object(
@@ -333,9 +327,9 @@ adjustFabric =
             'is_sold', f.is_sold :: bool,
             
             'is_pre_cut_req', (
-                order_info.pre_cut_id IS NULL AND 
+                $2 :: int8? IS NULL AND 
                 f.available_length_m > 0.01 AND 
-                f.available_length_m < $2 :: float8
+                f.available_length_m < $4 :: float8
             ) :: bool,
             
             'rem_length', f.available_length_m :: float8,
@@ -447,43 +441,59 @@ fetchCatalogSummaryItemStatement =
     SELECT item_json :: jsonb
       FROM (
           SELECT
-              f.updated_at,
-              jsonb_build_object(
-                  'id', f.id,
-                  'name', f.name,
-                  'article', f.article,
-                  'type', 'roll',
-                  'price_per_meter', f.price_per_meter,
-                  'total_price', NULL,
-                  'length_m', NULL,
-                  'available_length', f.available_length_m,
-                  'is_sold_out', f.is_sold,
-                  'warehouse_message_id', f.warehouse_message_id,
-                  'warehouse_chat_id', -1001234567890,
-                  'warehouse_file_id', f.image_url,
-                  'description', f.description,
-                  'media_type', to_jsonb(f.media_type),
-                  'width', f.width
-              ) :: jsonb AS item_json
+            f.updated_at,
+            jsonb_build_object(
+              'id', f.id,
+              'name', f.name,
+              'article', f.article,
+              'type', 'roll',
+              'price_per_meter', f.price_per_meter,
+              'total_price', NULL,
+              'length_m', NULL,
+              'available_length', 
+                f.available_length_m - 
+                COALESCE(locked_stock.total_locked, 0),
+              'is_sold_out', f.is_sold,
+              'warehouse_message_id', f.warehouse_message_id,
+              'warehouse_chat_id', -1001234567890,
+              'warehouse_file_id', f.image_url,
+              'description', f.description,
+              'media_type', to_jsonb(f.media_type),
+              'width', f.width
+            ) AS item_json
           FROM 
-              fabrics AS f
+            fabrics AS f
+          LEFT JOIN (
+            SELECT 
+              ci.fabric_id, 
+              SUM(ci.length_m) AS total_locked
+            FROM cart_items ci
+            JOIN carts c 
+            ON ci.cart_id = c.id
+            WHERE 
+              ci.item_type = 'roll'
+              AND c.updated_at > NOW() - INTERVAL '30 minutes' 
+            GROUP BY ci.fabric_id
+          ) AS locked_stock 
+          ON f.id = locked_stock.fabric_id
           WHERE
-              CAST(f.updated_at AS date) = $1 :: date
-              AND f.is_sold = FALSE
-              AND f.available_length_m > $2 :: float8
+            CAST(f.updated_at AS date) = $1 :: date
+            AND f.is_sold = FALSE
+            AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0)) > $2 :: float8
 
           UNION ALL
 
           SELECT
               f.updated_at,
               jsonb_build_object(
-                  'id', f.id,
+                  'id', pc.id,
                   'name', f.name || ' (отрез ' || pc.length_m || 'м)',
                   'article', f.article,
                   'type', 'pre_cut',
                   'price_per_meter', NULL,
                   'total_price', pc.price_rub,
                   'length_m', pc.length_m,
+                  'available_length', null,
                   'is_sold_out', FALSE,
                   'warehouse_message_id', f.warehouse_message_id,
                   'warehouse_chat_id', -1001234567890,
@@ -492,13 +502,15 @@ fetchCatalogSummaryItemStatement =
                   'media_type', to_jsonb(f.media_type),
                   'width', f.width
               ) :: jsonb AS item_json
-          FROM 
-              pre_cuts AS pc
+          FROM pre_cuts AS pc
+          LEFT JOIN cart_items AS ci
+          ON pc.id = ci.pre_cut_id
           JOIN 
               fabrics AS f ON pc.fabric_id = f.id
           WHERE
               CAST(f.updated_at AS date) = $1 :: date
               AND pc.in_stock = TRUE
+              AND ci.pre_cut_id IS NULL
       ) AS catalog_items
     ORDER BY updated_at DESC
   |]
@@ -615,11 +627,15 @@ searchFabricCardStatement =
             'width', f.width
               ) :: jsonb AS item_json
         FROM fabrics AS f
-        WHERE $1 :: text = 'roll' AND f.id = $2 :: int8
+        LEFT JOIN cart_items AS ci
+        ON f.id = ci.fabric_id  
+        WHERE $1 :: text = 'roll' 
+        AND f.id = $2 :: int8
+        AND ci.fabric_id IS NULL
       UNION ALL
         SELECT
           jsonb_build_object(
-            'id', f.id,
+            'id', pc.id,
             'name', f.name || ' (отрез ' || pc.length_m || 'м)',
             'article', f.article,
             'type', 'pre_cut',
@@ -635,8 +651,12 @@ searchFabricCardStatement =
             'width', f.width
           ) :: jsonb AS item_json
         FROM pre_cuts AS pc
+        LEFT JOIN cart_items AS ci
+        ON pc.id = ci.pre_cut_id
         JOIN fabrics AS f ON pc.fabric_id = f.id
-        WHERE $1 :: text = 'pre_cut' AND pc.id = $2 :: int8
+        WHERE $1 :: text = 'pre_cut' 
+        AND pc.id = $2 :: int8
+        AND ci.pre_cut_id IS NULL   
     )
     SELECT item_json :: jsonb FROM item
   |]
@@ -723,3 +743,168 @@ fetchPaymentIdStatement =
 
 fetchPaymentId :: Text -> Hasql.Pool -> IO (Either Text (Maybe Text))
 fetchPaymentId order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ order `Hasql.statement` fetchPaymentIdStatement
+
+
+isItemInCartStatement :: Hasql.Statement (Int64, FabricType, Int64) CartCheckStatus
+isItemInCartStatement =
+  dimap (app2 encodeToText) (either error id . convertFromJson @CartCheckStatus)
+  [Hasql.singletonStatement|
+    SELECT 
+      to_jsonb((CASE
+        WHEN c.id IS NULL THEN 'no_cart_exists'
+        WHEN c.updated_at <= NOW() - INTERVAL '30 minutes' THEN 'cart_expired'
+        WHEN EXISTS (
+            SELECT 1 
+            FROM cart_items ci
+            WHERE ci.cart_id = c.id AND
+                CASE
+                    WHEN $2 :: text = 'pre_cut' THEN 
+                      ci.item_type = 'pre_cut' AND 
+                      ci.pre_cut_id = $3 :: int8
+                    WHEN $2 :: text = 'roll' THEN 
+                      ci.item_type = 'roll' AND 
+                      ci.fabric_id = $3 :: int8
+                    ELSE FALSE
+                END
+        ) THEN 'item_in_cart'
+        ELSE 'ok_to_add'
+      END) :: text) :: jsonb
+    FROM
+    (SELECT 1) AS dummy
+    LEFT JOIN
+      carts AS c ON c.telegram_user_id = $1 :: int8
+  |]
+
+isItemInCart :: Int64 -> FabricType -> Int64 ->  Hasql.Pool -> IO (Either Text CartCheckStatus)
+isItemInCart userId fabricType fabricId pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      (userId, fabricType, fabricId) `Hasql.statement` isItemInCartStatement
+
+addToCartStatement :: Hasql.Statement CartNewFabric ()
+addToCartStatement = 
+  dimap (app4 encodeToText . $(recordToTuple ''CartNewFabric)) (const ())
+  [Hasql.singletonStatement|
+     WITH user_cart AS (
+       SELECT id
+       FROM carts
+       WHERE telegram_user_id = $1 :: int8 
+       AND updated_at > NOW() - INTERVAL '30 minutes'
+      ),
+     created_cart AS (
+       INSERT INTO carts 
+       (telegram_user_id)
+       (SELECT $1 :: int8
+       WHERE NOT EXISTS (SELECT 1 FROM user_cart))
+       ON CONFLICT (telegram_user_id)
+       DO UPDATE SET updated_at = NOW()
+       RETURNING id
+     ),
+     target_cart AS (
+       SELECT id FROM user_cart
+       UNION ALL
+       SELECT id FROM created_cart
+     )
+     INSERT INTO cart_items
+     ( cart_id
+     , item_type
+     , fabric_id
+     , pre_cut_id
+     , length_m
+     , telegram_url)
+     SELECT
+      (SELECT id FROM target_cart),
+      CAST($4 :: text AS cart_item_type),
+      CASE WHEN CAST($4 :: text AS cart_item_type) = 'roll' 
+           THEN $2 :: int8
+           ELSE null 
+      END,
+      CASE WHEN CAST($4 :: text AS cart_item_type) = 'pre_cut' 
+           THEN $2 :: int8 
+           ELSE null
+      END,
+      $3 :: float8?,
+      $5 :: text
+      returning id :: int8
+  |]
+
+addToCart :: CartNewFabric -> Hasql.Pool -> IO (Either Hasql.UsageError ())
+addToCart item pool = runTransaction pool Hasql.Write $ Hasql.statement item addToCartStatement
+
+clearCartStatement :: Hasql.Statement Int64 ()
+clearCartStatement =
+  [Hasql.resultlessStatement|
+    WITH user_cart AS (
+      SELECT id FROM carts WHERE telegram_user_id = $1 :: int8
+    )
+    DELETE FROM cart_items 
+    WHERE cart_id = (SELECT id FROM user_cart)
+  |]
+
+clearCart :: Int64 -> Hasql.Pool -> IO (Either Text ())
+clearCart userId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ Hasql.statement userId clearCartStatement
+
+clearOldCartsStatement :: Hasql.Statement () ()
+clearOldCartsStatement = 
+  [Hasql.resultlessStatement|
+    DELETE FROM carts
+    WHERE updated_at < NOW() - INTERVAL '30 minutes'
+  |]
+
+clearOldCarts :: Hasql.Pool -> IO (Either Text ())
+clearOldCarts pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ Hasql.statement () clearOldCartsStatement
+
+
+fetchCartItemsStatement :: Hasql.Statement Int64 [ViewCartItem]
+fetchCartItemsStatement =
+  rmap (either error id . sequence . map (convertFromJson @ViewCartItem) . V.toList)
+  [Hasql.vectorStatement|
+     SELECT
+       jsonb_build_object(
+        'id', f.id,
+        'name', f.name,
+        'type', ci.item_type,
+        'length_m', ci.length_m,
+        'price', ci.length_m * f.price_per_meter
+       ) :: jsonb
+     FROM carts as c 
+     INNER JOIN cart_items as ci
+     ON c.id = ci.cart_id
+     INNER JOIN fabrics as f
+     ON ci.fabric_id = f.id
+     WHERE c.telegram_user_id = $1 :: int8
+
+     UNION ALL
+
+     SELECT
+       jsonb_build_object(
+        'id', pc.id,
+        'name', f.name,
+        'type', ci.item_type,
+        'length_m', pc.length_m,
+        'price', pc.price_rub
+       ) :: jsonb
+     FROM cart_items as ci
+	   INNER JOIN carts as c
+     ON c.id = ci.cart_id
+     INNER JOIN pre_cuts as pc
+     ON pc.id = ci.pre_cut_id
+	   INNER JOIN fabrics as f
+     ON pc.fabric_id = f.id
+     WHERE c.telegram_user_id = $1 :: int8
+  |]
+
+fetchCartItems :: Int64 -> Hasql.Pool -> IO (Either Text [ViewCartItem])
+fetchCartItems userId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ Hasql.statement userId fetchCartItemsStatement
+
+getOrderItemsForAdjustStatement ::  Hasql.Statement Text [(Int64, Maybe Int64, Maybe Double)]
+getOrderItemsForAdjustStatement =
+  rmap V.toList
+  [Hasql.vectorStatement|
+    SELECT
+      fabric_id :: int8,
+      pre_cut_id :: int8?,
+      length_m :: float8?
+    FROM order_fabric_bindings
+    WHERE order_id = $1 :: text
+  |]

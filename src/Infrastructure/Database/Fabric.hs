@@ -47,11 +47,13 @@ ingestFabricDB fabric req = do
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
-  when(fType fabric == PreCut) $ do
-    let len = fLength fabric
-    let total = fPrice fabric
-    void $ Hasql.statement (parentId, len, fromIntegral total :: Int32) insertPreCutQuery
-  return parentId
+  precut_id <-
+    if fType fabric == PreCut then do
+      let len = fLength fabric
+      let total = fPrice fabric
+      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32) insertPreCutQuery
+    else return Nothing
+  return $ fromMaybe parentId precut_id
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
@@ -111,9 +113,10 @@ upsertFabricQuery =
     RETURNING id :: int8
 |]
 
-insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32) ()
+insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32) Int64
 insertPreCutQuery = 
-  [Hasql.resultlessStatement| 
+  [Hasql.singletonStatement| 
     INSERT INTO pre_cuts (fabric_id, length_m, price_rub)
     VALUES ($1 :: int8, $2 :: float8, $3 :: int4)
-|]
+    returning id :: int8
+  |]

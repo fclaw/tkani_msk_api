@@ -23,19 +23,23 @@ library
       Workers.TinkoffPaymentStatusPoller
       Infrastructure.Services.Overpass
       Application.Listener
+      Application.Cart
   other-modules:
       API.WithField
       Concurrency
       Domain.Inventory
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
+      Handlers.AddToCart
       Handlers.CancelOrder
+      Handlers.CheckCartItem
+      Handlers.ClearCart
       Handlers.DailyDigest.Draft
       Handlers.DailyDigest.New
       Handlers.DailyDigest.Publish
       Handlers.GetCatalogSummary
       Handlers.GetDeliveryPoints
-      Handlers.GetFabricInfo
+      Handlers.GetFabricPreview
       Handlers.GetProviders
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
@@ -43,6 +47,7 @@ library
       Handlers.SearchFabrics
       Handlers.SetTelegramMessage
       Handlers.TrackOrder
+      Handlers.ViewCart
       Infrastructure.Database
       Infrastructure.Database.Fabric
       Infrastructure.Database.Types

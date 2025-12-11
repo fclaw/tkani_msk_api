@@ -132,11 +132,12 @@ processJob (orderId, getStateReq) = do
           eInventoryResult <- adjustInventoryForOrder orderId
           for_ eInventoryResult $ \case
             StockOK msgId -> replyMessage msgId
-            FabricSoldOutOrPrecut msgId maybeMsgId renderMessage -> do 
-              msg <- renderMessage
-              notifyMessage msg
+            FabricSoldOutOrPrecut msgId xs -> do
               replyMessage msgId
-              for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
+              for_ xs $ \(maybeMsgId, renderMessage) -> do
+                msg <- renderMessage
+                notifyMessage msg
+                for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------
