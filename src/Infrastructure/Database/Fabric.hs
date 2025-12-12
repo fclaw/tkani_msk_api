@@ -43,7 +43,9 @@ ingestFabricDB fabric req = do
       encodeToText (rawMediaType req), -- $8 warehouse_media_type
       rollLength,                      -- $9 Length (Only for rolls)
       rawThumbnailUrl req,             -- $10 preview on a search list
-      fromIntegral (fWidth fabric)     -- $11 the width of a fabric
+      fromIntegral (fWidth fabric),    -- $11 the width of a fabric
+      fIsSearchable fabric && 
+      fType fabric == Roll
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -51,7 +53,10 @@ ingestFabricDB fabric req = do
     if fType fabric == PreCut then do
       let len = fLength fabric
       let total = fPrice fabric
-      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32) insertPreCutQuery
+      let isSearchable = 
+             fIsSearchable fabric && 
+             fType fabric == PreCut
+      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable) insertPreCutQuery
     else return Nothing
   return $ fromMaybe parentId precut_id
 
@@ -59,7 +64,7 @@ ingestFabricDB fabric req = do
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32) Int64
+upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32, Bool) Int64
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -74,7 +79,8 @@ upsertFabricQuery =
       total_length_m,
       available_length_m,
       thumbnail_url,
-      width
+      width,
+      is_searchable
     ) 
     VALUES (
       $1 :: text, 
@@ -88,7 +94,8 @@ upsertFabricQuery =
       $9 :: float8,
       $9 :: float8,
       $10 :: text?,
-      $11 :: int4
+      $11 :: int4,
+      $12 :: bool
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -107,16 +114,29 @@ upsertFabricQuery =
           COALESCE(EXCLUDED.available_length_m, 0),
         thumbnail_url = EXCLUDED.thumbnail_url,
         width = EXCLUDED.width,
+        is_searchable = EXCLUDED.is_searchable,
         updated_at = NOW(),
         in_stock = TRUE,
         is_sold = FALSE
     RETURNING id :: int8
 |]
 
-insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32) Int64
+insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool) Int64
 insertPreCutQuery = 
   [Hasql.singletonStatement| 
-    INSERT INTO pre_cuts (fabric_id, length_m, price_rub)
-    VALUES ($1 :: int8, $2 :: float8, $3 :: int4)
-    returning id :: int8
+    INSERT INTO pre_cuts 
+    (fabric_id, 
+     length_m, 
+     price_rub, 
+     is_searchable)
+    VALUES (
+      $1 :: int8, 
+      $2 :: float8, 
+      $3 :: int4, 
+      $4 :: bool)
+    ON CONFLICT (fabric_id, length_m, price_rub) 
+    DO UPDATE SET
+      is_searchable = EXCLUDED.is_searchable,
+      in_stock = TRUE
+    RETURNING id :: int8
   |]

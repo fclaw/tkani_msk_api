@@ -25,7 +25,8 @@ rollTemplate =
     "`Ширина: 140 см (Line 3)`\n" <>
     "`Цена: 1500 руб/метр (Line 4)`\n" <>
     "`ART-123 (Line 5)`\n" <>
-    "`Description...`"
+    "`Description...`" <>
+    "`#_search|_nosearch`"
 
 preCutTemplate :: Text
 preCutTemplate =
@@ -36,7 +37,8 @@ preCutTemplate =
     "`Цена: 2400 руб (Line 4)`\n" <>
     "`ART-123 (Line 5)`\n" <>
     "`Description...`\n" <>
-    "`#отрез`"
+    "`#отрез`" <>
+    "`#_search|_nosearch`"
 
 --------------------------------------------------------------------------------
 -- MAIN LOGIC
@@ -45,25 +47,53 @@ preCutTemplate =
 -- | The entry point. The result is a Validation containing either a list of errors or the successful parse.
 parseIngestRequest :: Text -> Double -> Validation [ParseError] Fabric
 parseIngestRequest rawText threshold =
-  let
-     cleanLines = 
-       filter (not . T.null) $ 
-         map T.strip $ T.lines rawText
-     isPreCut = 
-        "#отрез" `T.isInfixOf` T.toLower rawText || 
-        "#лоскут" `T.isInfixOf` T.toLower rawText
-  in
-    if isPreCut
-    then validatePreCut cleanLines
-    else validateRoll cleanLines threshold
+    let
+        allLines = map T.strip $ T.lines rawText
+        lowerText = T.toLower rawText
+
+        -- 1. Detect and Validate Visibility Tags
+        hasSearchTag = "#_search" `T.isInfixOf` lowerText
+        hasNoSearchTag = "#_nosearch" `T.isInfixOf` lowerText
+
+    in
+    if not hasSearchTag && not hasNoSearchTag then
+        Failure [MissingVisibilityTag]
+    else if hasSearchTag && hasNoSearchTag then
+        Failure [AmbiguousFormat "Cannot have both #_search and #_nosearch tags."]
+    else
+        let
+            isSearchable = hasSearchTag
+
+            -- 2. === THE FIX: Filter out the meta tags ===
+            --    Create a new list of lines that does not contain our visibility tags.
+            contentLines = filter (not . isVisibilityTag) allLines
+            
+            -- Now, filter for empty lines from this new list
+            cleanLines = filter (not . T.null) contentLines
+
+            isPreCut = 
+              "#отрез" `T.isInfixOf` lowerText || 
+              "#лоскут" `T.isInfixOf` lowerText
+        in
+        -- 3. Pass the CLEANED lines to the validators
+        if isPreCut
+            then validatePreCut cleanLines isSearchable
+            else validateRoll cleanLines threshold isSearchable
+
+-- | Helper function to identify visibility tag lines.
+isVisibilityTag :: Text -> Bool
+isVisibilityTag line =
+  let lowerLine = T.toLower line
+  in T.isInfixOf "#_search" lowerLine || 
+     T.isInfixOf "#_nosearch" lowerLine
 
 --------------------------------------------------------------------------------
 -- VALIDATORS (Applicative Style)
 --------------------------------------------------------------------------------
 
 -- | Validator for the Roll pattern (Name, Length, Price, Article)
-validateRoll :: [Text] -> Double -> Validation [ParseError] Fabric
-validateRoll lines threshold
+validateRoll :: [Text] -> Double -> Bool -> Validation [ParseError] Fabric
+validateRoll lines threshold isSearchable
   | length lines < 4 = Failure [StructureError Roll "Need at least 4 lines for a Roll"]
   | otherwise =
       Fabric
@@ -73,11 +103,12 @@ validateRoll lines threshold
         <*> pure (T.unlines (drop 5 lines))        -- Description
         <*> pure Roll
         <*> validateLength Roll (lines !! 1) (Just threshold) -- Length (Line 2)
-        <*> validateWidth Roll (lines !! 2) 
+        <*> validateWidth Roll (lines !! 2)
+        <*> pure isSearchable
 
 -- | Validator for the Pre-Cut pattern (Name, Length, Price, Article)
-validatePreCut :: [Text] -> Validation [ParseError] Fabric
-validatePreCut lines
+validatePreCut :: [Text] -> Bool -> Validation [ParseError] Fabric
+validatePreCut lines isSearchable
   | length lines < 4 = Failure [StructureError PreCut "Need at least 4 lines for a Pre-Cut"]
   | otherwise =
       Fabric
@@ -88,6 +119,7 @@ validatePreCut lines
         <*> pure PreCut
         <*> validateLength PreCut (lines !! 1) Nothing -- Length (Line 2)
         <*> validateWidth PreCut (lines !! 2)
+        <*> pure isSearchable
 
 --------------------------------------------------------------------------------
 -- FIELD-LEVEL VALIDATORS & HELPERS
@@ -169,3 +201,4 @@ simpleErrorText (StructureError _ msg) = msg
 simpleErrorText (ValueError _ msg) = msg
 simpleErrorText (AmbiguousFormat msg) = msg
 simpleErrorText (InvalidArticleFormat t) = "Invalid Article format: `" <> t <> "`. Use only A-Z, 0-9, and dashes (-)."
+simpleErrorText MissingVisibilityTag = "Missing visibility tag. Please add either `#_search` (to make it searchable) or `#_nosearch` (to hide it)."

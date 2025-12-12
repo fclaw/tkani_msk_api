@@ -1,6 +1,22 @@
--- Deploy tkani-api:00007.add_function to pg
+-- Deploy tkani-api:00013.add_columns to pg
 
 BEGIN;
+
+-- XXX Add DDLs here.
+-- migration_add_search_visibility.sql
+ALTER TABLE fabrics
+ADD COLUMN is_searchable BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Add an index to make search queries faster
+CREATE INDEX idx_fabrics_is_searchable ON fabrics(is_searchable);
+
+
+-- migration_add_search_visibility.sql
+ALTER TABLE pre_cuts
+ADD COLUMN is_searchable BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Add an index to make search queries faster
+CREATE INDEX idx_pre_cuts_is_searchable ON pre_cuts(is_searchable);
 
 -- XXX Add DDLs here.
 CREATE OR REPLACE FUNCTION search_fabrics_paginated(
@@ -76,5 +92,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+ALTER TABLE pre_cuts
+ADD CONSTRAINT unique_fabric_precut_spec
+UNIQUE (fabric_id, length_m, price_rub);
 
 COMMIT;

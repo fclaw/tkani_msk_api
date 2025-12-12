@@ -20,6 +20,7 @@ data Fabric = Fabric
   , fType        :: FabricType
   , fLength      :: Double
   , fWidth       :: Int
+  , fIsSearchable :: Bool
   } deriving (Show, Eq)
 
 data FabricType = Roll | PreCut
@@ -41,4 +42,5 @@ data ParseError
   | ValueError FabricType Text
   | InvalidArticleFormat Text
   | AmbiguousFormat Text -- For when we can't even guess
+  | MissingVisibilityTag
   deriving (Show, Eq)
