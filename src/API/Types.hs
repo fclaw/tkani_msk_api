@@ -83,7 +83,8 @@ $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding 
 -- | 2. The Ingest Payload (Matches your Python Dict keys exactly)
 data RawIngestRequest = 
      RawIngestRequest
-    { rawText         :: Text        -- ^ The caption
+    { rawFabricId     :: Maybe Int64
+    , rawText         :: Text        -- ^ The caption
     , rawMsgId        :: Int64       -- ^ Warehouse Message ID
     , rawMediaGroupId :: Maybe Text  -- ^ Album ID (null/None if single)
     , rawMediaType    :: MediaType   -- ^ Parsed via the Enum above
@@ -99,6 +100,7 @@ data NewFabric =
      NewFabric
      { nfId :: Int64
      , nfType :: FabricType
+     , nfArticle :: Text
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "nf" } ''NewFabric)

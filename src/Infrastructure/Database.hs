@@ -42,6 +42,8 @@ module Infrastructure.Database
   , clearOldCarts
   , fetchCartItems
   , getOrderItemsForAdjustStatement
+  , patchRoll
+  , patchPrecut
   , module Types
   ) where
 
@@ -56,7 +58,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -136,7 +138,7 @@ getFabricPreview fabricId fabricType threshold pool =
     runTransaction pool Hasql.Read $ 
       (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
-putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text Int64)
+putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text (Int64, Text))
 putNewFabric fabric req pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $
@@ -908,3 +910,45 @@ getOrderItemsForAdjustStatement =
     FROM order_fabric_bindings
     WHERE order_id = $1 :: text
   |]
+
+patchRoll :: PatchedFabric -> Hasql.Pool -> IO (Either Text ())
+patchRoll fabric pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement fabric $
+        lmap ( app4 fromIntegral 
+             . app5 fromIntegral 
+             . $(recordToTuple ''PatchedFabric))
+        [Hasql.resultlessStatement|
+          UPDATE fabrics 
+          SET
+            description = $2 :: text,
+            total_length_m = $3 :: float8,
+            available_length_m = $3 :: float8,
+            width = $4 :: int4,
+            price_per_meter = $5 :: int4
+          WHERE id = $1 :: int8
+        |]
+
+patchPrecut :: PatchedFabric -> Hasql.Pool -> IO (Either Text ())
+patchPrecut fabric pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement fabric $
+        lmap ( app4 fromIntegral
+             . app5 fromIntegral
+             . $(recordToTuple ''PatchedFabric))
+        [Hasql.resultlessStatement|
+          WITH new_precut AS (
+            UPDATE pre_cuts 
+            SET
+             length_m = $3 :: float8,
+             price_rub = $5 :: int4
+            WHERE id = $1 :: int8
+            RETURNING fabric_id :: int8)
+          UPDATE fabrics
+          SET
+            description = $2 :: text,
+            width = $4 :: int4
+          WHERE id = (SELECT * FROM new_precut)
+        |]

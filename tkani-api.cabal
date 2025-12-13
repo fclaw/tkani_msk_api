@@ -41,6 +41,7 @@ library
       Handlers.GetDeliveryPoints
       Handlers.GetFabricPreview
       Handlers.GetProviders
+      Handlers.PatchFabric
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric
       Handlers.SearchFabricCard

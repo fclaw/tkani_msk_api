@@ -101,3 +101,13 @@ data OrderItem =
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''OrderItem)
+
+
+data PatchedFabric = 
+     PatchedFabric
+     { prId         :: Int64
+     , prDescription :: Text
+     , prLength :: Double
+     , prWidth :: Int
+     , prPrice :: Int
+     }

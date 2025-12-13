@@ -29,6 +29,13 @@ data Routes route = Routes
        :> "ingest"
        :> ReqBody '[JSON] RawIngestRequest
        :> Post '[JSON] (ApiResponse NewFabric)
+  , _patchFabric
+       :: route
+       :- "warehouse"
+       :> "fabric"
+       :> Capture "fabric_id" Int64
+       :> ReqBody '[JSON] RawIngestRequest
+       :> Post '[JSON] (ApiResponse NewFabric)
   , _getFabricPreview 
        :: route 
        :- "fabric"

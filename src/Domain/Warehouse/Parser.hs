@@ -24,7 +24,7 @@ rollTemplate =
     "`Длина рулона: 50 м (Line 2)`\n" <>
     "`Ширина: 140 см (Line 3)`\n" <>
     "`Цена: 1500 руб/метр (Line 4)`\n" <>
-    "`ART-123 (Line 5)`\n" <>
+    "`ART-123 | #_selfgenerated (Line 5)`\n" <>
     "`Description...`" <>
     "`#_search|_nosearch`"
 
@@ -35,9 +35,9 @@ preCutTemplate =
     "`Длина: 1.2 м (Line 2)`\n" <>
     "`Ширина: 140 см (Line 3)`\n" <>
     "`Цена: 2400 руб (Line 4)`\n" <>
-    "`ART-123 (Line 5)`\n" <>
+    "`ART-123 | #_selfgenerated (Line 5)`\n" <>
     "`Description...`\n" <>
-    "`#отрез`" <>
+    "`#отрез` \n" <>
     "`#_search|_nosearch`"
 
 --------------------------------------------------------------------------------
@@ -126,11 +126,12 @@ validatePreCut lines isSearchable
 --------------------------------------------------------------------------------
 
 -- | Validates an article string. Must contain only uppercase letters, numbers, and dashes.
-validateArticle :: Text -> Validation [ParseError] Text
+validateArticle :: Text -> Validation [ParseError] (Maybe Text)
+validateArticle articleRaw | articleRaw == "#_selfgenerated" = Success Nothing
 validateArticle articleRaw =
     let pattern = "^ART-[0-9]{1,8}$" :: String
     in if T.unpack articleRaw =~ pattern
-        then Success articleRaw
+        then Success $ pure articleRaw
         else Failure [InvalidArticleFormat articleRaw]
 
 -- | Validates a price string, ensuring it starts with "Цена:".

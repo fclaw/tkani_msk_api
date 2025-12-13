@@ -15,6 +15,7 @@ import Data.Bifunctor (first, second)
 import Data.Traversable (for)
 import Control.Monad (join, when)
 import Data.Either (isLeft)
+import Data.Maybe (isJust)
 
 import App (AppM, _appDBPool, _thresholdMetres)
 import API.Types (ApiResponse, RawIngestRequest (rawText), mkError, errorCode, ApiError (ApiError), wrongModelErrorCode, NewFabric (..))
@@ -41,16 +42,17 @@ handler rawIngestReq = do
 
     -- check compatibility, for the fabric cut-to-order cannot override being sold in pre-cuts
     -- yes-no sql if for the given article there is a fabric being sold in pre-cuts  
-    if fType fabric == Roll then do
+    if fType fabric == Roll && isJust(fArticle fabric) then do
+      let Just article = fArticle fabric
       $(logTM) DebugS $ ls @Text $ 
         "Checking compatibility for cut-to-order fabric with article: " <> 
-        fromString (unpack (fArticle fabric))
-      eHasPreCuts <- liftIO $ checkFabricPreCuts (fArticle fabric) pool
+        fromString (unpack article)
+      eHasPreCuts <- liftIO $ checkFabricPreCuts article pool
       case eHasPreCuts of 
         Left errDb -> do
           $(logTM) ErrorS $ ls  @Text $ 
             "Database error while checking pre-cuts for article " <> 
-            fromString (unpack (fArticle fabric)) <> 
+            fromString (unpack article) <> 
             ", error: " <> 
             fromString (unpack errDb)
           return $ Left $ mkError "server error"
@@ -58,21 +60,23 @@ handler rawIngestReq = do
           if hasPreCuts then do 
             $(logTM) ErrorS $ ls  @Text $ 
               "Incompatibility detected: fabric with article " <> 
-              fromString (unpack (fArticle fabric)) <> 
+              fromString (unpack article) <> 
               " is already sold in Pre-Cuts. Cannot add as Cut-to-Order."
             return $ Left $ (mkError $
               escapeMarkdownV2 $ 
                 "Incompatibility detected: fabric with article " <> 
-                fArticle fabric <>
+                article <>
                 " is already sold in Pre-Cuts. Cannot add as Cut-to-Order.") 
               { errorCode = "400" }
           else do
             dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
             when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-            return $ first (const (mkError "server error")) $ second ((`NewFabric` (fType fabric))) dbRes
+            let mkNewFabric id art = NewFabric id (fType fabric) art
+            return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes
       else do
         dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
         when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-        return $ first (const (mkError "server error")) $ second ((`NewFabric` (fType fabric))) dbRes     
+        let mkNewFabric id art = NewFabric id (fType fabric) art
+        return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes 
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res

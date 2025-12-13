@@ -15,7 +15,7 @@ import Text (camelToSnake)
 data Fabric = Fabric
   { fName        :: Text
   , fPrice       :: Int
-  , fArticle     :: Text
+  , fArticle     :: Maybe Text
   , fDescription :: Text
   , fType        :: FabricType
   , fLength      :: Double

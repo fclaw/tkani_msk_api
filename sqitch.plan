@@ -14,3 +14,4 @@
 00011.alter_table 2025-12-08T17:53:50Z System Administrator <root@Sonny.local> # remove fields fabric_id, length_m, pre_cut_id from orders
 00012.add_table 2025-12-09T08:25:28Z System Administrator <root@Sonny.local> # cart
 00013.add_columns 2025-12-12T08:28:42Z System Administrator <root@Sonny.local> # is_searchable
+00014.add_function 2025-12-13T11:37:12Z System Administrator <root@Sonny.local> # article generation

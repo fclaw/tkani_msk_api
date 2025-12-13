@@ -29,6 +29,7 @@ import qualified Handlers.CheckCartItem as CheckCartItem
 import qualified Handlers.AddToCart as AddToCart
 import qualified Handlers.ClearCart as ClearCart
 import qualified Handlers.ViewCart as ViewCart
+import qualified Handlers.PatchFabric as PatchFabric
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -52,4 +53,5 @@ apiHandlers = Routes
   , _addToCart = AddToCart.handler
   , _clearCart = ClearCart.handler
   , _viewCart = ViewCart.handler
+  , _patchFabric = PatchFabric.handler
   }

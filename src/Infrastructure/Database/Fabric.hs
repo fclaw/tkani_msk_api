@@ -17,7 +17,7 @@ import Text (encodeToText)
 
 
 -- | Main Entry Point
-ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction Int64
+ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction (Int64, Text)
 ingestFabricDB fabric req = do
   -- 1. Calculate 'Per Meter' properties for the Parent Fabric
   -- If it's a pre-cut, derive the meter price so the parent table stays consistent.
@@ -31,7 +31,7 @@ ingestFabricDB fabric req = do
   -- If New: Insert it.
   let rollLength | fType fabric == Roll = fLength fabric
                  | otherwise = 0.0
-  parentId <- 
+  (parentId, article) <- 
     Hasql.statement (
       fArticle fabric,                 -- $1 Article (Unique Key)
       fName fabric,                    -- $2 Name
@@ -58,13 +58,13 @@ ingestFabricDB fabric req = do
              fType fabric == PreCut
       fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable) insertPreCutQuery
     else return Nothing
-  return $ fromMaybe parentId precut_id
+  return $ (fromMaybe parentId precut_id, article)
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery :: Hasql.Statement (Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32, Bool) Int64
+upsertFabricQuery :: Hasql.Statement (Maybe Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32, Bool) (Int64, Text)
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -83,7 +83,7 @@ upsertFabricQuery =
       is_searchable
     ) 
     VALUES (
-      $1 :: text, 
+      COALESCE($1 :: text?, next_fabric_article()),
       $2 :: text, 
       coalesce($3 :: int4?, 0), 
       $4 :: text,
@@ -118,7 +118,7 @@ upsertFabricQuery =
         updated_at = NOW(),
         in_stock = TRUE,
         is_sold = FALSE
-    RETURNING id :: int8
+    RETURNING id :: int8, article :: text
 |]
 
 insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool) Int64
