@@ -428,24 +428,16 @@ mkInitRequest orderId items customerPhone tinkoffCred =
                   terminalKey
                   terminalSecret
     signature = Tinkoff.generatedInitToken tokenData
+    customerData = Tinkoff.defCustomerData { Tinkoff.cdPhone = Just customerPhone }
+    receiptData = Tinkoff.defReceiptData {Tinkoff.rdPhone = Just customerPhone, Tinkoff.rdItems = receiptItems}
   in
-  -- 5. Construct the final request.
-  Tinkoff.InitRequest
-    { Tinkoff.irOrderId = orderId
-    , Tinkoff.irTerminalKey = terminalKey
-    , Tinkoff.irAmount = totalAmountKopecks
-    , Tinkoff.irDescription = Just description
-    , Tinkoff.irToken = signature
-    , Tinkoff.irData = Just $
-        Tinkoff.CustomerData
-        { Tinkoff.cdEmail = Nothing
-        , Tinkoff.cdPhone = Just customerPhone
-        }
-    , Tinkoff.irReceipt = Just $
-        Tinkoff.ReceiptData
-        { rdEmail = Nothing
-        , rdPhone = Just customerPhone
-        , rdTaxation = Tinkoff.UsnIncome
-        , rdItems = receiptItems
-        }
-    }
+     -- 5. Construct the final request.
+    Tinkoff.InitRequest
+      { Tinkoff.irOrderId = orderId
+      , Tinkoff.irTerminalKey = terminalKey
+      , Tinkoff.irAmount = totalAmountKopecks
+      , Tinkoff.irDescription = Just description
+      , Tinkoff.irToken = signature
+      , Tinkoff.irData = Just customerData
+      , Tinkoff.irReceipt = Just receiptData
+      }

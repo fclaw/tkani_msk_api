@@ -42,6 +42,8 @@ data ReceiptData = ReceiptData
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "rd" } ''ReceiptData)
 
+defReceiptData = ReceiptData mempty mempty UsnIncome []
+
 -- | Optional customer data.
 data CustomerData = CustomerData
   { cdPhone         :: Maybe Text
@@ -51,6 +53,7 @@ data CustomerData = CustomerData
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG pascalCase "cd"} ''CustomerData)
 
+defCustomerData = CustomerData mempty mempty
 
 -- | The main request body for the /v2/Init endpoint.
 data InitRequest = InitRequest
