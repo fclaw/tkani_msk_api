@@ -34,14 +34,7 @@ handler (Just fabricId) (Just fabricType) = do
   $(logTM) DebugS $ ls $ "Querying database for fabric ID: " <> show fabricId <> ", fabric type: " <> show fabricType
   eResp <- liftIO $ getFabricPreview fabricId fabricType thresholdMetres pool
   case eResp of 
-    Right (Right fabricInfo) -> pure $ Right fabricInfo
-    Right (Left err) -> do
-      $(logTM) ErrorS $ 
-        "Fabric not found for ID: " <> 
-        fromString (show fabricId) <> 
-        ", error: " <> 
-        fromString (unpack err)
-      pure $ Left $ (mkError err) { errorCode = "404" }
+    Right fabricInfo -> pure $ Right fabricInfo
     Left err -> do
       $(logTM) ErrorS $ 
         "Database error while fetching fabric ID: " <> 

@@ -17,11 +17,11 @@ import qualified Data.Text as T
 import qualified Data.ByteString as B
 
 import App (AppM, _appDBPool)
-import API.Types (ApiResponse, CartNewFabric, mkError, ApiError(..), cartLimitExceeded)
+import API.Types (ApiResponse, CartNewFabric, mkError, ApiError(..), cartLimitExceeded, CartCheckStatus)
 import Infrastructure.Database (addToCart)
 
 
-handler :: CartNewFabric -> AppM (ApiResponse ())
+handler :: CartNewFabric -> AppM (ApiResponse CartCheckStatus)
 handler item = do 
   eRes <- fmap _appDBPool ask >>= (liftIO . addToCart item)
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "db error: " <> show eRes

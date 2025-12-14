@@ -129,7 +129,7 @@ data Routes route = Routes
        :- "cart"
        :> "add"
        :> ReqBody '[JSON] CartNewFabric
-       :> Post '[JSON] (ApiResponse ())
+       :> Post '[JSON] (ApiResponse CartCheckStatus)
   , _clearCart
        :: route
        :- "cart"

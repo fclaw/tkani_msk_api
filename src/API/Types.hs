@@ -118,6 +118,14 @@ data PreCut = PreCut
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pc" } ''PreCut)
 
 
+data FabricPreviewStatus = 
+       ItemInStock 
+     | ItemSoldOut
+     | ItemIsClaimed
+     deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''FabricPreviewStatus)
+
 -- | A unified, minimal preview for any sellable item (Roll or PreCut).
 --   Provides just enough info for the bot to confirm the item and check stock.
 data FabricPreview = FabricPreview
@@ -128,6 +136,7 @@ data FabricPreview = FabricPreview
     -- | The available quantity (EITHER meters for a Roll, OR just 'True'/'False' for a PreCut).
     --   We can represent this as a Double for length, or 1.0/0.0 for PreCut availability.
   , fpStockAvailable  :: Double -- For a PreCut, this will be 1.0 if in stock, 0.0 if not.
+  , fpStatus          :: FabricPreviewStatus
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricPreview)
@@ -416,6 +425,7 @@ data CartCheckStatus =
       | ItemInCart 
       | OkToAdd 
       | NoCartExists
+      | ItemIsAlreadyClaimed
   deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''CartCheckStatus)

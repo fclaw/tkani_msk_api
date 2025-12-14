@@ -7,6 +7,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Infrastructure.Database
   ( getFabricPreview
@@ -95,22 +96,47 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
-getFabricPreviewStatement :: Hasql.Statement (Int64, FabricType, Double) (Either Text FabricPreview)
+getFabricPreviewStatement :: Hasql.Statement (Int64, FabricType, Double) FabricPreview
 getFabricPreviewStatement =
-  dimap (app1 fromIntegral . app2 encodeToText) (maybe (Left @Text "fabric not found") (first pack) . fmap (convertFromJson @FabricPreview))
-  [Hasql.maybeStatement|
+  dimap (app1 fromIntegral . app2 encodeToText) (either error id . convertFromJson @FabricPreview)
+  [Hasql.singletonStatement|
+    WITH claimed_length AS (
+      SELECT 
+        ci.fabric_id, 
+        SUM(ci.length_m) AS length
+      FROM cart_items ci
+      WHERE ci.fabric_id = $1 :: int8 AND
+            ci.pre_cut_id IS NULL
+      GROUP BY ci.fabric_id
+    )
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
         'price', f.price_per_meter :: int4,
-        'stock_available', f.available_length_m :: float8
+        'stock_available', f.available_length_m :: float8,
+        'status', 
+          CASE
+            WHEN (cl.fabric_id IS NOT NULL AND 
+                  $3 :: float8 <= (
+                    f.available_length_m - 
+                    COALESCE(cl.length, 0.0))) OR
+                 (cl.fabric_id IS NULL AND 
+                  f.available_length_m >= $3 :: float8)
+            THEN 'item_in_stock'
+            WHEN (cl.fabric_id IS NULL AND 
+                  f.available_length_m < $3 :: float8)
+            THEN 'item_sold_out'
+            ELSE 'item_is_claimed'
+          END
       ) :: jsonb
-    FROM 
-      fabrics AS f
+    FROM fabrics AS f
+    LEFT JOIN claimed_length AS cl
+    ON f.id = cl.fabric_id
     WHERE 
       f.id = $1 :: int8
       AND $2 :: text = 'roll'
-      AND f.available_length_m >= $3 :: float8
+      AND (f.available_length_m >= $3 :: float8 
+          OR cl.fabric_id IS NOT NULL)
 
     UNION ALL
 
@@ -118,24 +144,36 @@ getFabricPreviewStatement =
       jsonb_build_object(
         'name', f.name || ' (отрез ' || pc.length_m || 'м)' :: text,
         'price', pc.price_rub :: int4,
-        'stock_available', pc.length_m
+        'stock_available', pc.length_m,
+        'status',
+          CASE 
+            WHEN ci.pre_cut_id IS NULL AND 
+                 pc.in_stock IS TRUE
+            THEN 'item_in_stock'
+            WHEN ci.pre_cut_id IS NULL AND 
+                 pc.in_stock IS FALSE
+            THEN 'item_sold_out'
+            ELSE 'item_is_claimed'
+          END
       ) :: jsonb
-    FROM 
-      pre_cuts AS pc
-    JOIN
-      fabrics AS f ON pc.fabric_id = f.id
+    FROM pre_cuts AS pc
+    JOIN fabrics AS f
+    ON pc.fabric_id = f.id
+    LEFT JOIN cart_items as ci
+    ON pc.id = ci.pre_cut_id
     WHERE 
       pc.id = $1 :: int8
       AND $2 :: text = 'pre_cut'
-      AND pc.in_stock IS TRUE
+      AND (pc.in_stock IS TRUE OR 
+           ci.pre_cut_id IS NOT NULL)
   |]
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
-getFabricPreview :: Int64 -> FabricType -> Double -> Hasql.Pool -> IO (Either Text (Either Text FabricPreview))
+getFabricPreview :: Int64 -> FabricType -> Double -> Hasql.Pool -> IO (Either Text FabricPreview)
 getFabricPreview fabricId fabricType threshold pool = 
   fmap (first (pack . show)) $
-    runTransaction pool Hasql.Read $ 
+    runTransaction pool Hasql.Read $
       (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
 putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text (Int64, Text))
@@ -806,6 +844,13 @@ addToCartStatement =
        SELECT id FROM user_cart
        UNION ALL
        SELECT id FROM created_cart
+     ),
+     locked_pre_cut AS (
+        UPDATE pre_cuts 
+        SET in_stock = false
+        WHERE 
+          CAST($4 :: text AS cart_item_type) = 'pre_cut' 
+          AND id = $2 :: int8
      )
      INSERT INTO cart_items
      ( cart_id
@@ -817,45 +862,140 @@ addToCartStatement =
      SELECT
       (SELECT id FROM target_cart),
       CAST($4 :: text AS cart_item_type),
-      CASE WHEN CAST($4 :: text AS cart_item_type) = 'roll' 
+      CASE WHEN CAST($4 :: text AS cart_item_type) = 'roll'
            THEN $2 :: int8
            ELSE null 
       END,
       CASE WHEN CAST($4 :: text AS cart_item_type) = 'pre_cut' 
-           THEN $2 :: int8 
+           THEN $2 :: int8
            ELSE null
       END,
       $3 :: float8?,
       $5 :: text
-      returning id :: int8
+      RETURNING id :: int8
   |]
 
-addToCart :: CartNewFabric -> Hasql.Pool -> IO (Either Hasql.UsageError ())
-addToCart item pool = runTransaction pool Hasql.Write $ Hasql.statement item addToCartStatement
+
+-- CRITICAL: Lock the parent fabric row for the duration of the transaction.
+-- This prevents any other transaction from modifying its length or adding
+-- another piece to a cart until this transaction is committed or rolled back.
+isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double) Bool
+isRollAvailableStatement = 
+  [Hasql.singletonStatement|
+    WITH claimed AS (
+        SELECT COALESCE(SUM(length_m), 0.0) AS total_claimed
+        FROM cart_items
+        WHERE 
+          fabric_id = $1 :: int8 AND 
+          pre_cut_id IS NULL
+    )
+    SELECT
+        ($2 :: float8? <= (f.available_length_m - claimed.total_claimed)) :: bool
+    FROM
+        fabrics f, claimed
+    WHERE
+        f.id = $1 :: int8
+    FOR UPDATE
+  |]
+
+-- CRITICAL: Lock this specific pre_cut row.
+-- If another user tries to add the same pre_cut, their transaction will
+-- wait for this lock. Since we will be updating 'in_stock' to FALSE if
+-- we proceed, their check will then correctly fail.
+isPreCutAvailableStatement :: Hasql.Statement Int64 Bool
+isPreCutAvailableStatement =
+  [Hasql.singletonStatement|
+     SELECT in_stock :: bool
+     FROM pre_cuts
+     WHERE id = $1 :: int8
+     FOR UPDATE
+  |]
+
+addToCart :: CartNewFabric -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
+addToCart item@CartNewFabric{..} pool = 
+  runTransaction pool Hasql.Write $ do
+
+    -- 1.  Run the appropriate availability check inside the transaction
+    isAvailable <-
+      case cnfFabricType of
+        DWT.Roll -> 
+          Hasql.statement 
+          (cnfFabricId, cnfFabricLength) 
+          isRollAvailableStatement
+        DWT.PreCut -> 
+          Hasql.statement 
+          cnfFabricId 
+          isPreCutAvailableStatement
+
+    -- 2. Branch on the result
+    if isAvailable
+    then do
+           -- If available, insert the item into the cart
+           Hasql.statement item addToCartStatement
+           -- Return a success status
+           return OkToAdd
+    else
+        -- If not available, return a failure status without inserting
+        return ItemIsAlreadyClaimed
 
 clearCartStatement :: Hasql.Statement Int64 ()
 clearCartStatement =
   [Hasql.resultlessStatement|
-    WITH user_cart AS (
-      SELECT id FROM carts WHERE telegram_user_id = $1 :: int8
+    WITH released_percuts AS (
+      SELECT pre_cut_id
+      FROM cart_items
+      WHERE cart_id IN (
+        SELECT id FROM carts
+        WHERE telegram_user_id = $1 :: int8
+      ) AND pre_cut_id IS NOT NULL
+    ),
+    cleared_cart AS (
+      DELETE FROM carts
+      WHERE telegram_user_id = $1 :: int8
     )
-    DELETE FROM cart_items 
-    WHERE cart_id = (SELECT id FROM user_cart)
+    UPDATE pre_cuts
+    SET in_stock = TRUE
+    WHERE id IN (
+      SELECT pre_cut_id 
+      FROM released_percuts
+    )
   |]
 
 clearCart :: Int64 -> Hasql.Pool -> IO (Either Text ())
-clearCart userId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ Hasql.statement userId clearCartStatement
-
-clearOldCartsStatement :: Hasql.Statement () ()
-clearOldCartsStatement = 
-  [Hasql.resultlessStatement|
-    DELETE FROM carts
-    WHERE updated_at < NOW() - INTERVAL '30 minutes'
-  |]
+clearCart userId pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $
+      Hasql.statement userId clearCartStatement
 
 clearOldCarts :: Hasql.Pool -> IO (Either Text ())
-clearOldCarts pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ Hasql.statement () clearOldCartsStatement
-
+clearOldCarts pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement () 
+      [Hasql.resultlessStatement|
+         WITH released_percuts AS (
+           SELECT pre_cut_id
+           FROM cart_items
+           WHERE cart_id IN (
+             SELECT id FROM carts
+             WHERE 
+               updated_at < 
+               NOW() - INTERVAL '30 minutes'
+           ) AND pre_cut_id IS NOT NULL
+         ),
+         cleared_cart AS (
+           DELETE FROM carts
+           WHERE 
+             updated_at < 
+             NOW() - INTERVAL '30 minutes'
+         )
+         UPDATE pre_cuts
+         SET in_stock = TRUE
+         WHERE id IN (
+           SELECT pre_cut_id 
+           FROM released_percuts
+         )
+      |]
 
 fetchCartItemsStatement :: Hasql.Statement Int64 [ViewCartItem]
 fetchCartItemsStatement =
