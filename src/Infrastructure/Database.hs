@@ -108,7 +108,17 @@ getFabricPreviewStatement =
       WHERE ci.fabric_id = $1 :: int8 AND
             ci.pre_cut_id IS NULL
       GROUP BY ci.fabric_id
-    )
+    ),
+  pre_cut_in_order AS (
+    SELECT 1 AS in_order
+    FROM order_fabric_bindings ofb
+    JOIN orders o
+    ON ofb.order_id = o.id
+    WHERE ofb.pre_cut_id = $1 :: int8
+    AND o.status = 'registered'
+    AND o.created_at > 
+        NOW() - INTERVAL '30 minutes'
+  )
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
@@ -146,26 +156,14 @@ getFabricPreviewStatement =
             WHEN ci.pre_cut_id IS NULL AND
                  pc.in_stock IS TRUE AND 
                  NOT EXISTS (
-                   SELECT 1
-                   FROM order_fabric_bindings ofb
-                   JOIN orders o
-                   ON ofb.order_id = o.id
-                   WHERE ofb.pre_cut_id = $1 :: int8
-                   AND o.status = 'registered'
-                   AND o.created_at > 
-                       NOW() - INTERVAL '30 minutes')
+                   SELECT in_order 
+                   FROM pre_cut_in_order)
             THEN 'item_in_stock'
             WHEN ci.pre_cut_id IS NULL AND
                  pc.in_stock IS FALSE AND
                  NOT EXISTS (
-                   SELECT 1
-                   FROM order_fabric_bindings ofb
-                   JOIN orders o
-                   ON ofb.order_id = o.id
-                   WHERE ofb.pre_cut_id = $1 :: int8
-                   AND o.status = 'registered'
-                   AND o.created_at > 
-                       NOW() - INTERVAL '30 minutes')
+                   SELECT in_order 
+                   FROM pre_cut_in_order)
             THEN 'item_sold_out'
             ELSE 'item_is_claimed'
           END
