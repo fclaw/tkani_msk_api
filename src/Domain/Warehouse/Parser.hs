@@ -62,7 +62,8 @@ parseIngestRequest rawText threshold =
         Failure [AmbiguousFormat "Cannot have both #_search and #_nosearch tags."]
     else
         let
-            isSearchable = hasSearchTag
+            isSearchable | hasSearchTag = True
+                         | hasNoSearchTag = False
 
             -- 2. === THE FIX: Filter out the meta tags ===
             --    Create a new list of lines that does not contain our visibility tags.

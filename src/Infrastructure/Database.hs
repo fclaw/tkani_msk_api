@@ -105,20 +105,34 @@ getFabricPreviewStatement =
         ci.fabric_id, 
         SUM(ci.length_m) AS length
       FROM cart_items ci
-      WHERE ci.fabric_id = $1 :: int8 AND
-            ci.pre_cut_id IS NULL
+      WHERE ci.fabric_id = $1 :: int8
+      AND ci.pre_cut_id IS NULL
       GROUP BY ci.fabric_id
+
+      UNION ALL
+
+      SELECT
+        ofb.fabric_id,
+        COALESCE(SUM(ofb.length_m), 0.0) AS length
+      FROM order_fabric_bindings ofb
+      JOIN orders o 
+      ON ofb.order_id = o.id
+      WHERE ofb.fabric_id = $1 :: int8
+      AND ofb.pre_cut_id IS NULL
+      AND o.status = 'registered'
+      AND o.created_at > NOW() - INTERVAL '30 minutes'
+      GROUP BY ofb.fabric_id
     ),
-  pre_cut_in_order AS (
-    SELECT 1 AS in_order
-    FROM order_fabric_bindings ofb
-    JOIN orders o
-    ON ofb.order_id = o.id
-    WHERE ofb.pre_cut_id = $1 :: int8
-    AND o.status = 'registered'
-    AND o.created_at > 
-        NOW() - INTERVAL '30 minutes'
-  )
+    pre_cut_in_order AS (
+      SELECT 1 AS in_order
+      FROM order_fabric_bindings ofb
+      JOIN orders o
+      ON ofb.order_id = o.id
+      WHERE ofb.pre_cut_id = $1 :: int8
+      AND o.status = 'registered'
+      AND o.created_at > 
+          NOW() - INTERVAL '30 minutes'
+    )
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
@@ -466,26 +480,41 @@ processSearchResults allRows@((firstRowTotal, _):_) =
 -- 1. Full Text Search (Smart matching)
 -- 2. Fallback for strict matches (e.g. searching partial Article ID)
 -- Rank results by relevance (Name match > Description match)
-searchFabricsStatement :: Hasql.Statement (Text, Int32, Int32) (Either Text (Int, [SearchTeaser]))
+searchFabricsStatement :: Hasql.Statement (Text, Int32, Int32, Double) (Either Text (Int, [SearchTeaser]))
 searchFabricsStatement =
   rmap (processSearchResults . V.toList)
   [Hasql.vectorStatement|
     SELECT
       sfp.total_count :: int8,
       sfp.teaser_json :: jsonb
-    FROM search_fabrics_paginated($1 :: text, $2 :: int4, $3 :: int4) AS sfp
+    FROM search_fabrics_paginated($1 :: text, $2 :: int4, $3 :: int4, $4 :: float8) AS sfp
   |]
 
-searchFabrics :: Text -> Int -> Int -> Hasql.Pool -> IO (Either Text (Int, [SearchTeaser]))
-searchFabrics query limit offset pool = 
+searchFabrics :: Text -> Int -> Int -> Double -> Hasql.Pool -> IO (Either Text (Int, [SearchTeaser]))
+searchFabrics query limit offset metreThreshold pool = 
   fmap (join . first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
-      (query, fromIntegral limit, fromIntegral offset) `Hasql.statement` searchFabricsStatement
+      Hasql.statement 
+      ( query, 
+        fromIntegral limit, 
+        fromIntegral offset, 
+        metreThreshold) 
+      searchFabricsStatement
 
 fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
 fetchCatalogSummaryItemStatement =
   rmap (V.toList . V.map (either error id . convertFromJson)) $
   [Hasql.vectorStatement|
+    WITH pre_cut_in_order AS (
+      SELECT ofb.pre_cut_id as pre_cut_id
+      FROM order_fabric_bindings ofb
+      JOIN orders o
+      ON ofb.order_id = o.id
+      WHERE ofb.pre_cut_id IS NOT NULL
+      AND o.status = 'registered'
+      AND o.created_at > 
+          NOW() - INTERVAL '30 minutes'
+    )
     SELECT item_json :: jsonb
       FROM (
           SELECT
@@ -522,7 +551,22 @@ fetchCatalogSummaryItemStatement =
               ci.item_type = 'roll'
               AND c.updated_at > NOW() - INTERVAL '30 minutes' 
             GROUP BY ci.fabric_id
-          ) AS locked_stock 
+
+            UNION ALL
+
+            SELECT
+              ofb.fabric_id,
+              COALESCE(SUM(ofb.length_m), 0.0) AS total_locked
+            FROM order_fabric_bindings ofb
+            JOIN orders o 
+            ON ofb.order_id = o.id
+            WHERE 
+              ofb.fabric_id IS NOT NULL
+              AND ofb.pre_cut_id IS NULL
+              AND o.status = 'registered'
+              AND o.created_at > NOW() - INTERVAL '30 minutes'
+            GROUP BY ofb.fabric_id 
+          ) AS locked_stock
           ON f.id = locked_stock.fabric_id
           WHERE
             CAST(f.updated_at AS date) = $1 :: date
@@ -553,12 +597,12 @@ fetchCatalogSummaryItemStatement =
           FROM pre_cuts AS pc
           LEFT JOIN cart_items AS ci
           ON pc.id = ci.pre_cut_id
-          JOIN 
-              fabrics AS f ON pc.fabric_id = f.id
-          WHERE
-              CAST(f.updated_at AS date) = $1 :: date
-              AND pc.in_stock = TRUE
-              AND ci.pre_cut_id IS NULL
+          JOIN fabrics AS f ON pc.fabric_id = f.id
+          INNER JOIN pre_cut_in_order as pcio
+          ON pcio.pre_cut_id = ci.id
+          WHERE CAST(f.updated_at AS date) = $1 :: date
+          AND pc.in_stock = TRUE
+          AND ci.pre_cut_id IS NULL
       ) AS catalog_items
     ORDER BY updated_at DESC
   |]
@@ -1103,7 +1147,8 @@ patchRoll fabric pool =
             total_length_m = $3 :: float8,
             available_length_m = $3 :: float8,
             width = $4 :: int4,
-            price_per_meter = $5 :: int4
+            price_per_meter = $5 :: int4,
+            is_searchable = $6 :: bool
           WHERE id = $1 :: int8
         |]
 
@@ -1117,10 +1162,11 @@ patchPrecut fabric pool =
              . $(recordToTuple ''PatchedFabric))
         [Hasql.resultlessStatement|
           WITH new_precut AS (
-            UPDATE pre_cuts 
+            UPDATE pre_cuts
             SET
              length_m = $3 :: float8,
-             price_rub = $5 :: int4
+             price_rub = $5 :: int4,
+             is_searchable = $6 :: bool
             WHERE id = $1 :: int8
             RETURNING fabric_id :: int8)
           UPDATE fabrics

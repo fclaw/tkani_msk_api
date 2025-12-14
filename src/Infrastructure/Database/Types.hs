@@ -110,4 +110,5 @@ data PatchedFabric =
      , prLength :: Double
      , prWidth :: Int
      , prPrice :: Int
+     , prIsSearchable :: Bool
      }

@@ -46,6 +46,7 @@ handler fabricId rawIngestReq = do
           (fLength fabric) 
           (fWidth fabric) 
           (fPrice fabric)
+          (fIsSearchable fabric)
     eDbRes <- if fType fabric == Roll then
       liftIO $ patchRoll patchedFabric pool
      else liftIO $ patchPrecut patchedFabric pool

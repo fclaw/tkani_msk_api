@@ -432,12 +432,12 @@ mkInitRequest orderId items customerPhone tinkoffCred =
     receiptData = Tinkoff.defReceiptData {Tinkoff.rdPhone = Just customerPhone, Tinkoff.rdItems = receiptItems}
   in
      -- 5. Construct the final request.
-    Tinkoff.InitRequest
-      { Tinkoff.irOrderId = orderId
-      , Tinkoff.irTerminalKey = terminalKey
-      , Tinkoff.irAmount = totalAmountKopecks
-      , Tinkoff.irDescription = Just description
-      , Tinkoff.irToken = signature
-      , Tinkoff.irData = Just customerData
-      , Tinkoff.irReceipt = Just receiptData
-      }
+  Tinkoff.InitRequest
+    { Tinkoff.irOrderId = orderId
+    , Tinkoff.irTerminalKey = terminalKey
+    , Tinkoff.irAmount = totalAmountKopecks
+    , Tinkoff.irDescription = Just description
+    , Tinkoff.irToken = signature
+    , Tinkoff.irData = Just customerData
+    , Tinkoff.irReceipt = Just receiptData
+    }

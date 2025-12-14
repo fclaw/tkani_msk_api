@@ -11,7 +11,7 @@ import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (first)
 import Data.Maybe (fromMaybe)
 
-import App (AppM, _appDBPool)
+import App (AppM, _appDBPool, _thresholdMetres)
 import API.Types (ApiResponse, SearchTeaser, mkError, PaginatedResults (..), defPaginatedResults)
 import Infrastructure.Database (searchFabrics)
 import Text (tshow)
@@ -48,9 +48,11 @@ handler (Just query) maybePage maybeLimit = do
   let prepQuery = prepareTsQuery query
   let paginatedResults = defPaginatedResults { prPage = page, prLimit = limit }
   $(logTM) InfoS $ ls $ "Request received for search, prepared query: " <> prepQuery
-  pool <- fmap _appDBPool ask
+  cfg <- ask
+  let pool = _appDBPool cfg
+  let threshold = _thresholdMetres cfg
   fmap (first mkError) $ do
-    eItems <- liftIO $ searchFabrics prepQuery limit offset pool
+    eItems <- liftIO $ searchFabrics prepQuery limit offset threshold pool
     $(logTM) InfoS $ ls $ "found " <> tshow (length eItems) <> " for query: " <> prepQuery
     return $ flip fmap eItems $ \(total, teasers) ->
       -- 3. Construct the final response object
