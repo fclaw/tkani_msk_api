@@ -132,11 +132,7 @@ getFabricPreviewStatement =
     FROM fabrics AS f
     LEFT JOIN claimed_length AS cl
     ON f.id = cl.fabric_id
-    WHERE 
-      f.id = $1 :: int8
-      AND $2 :: text = 'roll'
-      AND (f.available_length_m >= $3 :: float8 
-          OR cl.fabric_id IS NOT NULL)
+    WHERE f.id = $1 :: int8 AND $2 :: text = 'roll'
 
     UNION ALL
 
@@ -147,11 +143,29 @@ getFabricPreviewStatement =
         'stock_available', pc.length_m,
         'status',
           CASE 
-            WHEN ci.pre_cut_id IS NULL AND 
-                 pc.in_stock IS TRUE
+            WHEN ci.pre_cut_id IS NULL AND
+                 pc.in_stock IS TRUE AND 
+                 NOT EXISTS (
+                   SELECT 1
+                   FROM order_fabric_bindings ofb
+                   JOIN orders o
+                   ON ofb.order_id = o.id
+                   WHERE ofb.pre_cut_id = $1 :: int8
+                   AND o.status = 'registered'
+                   AND o.created_at > 
+                       NOW() - INTERVAL '30 minutes')
             THEN 'item_in_stock'
-            WHEN ci.pre_cut_id IS NULL AND 
-                 pc.in_stock IS FALSE
+            WHEN ci.pre_cut_id IS NULL AND
+                 pc.in_stock IS FALSE AND
+                 NOT EXISTS (
+                   SELECT 1
+                   FROM order_fabric_bindings ofb
+                   JOIN orders o
+                   ON ofb.order_id = o.id
+                   WHERE ofb.pre_cut_id = $1 :: int8
+                   AND o.status = 'registered'
+                   AND o.created_at > 
+                       NOW() - INTERVAL '30 minutes')
             THEN 'item_sold_out'
             ELSE 'item_is_claimed'
           END
@@ -161,11 +175,7 @@ getFabricPreviewStatement =
     ON pc.fabric_id = f.id
     LEFT JOIN cart_items as ci
     ON pc.id = ci.pre_cut_id
-    WHERE 
-      pc.id = $1 :: int8
-      AND $2 :: text = 'pre_cut'
-      AND (pc.in_stock IS TRUE OR 
-           ci.pre_cut_id IS NOT NULL)
+    WHERE pc.id = $1 :: int8 AND $2 :: text = 'pre_cut'
   |]
 
 
@@ -882,19 +892,37 @@ addToCartStatement =
 isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double) Bool
 isRollAvailableStatement = 
   [Hasql.singletonStatement|
-    WITH claimed AS (
-        SELECT COALESCE(SUM(length_m), 0.0) AS total_claimed
+    WITH locked_stock AS (
+        SELECT 
+          COALESCE(SUM(length_m), 0.0) AS total
         FROM cart_items
         WHERE 
-          fabric_id = $1 :: int8 AND 
-          pre_cut_id IS NULL
+          fabric_id = $1 :: int8 
+          AND pre_cut_id IS NULL
+
+        UNION ALL
+
+        SELECT 
+          COALESCE(SUM(ofb.length_m), 0.0) AS total
+        FROM order_fabric_bindings ofb
+        JOIN orders o 
+        ON ofb.order_id = o.id
+        WHERE 
+          ofb.fabric_id = $1 :: int8
+          AND ofb.pre_cut_id IS NULL
+          AND o.status = 'registered'
+          AND o.created_at > NOW() - INTERVAL '30 minutes'
+    ),    
+    total_claimed AS (
+      SELECT SUM(total) as length
+      FROM locked_stock
     )
     SELECT
-        ($2 :: float8? <= (f.available_length_m - claimed.total_claimed)) :: bool
-    FROM
-        fabrics f, claimed
-    WHERE
-        f.id = $1 :: int8
+      (COALESCE($2 :: float8?, 0.0) <=
+       (f.available_length_m - 
+        total_claimed.length)) :: bool
+    FROM fabrics f, claimed
+    WHERE f.id = $1 :: int8
     FOR UPDATE
   |]
 
@@ -905,8 +933,19 @@ isRollAvailableStatement =
 isPreCutAvailableStatement :: Hasql.Statement Int64 Bool
 isPreCutAvailableStatement =
   [Hasql.singletonStatement|
-     SELECT in_stock :: bool
-     FROM pre_cuts
+     SELECT
+       ( pc.in_stock AND
+         NOT EXISTS (
+           SELECT 1
+           FROM order_fabric_bindings ofb
+           JOIN orders o 
+           ON ofb.order_id = o.id
+           WHERE ofb.pre_cut_id = pc.id
+           AND o.status = 'registered'
+           AND o.created_at > 
+               NOW() - INTERVAL '30 minutes')
+        ) :: bool
+     FROM pre_cuts AS pc
      WHERE id = $1 :: int8
      FOR UPDATE
   |]
