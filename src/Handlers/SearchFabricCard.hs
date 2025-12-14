@@ -9,7 +9,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (first)
 
-import App (AppM, _appDBPool)
+import App (AppM, _appDBPool, _thresholdMetres)
 import API.Types (ApiResponse, CatalogSummaryItem, mkError)
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database (searchFabricCard)
@@ -20,5 +20,7 @@ import Infrastructure.Database (searchFabricCard)
 handler :: FabricType -> Int64 -> AppM (ApiResponse (Maybe CatalogSummaryItem))
 handler fabricType fabricId = do
   $(logTM) InfoS $ ls $ "fabric card for type: " <> show fabricType <> ", id: " <> show fabricId
-  pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ searchFabricCard fabricType fabricId pool
+  cfg <- ask
+  let pool = _appDBPool cfg
+  let threshold = _thresholdMetres cfg
+  fmap (first mkError) $ liftIO $ searchFabricCard fabricType fabricId threshold pool

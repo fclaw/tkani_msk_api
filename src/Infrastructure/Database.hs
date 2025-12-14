@@ -137,7 +137,9 @@ getFabricPreviewStatement =
       jsonb_build_object(
         'name', f.name :: text,
         'price', f.price_per_meter :: int4,
-        'stock_available', f.available_length_m :: float8,
+        'stock_available', 
+          (f.available_length_m - 
+           COALESCE(cl.length, 0.0)) :: float8,
         'status', 
           CASE
             WHEN (cl.fabric_id IS NOT NULL AND 
@@ -695,11 +697,34 @@ updatePaymentStatus orderId paymentStatus orderStatus pool =
       (orderId, orderStatus) `Hasql.statement` updateOrderStatusStatement
 
 
-searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64) (Maybe CatalogSummaryItem)
+searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Maybe CatalogSummaryItem)
 searchFabricCardStatement = 
-  dimap (first encodeToText) (fmap (fromRight undefined . convertFromJson))
+  dimap (app1 encodeToText) (fmap (fromRight undefined . convertFromJson))
   [Hasql.maybeStatement|
-    WITH item AS (
+    WITH claimed_length AS (
+      SELECT 
+        ci.fabric_id, 
+        SUM(ci.length_m) AS length
+      FROM cart_items ci
+      WHERE ci.fabric_id = $2 :: int8
+      AND ci.pre_cut_id IS NULL
+      GROUP BY ci.fabric_id
+
+      UNION ALL
+
+      SELECT
+        ofb.fabric_id,
+        COALESCE(SUM(ofb.length_m), 0.0) AS length
+      FROM order_fabric_bindings ofb
+      JOIN orders o 
+      ON ofb.order_id = o.id
+      WHERE ofb.fabric_id = $2 :: int8
+      AND ofb.pre_cut_id IS NULL
+      AND o.status = 'registered'
+      AND o.created_at > NOW() - INTERVAL '30 minutes'
+      GROUP BY ofb.fabric_id
+    ),
+    item AS (
         SELECT
           jsonb_build_object(
             'id', f.id,
@@ -709,7 +734,9 @@ searchFabricCardStatement =
             'price_per_meter', f.price_per_meter,
             'total_price', NULL,
             'length_m', NULL,
-            'available_length', f.available_length_m,
+            'available_length', 
+              (f.available_length_m - 
+               COALESCE(cl.length, 0.0)) :: float8,
             'is_sold_out', f.is_sold,
             'warehouse_message_id', f.warehouse_message_id,
             'warehouse_chat_id', -1001234567890,
@@ -719,11 +746,11 @@ searchFabricCardStatement =
             'width', f.width
               ) :: jsonb AS item_json
         FROM fabrics AS f
-        LEFT JOIN cart_items AS ci
-        ON f.id = ci.fabric_id  
+        LEFT JOIN claimed_length as cl
+        ON cl.fabric_id = f.id
         WHERE $1 :: text = 'roll' 
         AND f.id = $2 :: int8
-        AND ci.fabric_id IS NULL
+        AND COALESCE(cl.length, 0.0) >= $3 :: float8 
       UNION ALL
         SELECT
           jsonb_build_object(
@@ -748,16 +775,25 @@ searchFabricCardStatement =
         JOIN fabrics AS f ON pc.fabric_id = f.id
         WHERE $1 :: text = 'pre_cut' 
         AND pc.id = $2 :: int8
-        AND ci.pre_cut_id IS NULL   
+        AND ci.pre_cut_id IS NULL 
+        AND NOT EXISTS (
+          SELECT 1
+          FROM order_fabric_bindings ofb
+          JOIN orders o 
+          ON ofb.order_id = o.id
+          WHERE ofb.pre_cut_id = $2 :: int8
+          AND o.status = 'registered'
+          AND o.created_at >
+              NOW() - INTERVAL '30 minutes')
     )
     SELECT item_json :: jsonb FROM item
   |]
 
-searchFabricCard :: DWT.FabricType -> Int64 -> Hasql.Pool -> IO (Either Text (Maybe CatalogSummaryItem))
-searchFabricCard fabricType fabricId pool =
+searchFabricCard :: DWT.FabricType -> Int64 -> Double -> Hasql.Pool -> IO (Either Text (Maybe CatalogSummaryItem))
+searchFabricCard fabricType fabricId threshold pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
-      (fabricType, fabricId) `Hasql.statement` 
+      (fabricType, fabricId, threshold) `Hasql.statement` 
         searchFabricCardStatement
 
 
@@ -954,7 +990,7 @@ isRollAvailableStatement =
           AND ofb.pre_cut_id IS NULL
           AND o.status = 'registered'
           AND o.created_at > NOW() - INTERVAL '30 minutes'
-    ),    
+    ),   
     total_claimed AS (
       SELECT SUM(total) as length
       FROM locked_stock
@@ -963,7 +999,7 @@ isRollAvailableStatement =
       (COALESCE($2 :: float8?, 0.0) <=
        (f.available_length_m - 
         total_claimed.length)) :: bool
-    FROM fabrics f, claimed
+    FROM fabrics f, total_claimed
     WHERE f.id = $1 :: int8
     FOR UPDATE
   |]
