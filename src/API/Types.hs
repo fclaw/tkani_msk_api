@@ -74,7 +74,8 @@ mkError e = (ApiError mempty e)
 data MediaType = 
        PHOTO 
      | VIDEO 
-     | DOCUMENT 
+     | DOCUMENT
+     | ANIMATION 
      | UNKNOWN 
      deriving (Show, Eq, Generic)
 
