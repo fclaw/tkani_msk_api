@@ -16,14 +16,17 @@ import qualified Hasql.Pool as Hasql
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 
-import App (AppM, _appDBPool)
+import App (AppM, _appDBPool, _cutTolerance)
 import API.Types (ApiResponse, CartNewFabric, mkError, ApiError(..), cartLimitExceeded, CartCheckStatus)
 import Infrastructure.Database (addToCart)
 
 
 handler :: CartNewFabric -> AppM (ApiResponse CartCheckStatus)
-handler item = do 
-  eRes <- fmap _appDBPool ask >>= (liftIO . addToCart item)
+handler item = do
+  cfg <- ask
+  let pool = _appDBPool cfg
+  let cutTolerance = _cutTolerance cfg
+  eRes <- liftIO $ addToCart item cutTolerance pool
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "db error: " <> show eRes
   return $ first handleCartDbError eRes
 

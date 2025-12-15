@@ -365,7 +365,7 @@ adjustFabric =
 
     UPDATE fabrics f
     SET 
-        available_length_m = CASE 
+        available_length_m = CASE
             WHEN $2 :: int8? IS NULL 
             THEN f.available_length_m - $3 :: float8?
             ELSE f.available_length_m
@@ -967,8 +967,9 @@ addToCartStatement =
 -- CRITICAL: Lock the parent fabric row for the duration of the transaction.
 -- This prevents any other transaction from modifying its length or adding
 -- another piece to a cart until this transaction is committed or rolled back.
-isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double) Bool
-isRollAvailableStatement = 
+isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double, Int) Bool
+isRollAvailableStatement =
+  lmap (app3 fromIntegral) $
   [Hasql.singletonStatement|
     WITH locked_stock AS (
         SELECT 
@@ -996,9 +997,8 @@ isRollAvailableStatement =
       FROM locked_stock
     )
     SELECT
-      (COALESCE($2 :: float8?, 0.0) <=
-       (f.available_length_m - 
-        total_claimed.length)) :: bool
+      ((f.available_length_m - total_claimed.length) >= 
+       (COALESCE($2 :: float8?, 0.0) + $3 :: float8)) :: bool
     FROM fabrics f, total_claimed
     WHERE f.id = $1 :: int8
     FOR UPDATE
@@ -1028,8 +1028,8 @@ isPreCutAvailableStatement =
      FOR UPDATE
   |]
 
-addToCart :: CartNewFabric -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
-addToCart item@CartNewFabric{..} pool = 
+addToCart :: CartNewFabric -> Int -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
+addToCart item@CartNewFabric{..} cutTolerance pool = 
   runTransaction pool Hasql.Write $ do
 
     -- 1.  Run the appropriate availability check inside the transaction
@@ -1037,7 +1037,9 @@ addToCart item@CartNewFabric{..} pool =
       case cnfFabricType of
         DWT.Roll -> 
           Hasql.statement 
-          (cnfFabricId, cnfFabricLength) 
+          (cnfFabricId, 
+           cnfFabricLength, 
+           cutTolerance) 
           isRollAvailableStatement
         DWT.PreCut -> 
           Hasql.statement 

@@ -18,7 +18,7 @@ import Control.Monad (join, void)
 import Data.Either (lefts)
 
 
-import App (AppM, _appDBPool, _thresholdMetres, render)
+import App (AppM, _appDBPool, _thresholdMetres, render, _cutTolerance)
 import Control.Monad.Reader.Class (ask)
 import Infrastructure.Database 
        ( runTransaction
@@ -43,10 +43,11 @@ adjustInventoryForOrder orderId = do
   cfg <- ask
   let pool = _appDBPool cfg
   let thresholdMetres = _thresholdMetres cfg
+  let cutTolerance = fromIntegral $ _cutTolerance cfg
   eResult <- liftIO $ 
     fmap (first (pack . show)) $ 
       runTransaction pool Write $ 
-        statements orderId thresholdMetres
+        statements orderId thresholdMetres cutTolerance
   fmap join $ for eResult $ \aesonRes -> do
     res <- for aesonRes $ \(mId, adjFabrics) -> do
       let soldOutOrPrecut :: AdjustFabric -> Either (Maybe Int, AppM Text) ()
@@ -82,13 +83,14 @@ adjustInventoryForOrder orderId = do
       Success inventory -> Right inventory
       Error err -> Left $ pack err
 
-statements orderId thresholdMetres = do
+statements orderId thresholdMetres cutTolerance = do
   -- update order to paid
   mId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
   -- adjust fabric, orderId
   items <- orderId `Hasql.statement` getOrderItemsForAdjustStatement
-  adjFabrics <- for items $ \(fId, prId, length) -> 
-    (fId, prId, length, thresholdMetres) `Hasql.statement` adjustFabric
+  adjFabrics <- for items $ \(fId, prId, length) -> do
+    let lengthWithTolerance = fmap (flip (+) cutTolerance) length
+    (fId, prId, lengthWithTolerance, thresholdMetres) `Hasql.statement` adjustFabric
   -- update payment status to paid
   void $ (orderId, CONFIRMED, PENDING) `Hasql.statement` updatePaymentStatusStatement
 

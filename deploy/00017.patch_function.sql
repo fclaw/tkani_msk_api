@@ -5,6 +5,8 @@ BEGIN;
 -- XXX Add DDLs here.
 -- migration_create_synchronized_article_sequence.sql
 
+DROP SEQUENCE fabric_article_seq IF EXISTS;
+
 -- 1. Create the sequence, starting at 1 for now.
 CREATE SEQUENCE fabric_article_seq START 1;
 
