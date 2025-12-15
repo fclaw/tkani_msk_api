@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Infrastructure.Database.Types where
 
@@ -15,9 +16,11 @@ import           Data.Aeson.TH
 import           Data.Int (Int64)
 import           Data.Char (toLower)
 
-import Text (recordLabelModifier)
+import Text (recordLabelModifier, encodeToText)
 import Infrastructure.Services.Types (PaymentProvider)
-import Domain.Warehouse.Types (FabricType)
+import Domain.Warehouse.Types (FabricType, Fabric (..))
+import API.Types (RawIngestRequest (..), MediaType)
+
 
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -105,10 +108,30 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''
 
 data PatchedFabric = 
      PatchedFabric
-     { prId         :: Int64
+     { prId  :: Int64
      , prDescription :: Text
      , prLength :: Double
      , prWidth :: Int
      , prPrice :: Int
      , prIsSearchable :: Bool
+     , prName :: Text
+     , prFileId :: Maybe Text                 
+     , prMediaGroupId :: Maybe Text   
+     , prThumbnailUrl :: Maybe Text          
+     , prMediaType :: Text
      }
+
+mkPatchedFabric :: Int64 -> Fabric -> RawIngestRequest -> PatchedFabric
+mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
+  let prId = fabricId
+      prDescription = fDescription
+      prLength = fLength
+      prWidth = fWidth
+      prPrice = fPrice
+      prIsSearchable = fIsSearchable
+      prName = fName
+      prFileId = rawFileId
+      prMediaGroupId = rawMediaGroupId
+      prThumbnailUrl = rawThumbnailUrl
+      prMediaType = encodeToText rawMediaType
+  in PatchedFabric {..}

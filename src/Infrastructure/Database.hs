@@ -1171,6 +1171,7 @@ getOrderItemsForAdjustStatement =
     WHERE order_id = $1 :: text
   |]
 
+
 patchRoll :: PatchedFabric -> Hasql.Pool -> IO (Either Text ())
 patchRoll fabric pool = 
   fmap (first (pack . show)) $ 
@@ -1187,7 +1188,12 @@ patchRoll fabric pool =
             available_length_m = $3 :: float8,
             width = $4 :: int4,
             price_per_meter = $5 :: int4,
-            is_searchable = $6 :: bool
+            is_searchable = $6 :: bool,
+            name = $7 :: text,
+            image_url = $8 :: text?,
+            media_group_id = $9 :: text?,
+            thumbnail_url = $10 :: text?,
+            media_type = $11 :: text
           WHERE id = $1 :: int8
         |]
 
@@ -1211,6 +1217,11 @@ patchPrecut fabric pool =
           UPDATE fabrics
           SET
             description = $2 :: text,
-            width = $4 :: int4
+            width = $4 :: int4,
+            name = $7 :: text,
+            image_url = $8 :: text?,
+            media_group_id = $9 :: text?,
+            thumbnail_url = $10 :: text?,
+            media_type = $11 :: text
           WHERE id = (SELECT * FROM new_precut)
         |]

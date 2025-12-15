@@ -20,7 +20,7 @@ import App (AppM, _appDBPool, _thresholdMetres)
 import API.Types (ApiResponse, RawIngestRequest (rawText), ApiError (ApiError), wrongModelErrorCode, NewFabric (..), mkError)
 import Domain.Warehouse.Types (FabricType (..), Fabric (..))
 import Infrastructure.Database (patchRoll, patchPrecut)
-import Infrastructure.Database.Types (PatchedFabric (..))
+import Infrastructure.Database.Types (mkPatchedFabric)
 import Domain.Warehouse.Parser (parseIngestRequest, renderValidationErrors, toEither)
 
 
@@ -39,14 +39,7 @@ handler fabricId rawIngestReq = do
     -- 3. Run the database query inside our AppM monad using liftIO
     $(logTM) DebugS $ "Querying database for patching a fabric"
     let resp = NewFabric fabricId (fType fabric) $ fromMaybe undefined (fArticle fabric)
-    let patchedFabric = 
-          PatchedFabric
-          fabricId
-          (fDescription fabric) 
-          (fLength fabric) 
-          (fWidth fabric) 
-          (fPrice fabric)
-          (fIsSearchable fabric)
+    let patchedFabric = mkPatchedFabric fabricId fabric rawIngestReq
     eDbRes <- if fType fabric == Roll then
       liftIO $ patchRoll patchedFabric pool
      else liftIO $ patchPrecut patchedFabric pool
