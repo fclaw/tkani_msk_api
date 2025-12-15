@@ -600,11 +600,12 @@ fetchCatalogSummaryItemStatement =
           LEFT JOIN cart_items AS ci
           ON pc.id = ci.pre_cut_id
           JOIN fabrics AS f ON pc.fabric_id = f.id
-          INNER JOIN pre_cut_in_order as pcio
+          LEFT JOIN pre_cut_in_order as pcio
           ON pcio.pre_cut_id = ci.id
           WHERE CAST(f.updated_at AS date) = $1 :: date
           AND pc.in_stock = TRUE
           AND ci.pre_cut_id IS NULL
+          AND pcio.pre_cut_id IS NULL
       ) AS catalog_items
     ORDER BY updated_at DESC
   |]
