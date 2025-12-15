@@ -211,6 +211,7 @@ main = do
       tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
       dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
       collageServiceUrl <- fmap pack $ getEnv "COLLAGE_SERVICE_URL"
+      cutTolerance <- fmap read $ getEnv "CUT_TOLERANCE"
 
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -235,6 +236,7 @@ main = do
             , _thresholdMetres = thresholdMetres
             , _dailyDigestImgStub = dailyDigestImgStub
             , _collageServiceUrl = collageServiceUrl
+            , _cutTolerance = cutTolerance
             }
 
       tchan <- newTChanIO

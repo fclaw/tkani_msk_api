@@ -56,9 +56,10 @@ import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import Infrastructure.Utils.Http (HttpError)
-import Text (encodeToText)
+import Text (encodeToText, tshow)
 import Domain.Warehouse.Types (FabricType (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+
 
 
 data PlaceOrderError
@@ -78,6 +79,7 @@ wrap action error = withExceptT error (ExceptT action)
 
 sec :: Int
 sec = 1000000
+
 
 placeOrder :: OrderRequest -> MVar MessageIdResponse -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
 placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
@@ -195,36 +197,38 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
 pollForSingleOrder cfg st uuid = do
   eRes <- runAppM cfg st (Sdek.getOrderStatus uuid)
   case eRes of
-    Left err -> pure $ Left (T.pack (show err))
+    Left err -> pure $ Left $ tshow err
     Right (Right resp) -> do
       case Sdek.sosrRequests resp of
         [] -> do
-          let errMsg = Sdek.SdekError "UNEXPECTED_RESPONSE" "SDEK status response did not contain our request UUID."
-          runAppM cfg st $ $(logTM) ErrorS $ logStr $ "Polling error for " <> UUID.toText uuid <> ": " <> Sdek.seMessage errMsg
-          pure $ Left (T.pack (show [errMsg]))
+          let errMsg = Sdek.SdekError Sdek.unexpected_response $ "SDEK status response did not contain " <> UUID.toText uuid
+          log ErrorS $ ": " <> Sdek.seMessage errMsg
+          pure $ Left $ tshow [errMsg]
         (reqStatus : _) ->
-          case Sdek.spsState reqStatus of
+          case Sdek.spsState 
+               reqStatus of
             Sdek.Accepted -> do
               -- The order is still processing. Wait and recurse.
-              runAppM cfg st $ $(logTM) DebugS $ logStr $ "Polling " <> UUID.toText uuid <> ": Status is still ACCEPTED. Retrying..."
+              log DebugS $ ": Status is still ACCEPTED. Retrying..."
               threadDelay (3 * 1000000) -- Wait 3 seconds
               pollForSingleOrder cfg st uuid
             Sdek.Invalid -> do
               -- FINAL STATE: SDEK rejected the order.
               let errors = Sdek.spsErrors reqStatus
-              runAppM cfg st $ $(logTM) WarningS $ logStr $ "Polling " <> UUID.toText uuid <> " resulted in INVALID state. Errors: " <> T.pack (show errors)
+              log WarningS $ " resulted in INVALID state. Errors: " <> tshow errors
               -- Return the error result, which stops the loop.
-              pure $ Left (T.pack (show errors))
+              pure $ Left $ tshow errors
             Sdek.Successful -> do
               -- FINAL STATE: SDEK accepted the order!
               let trackingNumber = fromJust $ Sdek.sosrCdekNumber resp -- As you noted
-              runAppM cfg st $ $(logTM) InfoS $ logStr $ "Polling " <> UUID.toText uuid <> " resulted in SUCCESSFUL state. Tracking number: " <> trackingNumber
+              log InfoS $ " resulted in SUCCESSFUL state. Tracking number: " <> trackingNumber
               pure $ Right trackingNumber
             other -> do
-              let errMsg = Sdek.SdekError "UNEXPECTED_STATE" ("SDEK returned an unexpected final status: " <> T.pack (show other))
-              runAppM cfg st $ $(logTM) ErrorS $ logStr $ "Polling error for " <> UUID.toText uuid <> ": " <> Sdek.seMessage errMsg
-              pure $ Left (T.pack (show [errMsg]))
-    Right (Left err) -> pure $ Left (T.pack (show err))  
+              let errMsg = Sdek.SdekError Sdek.unexpected_response ("SDEK returned an unexpected final status: " <> tshow other)
+              log ErrorS $ ": " <> Sdek.seMessage errMsg
+              pure $ Left $ tshow [errMsg]
+    Right (Left err) -> pure $ Left $ tshow err
+  where log severity msg = runAppM cfg st $ $(logTM) severity $ logStr $ "Polling " <> UUID.toText uuid <> msg
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.

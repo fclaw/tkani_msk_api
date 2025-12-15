@@ -195,6 +195,10 @@ instance FromJSON SdekError where
   parseJSON = withObject "SdekError" $ \o ->
     SdekError <$> o .: "code" <*> o .: "message"
 
+
+unexpected_response :: Text
+unexpected_response = "UNEXPECTED_RESPONSE"
+
 data SdekConfirmation = SdekConfirmation { scStatus :: SdekRequestState }
   deriving (Show, Generic)
 

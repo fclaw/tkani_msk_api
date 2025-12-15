@@ -157,6 +157,7 @@ data Config = Config
   , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
   , _dailyDigestImgStub :: Text
   , _collageServiceUrl :: Text
+  , _cutTolerance :: Int
   }
 
 -- A helper type for parsing the YAML
