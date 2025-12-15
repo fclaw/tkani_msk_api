@@ -968,9 +968,8 @@ addToCartStatement =
 -- CRITICAL: Lock the parent fabric row for the duration of the transaction.
 -- This prevents any other transaction from modifying its length or adding
 -- another piece to a cart until this transaction is committed or rolled back.
-isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double, Int) Bool
+isRollAvailableStatement :: Hasql.Statement (Int64, Maybe Double, Double) Bool
 isRollAvailableStatement =
-  lmap (app3 fromIntegral) $
   [Hasql.singletonStatement|
     WITH locked_stock AS (
         SELECT 
@@ -1021,7 +1020,7 @@ isPreCutAvailableStatement =
            ON ofb.order_id = o.id
            WHERE ofb.pre_cut_id = pc.id
            AND o.status = 'registered'
-           AND o.created_at > 
+           AND o.created_at >
                NOW() - INTERVAL '30 minutes')
         ) :: bool
      FROM pre_cuts AS pc
@@ -1029,7 +1028,7 @@ isPreCutAvailableStatement =
      FOR UPDATE
   |]
 
-addToCart :: CartNewFabric -> Int -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
+addToCart :: CartNewFabric -> Double -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
 addToCart item@CartNewFabric{..} cutTolerance pool = 
   runTransaction pool Hasql.Write $ do
 

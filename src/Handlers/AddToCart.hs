@@ -25,7 +25,7 @@ handler :: CartNewFabric -> AppM (ApiResponse CartCheckStatus)
 handler item = do
   cfg <- ask
   let pool = _appDBPool cfg
-  let cutTolerance = _cutTolerance cfg
+  let cutTolerance = fromIntegral (_cutTolerance cfg) / 100.0
   eRes <- liftIO $ addToCart item cutTolerance pool
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "db error: " <> show eRes
   return $ first handleCartDbError eRes
