@@ -30,6 +30,7 @@ import System.Directory (removeFile)
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Bifunctor (first)
+import Data.Maybe (isNothing)
 
 
 import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool) -- Your AppM types
@@ -47,7 +48,7 @@ data CollageJobs =
      CollageJobs
      { cjChatId :: Int64
      , cjMessageId :: Int64
-     , cjFinalDraft :: Text
+     , cjFinalDraft :: Maybe Text
      , cjUrls :: [Text]
      } deriving Show
 
@@ -79,42 +80,48 @@ runCollageJobListener connInfo runAppM = do
       when (isLeft eRes) $ putStrLn $ "Failed to parse payload, error: " <> show eRes
 
 generateAndAttachCollageAndOPublish_worker :: (forall a. AppM a -> IO (Either ServerError a)) -> CollageJobs -> IO ()
-generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..} = do
-  putStrLn $ "Processing collage job for chat " ++ show cjChatId
-  jobId <- randomIO @Word32
-  eitherFilePath <- fmap (join . first (T.pack . show)) $ runAppM $ generateCollageViaService cjUrls jobId
-  case eitherFilePath of
-    Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
-      -- Optionally, you could *edit the caption* to add an error note,
-      -- but for simplicity, we'll just log it.
-      
-    Right collagePath -> do
-      putStrLn "Collage generated. Swapping media in message..."
+generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
+  | isNothing cjFinalDraft = void $ runAppM $ $(logTM) ErrorS $ "Failed to generate collage: empty body"
+  | otherwise = do
+      putStrLn $ "Processing collage job for chat " <> show cjChatId
+      jobId <- randomIO @Word32
+      eitherFilePath <- 
+        fmap (join . first (T.pack . show)) $ 
+          runAppM $ 
+            generateCollageViaService cjUrls jobId
+      case eitherFilePath of
+        Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
+          -- Optionally, you could *edit the caption* to add an error note,
+          -- but for simplicity, we'll just log it.
+          
+        Right collagePath -> do
+          putStrLn "Collage generated. Swapping media in message..."
 
-      now <- getCurrentTime
-      let today = utctDay now
-      let dateStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" today
-      let deepLinkUrl = "https://t.me/tkaniMskConciergeBot" <> "?start=gallery_" <> dateStr
-      let keyboard = 
-            object
-            [ "inline_keyboard" .=
-              [[ object 
-                  [ "text" .= ("✨ Посмотреть галерею ✨" :: T.Text)
-                  , "url"  .= deepLinkUrl
-                  ]
-              ]]
-            ]
+          now <- getCurrentTime
+          let today = utctDay now
+          let dateStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" today
+          let deepLinkUrl = "https://t.me/tkaniMskConciergeBot" <> "?start=gallery_" <> dateStr
+          let keyboard = 
+                object
+                [ "inline_keyboard" .=
+                  [[ object 
+                      [ "text" .= ("✨ Посмотреть галерею ✨" :: T.Text)
+                      , "url"  .= deepLinkUrl
+                      ]
+                  ]]
+                ]
 
-      -- --- THE CORE LOGIC (CORRECTED) ---
-      -- We call the helper with 'Nothing' for the caption.
-      -- Telegram will automatically keep the existing caption.
-      let finalText = escapeMarkdownV2 $ cleanDigestText cjFinalDraft
-      eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
-      when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
-      removeFile collagePath
-      void $ runAppM $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
-      -- publish status
-      void $ runAppM $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
+          -- --- THE CORE LOGIC (CORRECTED) ---
+          -- We call the helper with 'Nothing' for the caption.
+          -- Telegram will automatically keep the existing caption.
+          let Just body = cjFinalDraft
+          let finalText = escapeMarkdownV2 $ cleanDigestText body
+          eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
+          when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
+          removeFile collagePath
+          void $ runAppM $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
+          -- publish status
+          void $ runAppM $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
 
 -- | Removes known digest tags and surrounding whitespace from the input text.
 --   It handles multiple possible tags like #digest
