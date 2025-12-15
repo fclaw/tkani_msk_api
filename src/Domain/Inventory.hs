@@ -43,7 +43,7 @@ adjustInventoryForOrder orderId = do
   cfg <- ask
   let pool = _appDBPool cfg
   let thresholdMetres = _thresholdMetres cfg
-  let cutTolerance = fromIntegral $ _cutTolerance cfg
+  let cutTolerance = fromIntegral (_cutTolerance cfg) / 100.0
   eResult <- liftIO $ 
     fmap (first (pack . show)) $ 
       runTransaction pool Write $ 
