@@ -1,3 +1,4 @@
-✅ Bought \(\#bought\)
+#bought
+✅ Bought (#bought)
 ‼️ @DedUIIIKa
 ‼️ @sclaw

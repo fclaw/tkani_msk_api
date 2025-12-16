@@ -37,6 +37,7 @@ import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..), Template (..))
 import Infrastructure.Services.Tinkoff.Types.GetState
 import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
 -- Configuration constants (in microseconds)
@@ -141,7 +142,7 @@ processJob (orderId, getStateReq) = do
                   for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
                 PrecutBranch msgId renderMessage -> do
                   msg <- renderMessage
-                  replyPrecutBought msgId msg
+                  replyPrecutBought msgId $ escapeMarkdownV2 msg
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------
