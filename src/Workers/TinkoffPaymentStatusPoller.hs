@@ -34,7 +34,7 @@ import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
 import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage)
 import TH.Location (currentModule)
-import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..))
+import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..), Template (..))
 import Infrastructure.Services.Tinkoff.Types.GetState
 import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
 
@@ -134,10 +134,14 @@ processJob (orderId, getStateReq) = do
             StockOK msgId -> replyMessage msgId
             FabricSoldOutOrPrecut msgId xs -> do
               replyMessage msgId
-              for_ xs $ \(maybeMsgId, renderMessage) -> do
-                msg <- renderMessage
-                notifyMessage msg
-                for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
+              for_ xs $ \case
+                RollBranch maybeMsgId renderMessage -> do
+                  msg <- renderMessage
+                  notifyMessage msg
+                  for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
+                PrecutBranch msgId renderMessage -> do
+                  msg <- renderMessage
+                  replyPrecutBought msgId msg
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------
@@ -240,3 +244,6 @@ replyMessage :: Int -> AppM ()
 replyMessage msgId = do 
   message <- render ($currentModule <> ".Paid") mempty
   void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
+
+replyPrecutBought :: Int -> Text -> AppM ()
+replyPrecutBought msgId message = void $ sendOrEditTelegramMessage mempty message WAREHOUSE Nothing (Just msgId) Nothing

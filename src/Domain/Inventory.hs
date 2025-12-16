@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Domain.Inventory (adjustInventoryForOrder, InventoryResult(..)) where
+module Domain.Inventory (adjustInventoryForOrder, InventoryResult(..), Template (..)) where
 
 
 import Data.Text (Text, pack)
@@ -16,6 +16,7 @@ import Data.Traversable (for)
 import Data.Aeson (Result (..))
 import Control.Monad (join, void)
 import Data.Either (lefts)
+import Data.Maybe (isJust)
 
 
 import App (AppM, _appDBPool, _thresholdMetres, render, _cutTolerance)
@@ -31,11 +32,15 @@ import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
 import qualified Data.HashMap.Strict as HM
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDING))
+import  Domain.Warehouse.Types (FabricType (..))
+
+
+data Template = RollBranch (Maybe Int) (AppM Text) | PrecutBranch Int (AppM Text)
 
 
 data InventoryResult 
   = StockOK Int
-  | FabricSoldOutOrPrecut Int [(Maybe Int, AppM Text)] -- We pass info back to create a nice message
+  | FabricSoldOutOrPrecut Int [Template] -- We pass info back to create a nice message
 
 
 adjustInventoryForOrder :: Text -> AppM (Either Text InventoryResult)
@@ -50,32 +55,34 @@ adjustInventoryForOrder orderId = do
         statements orderId thresholdMetres cutTolerance
   fmap join $ for eResult $ \aesonRes -> do
     res <- for aesonRes $ \(mId, adjFabrics) -> do
-      let soldOutOrPrecut :: AdjustFabric -> Either (Maybe Int, AppM Text) ()
-          soldOutOrPrecut AdjustFabric {..} =
-            if afIsSold == False &&
-               afIsPreCutReq == False 
-            then
-              Right ()
-            else
-                let mkFabricSoldOutOrPrecut wMId tpl tplData = 
-                      Left (wMId, render ($currentModule <> tpl) tplData)
-                in 
-                  if afIsSold == True && 
-                     afIsPreCutReq == False
-                  then let templateData = 
-                            HM.fromList 
-                            [("fabricName", afName), 
-                             ("article", afArticle)
-                            ]
-                       in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
-                  else let templateData = 
-                            HM.fromList 
-                            [ ("fabricName", afName), 
-                              ("article", afArticle), 
-                              ("remainingLength", pack (show afRemLength))
-                            ]   
-                       in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
-      let res = lefts $ map soldOutOrPrecut adjFabrics
+      let soldOutOrPrecut :: FabricType -> AdjustFabric -> Either Template ()
+          soldOutOrPrecut fabricType AdjustFabric {..}
+            | fabricType == Roll =
+              if afIsSold == False &&
+                afIsPreCutReq == False 
+              then
+                Right ()
+              else
+                  let mkFabricSoldOutOrPrecut wMId tpl tplData = 
+                        Left $ RollBranch wMId (render ($currentModule <> tpl) tplData)
+                  in 
+                    if afIsSold == True && 
+                      afIsPreCutReq == False
+                    then let templateData = 
+                              HM.fromList 
+                              [("fabricName", afName), 
+                              ("article", afArticle)
+                              ]
+                        in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
+                    else let templateData = 
+                              HM.fromList 
+                              [ ("fabricName", afName), 
+                                ("article", afArticle), 
+                                ("remainingLength", pack (show afRemLength))
+                              ]   
+                        in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
+              | otherwise = Left $ PrecutBranch afWarehouseMessageId (render ($currentModule <> ".Bought") mempty)
+      let res = lefts $ map (uncurry soldOutOrPrecut) adjFabrics
       return $ case res of 
         [] -> StockOK mId
         xs -> FabricSoldOutOrPrecut mId xs     
@@ -90,7 +97,9 @@ statements orderId thresholdMetres cutTolerance = do
   items <- orderId `Hasql.statement` getOrderItemsForAdjustStatement
   adjFabrics <- for items $ \(fId, prId, length) -> do
     let lengthWithTolerance = fmap (flip (+) cutTolerance) length
-    (fId, prId, lengthWithTolerance, thresholdMetres) `Hasql.statement` adjustFabric
+    let ft | isJust prId = PreCut
+           | otherwise = Roll
+    fmap (fmap (ft,)) $ (fId, prId, lengthWithTolerance, thresholdMetres) `Hasql.statement` adjustFabric
   -- update payment status to paid
   void $ (orderId, CONFIRMED, PENDING) `Hasql.statement` updatePaymentStatusStatement
 
