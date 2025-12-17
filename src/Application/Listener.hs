@@ -44,12 +44,16 @@ import Infrastructure.Database (setDailyDigestStatus)
 import Infrastructure.Database.Types (DailyDigestStatus (Published))
 
 
+maxNamesToList :: Int
+maxNamesToList = 15
+
 data CollageJobs =
      CollageJobs
      { cjChatId :: Int64
      , cjMessageId :: Int64
      , cjFinalDraft :: Maybe Text
      , cjUrls :: [Text]
+     , cjFabricNames :: [Text]
      } deriving Show
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cj" } ''CollageJobs)
@@ -115,7 +119,9 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
           -- We call the helper with 'Nothing' for the caption.
           -- Telegram will automatically keep the existing caption.
           let Just body = cjFinalDraft
-          let finalText = escapeMarkdownV2 $ cleanDigestText body
+          --- NEW LOGIC: TRUNCATE THE LIST ---
+          let truncatedNames = truncateFabricNames cjFabricNames
+          let finalText = escapeMarkdownV2 $ cleanDigestText body truncatedNames
           eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
           when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
           removeFile collagePath
@@ -125,8 +131,8 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
 
 -- | Removes known digest tags and surrounding whitespace from the input text.
 --   It handles multiple possible tags like #digest
-cleanDigestText :: Text -> Text
-cleanDigestText rawText =
+cleanDigestText :: Text -> Text -> Text 
+cleanDigestText rawText bodyContent =
   let
      -- 1. Split the text into lines
      lines = T.lines rawText
@@ -138,4 +144,29 @@ cleanDigestText rawText =
         (_ : body) ->
           -- 2. Join the cleaned header and the original body back together
           -- We filter to remove the first line if it becomes empty after cleaning
-          T.unlines $ filter (not . T.null) body
+          T.replace "#body" bodyContent $ T.unlines $ filter (not . T.null) body
+
+truncateFabricNames :: [Text] -> Text
+truncateFabricNames allFabricNames =
+  let totalNames = length allFabricNames
+      (displayNames, maybeFooter) = 
+        if totalNames > maxNamesToList then
+          -- A. The list is too long. Take the first 15.
+          let truncatedList = take maxNamesToList allFabricNames
+              -- B. Calculate how many are left over.
+              remainingCount = totalNames - maxNamesToList
+              -- C. Create the footer text.
+              footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
+          in (truncatedList, Just footer)
+        else
+            -- The list is short enough. Display all names and no footer.
+            (allFabricNames, Nothing)
+
+      -- Build the final text body
+      -- a. Create the numbered list from the (potentially truncated) 'displayNames'
+      numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] displayNames
+      listContent = T.unlines numberedItems
+      -- b. Add the footer if it exists
+  in case maybeFooter of
+       Just footer -> listContent <> "\n" <> footer
+       Nothing     -> listContent

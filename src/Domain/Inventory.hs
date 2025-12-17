@@ -76,7 +76,7 @@ adjustInventoryForOrder orderId = do
                         in mkFabricSoldOutOrPrecut (Just afWarehouseMessageId) ".Sold" templateData
                     else let templateData = 
                               HM.fromList 
-                              [ ("fabricName", afName), 
+                              [ ("fabricName", afName),
                                 ("article", afArticle), 
                                 ("remainingLength", pack (show afRemLength))
                               ]   
