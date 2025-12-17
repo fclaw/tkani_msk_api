@@ -31,6 +31,7 @@ import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError (..))
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
 orderStatusPoller :: AppM ()
@@ -85,7 +86,7 @@ handleSdekFailure orderId uuid (NetworkError ex) =
          ePair <- liftIO $ markOrderAsInvalid orderId uuid pool
          for_ ePair $ \(msgId, trackN) -> do
           let msgData = HM.fromList [("orderNumber", orderId), ("trackingNumber", trackN)]
-          message <- render $currentModule msgData
+          message <- fmap escapeMarkdownV2 $ render $currentModule msgData
           void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
       -- SCENARIO B: SERVER ERROR (500, 502)
       -- SDEK is down. Do NOTHING to DB. Just log and wait for next poll.

@@ -138,7 +138,7 @@ processJob (orderId, getStateReq) = do
               for_ xs $ \case
                 RollBranch maybeMsgId renderMessage -> do
                   msg <- renderMessage
-                  notifyMessage msg
+                  notifyMessage $ escapeMarkdownV2 msg
                   for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
                 PrecutBranch msgId renderMessage -> do
                   msg <- renderMessage
@@ -228,7 +228,7 @@ finalizeTelegram orderId suffix tm = do
   let localTime = utcToLocalTime tz tm
   let timeStr = pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" localTime
   let templateData = HM.fromList [("orderId", orderId), ("timestamp", timeStr)]
-  message <- render ($currentModule <> "." <> suffix) templateData
+  message <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> suffix) templateData
 
   cfg <- ask
   let pool = _appDBPool cfg
@@ -243,7 +243,7 @@ notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER No
 
 replyMessage :: Int -> AppM ()
 replyMessage msgId = do 
-  message <- render ($currentModule <> ".Paid") mempty
+  message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Paid") mempty
   void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
 
 replyPrecutBought :: Int -> Text -> AppM ()

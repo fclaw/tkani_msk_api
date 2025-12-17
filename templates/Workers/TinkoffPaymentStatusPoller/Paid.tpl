@@ -1,2 +1,2 @@
-✅ Paid \(\#paid\)
+✅ Paid (#paid)
 ‼️ @DedUIIIKa
