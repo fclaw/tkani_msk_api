@@ -164,7 +164,7 @@ getFabricPreviewStatement =
 
     SELECT
       jsonb_build_object(
-        'name', f.name || ' (отрез ' || pc.length_m || 'м)' :: text,
+        'name', f.name :: text,
         'price', pc.price_rub :: int4,
         'stock_available', pc.length_m,
         'status',
@@ -581,7 +581,7 @@ fetchCatalogSummaryItemStatement =
               f.updated_at,
               jsonb_build_object(
                   'id', pc.id,
-                  'name', f.name || ' (отрез ' || pc.length_m || 'м)',
+                  'name', f.name,
                   'article', f.article,
                   'type', 'pre_cut',
                   'price_per_meter', NULL,
@@ -756,7 +756,7 @@ searchFabricCardStatement =
         SELECT
           jsonb_build_object(
             'id', pc.id,
-            'name', f.name || ' (отрез ' || pc.length_m || 'м)',
+            'name', f.name,
             'article', f.article,
             'type', 'pre_cut',
             'price_per_meter', NULL,

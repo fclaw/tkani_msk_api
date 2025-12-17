@@ -35,7 +35,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDIN
 import  Domain.Warehouse.Types (FabricType (..))
 
 
-data Template = RollBranch (Maybe Int) (AppM Text) | PrecutBranch Int (AppM Text)
+data Template = RollBranch (Maybe Int) (AppM Text) | PrecutBranch Int
 
 
 data InventoryResult 
@@ -81,7 +81,7 @@ adjustInventoryForOrder orderId = do
                                 ("remainingLength", pack (show afRemLength))
                               ]   
                         in mkFabricSoldOutOrPrecut Nothing ".Precut" templateData
-              | otherwise = Left $ PrecutBranch afWarehouseMessageId (render ($currentModule <> ".Bought") mempty)
+              | otherwise = Left $ PrecutBranch afWarehouseMessageId
       let res = lefts $ map (uncurry soldOutOrPrecut) adjFabrics
       return $ case res of 
         [] -> StockOK mId

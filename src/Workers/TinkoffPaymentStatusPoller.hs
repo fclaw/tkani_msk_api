@@ -140,9 +140,7 @@ processJob (orderId, getStateReq) = do
                   msg <- renderMessage
                   notifyMessage $ escapeMarkdownV2 msg
                   for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
-                PrecutBranch msgId renderMessage -> do
-                  msg <- renderMessage
-                  replyPrecutBought msgId $ escapeMarkdownV2 msg
+                PrecutBranch msgId -> void $ deleteMessage msgId WAREHOUSE
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------

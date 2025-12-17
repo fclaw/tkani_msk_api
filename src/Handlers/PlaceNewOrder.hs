@@ -317,7 +317,7 @@ formatOrderItemLine item =
                 -- For pre-cuts, the name often already includes the length
                 ""
     in
-    "• " <> name <> " " <> details <> " | " <> DB.oiTelegramUrl item <> "\n"
+    "• " <> name <> " " <> details <> " | " <> DB.oiArticle item <> "\n"
 
 
 mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
