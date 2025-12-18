@@ -147,26 +147,15 @@ cleanDigestText rawText bodyContent =
           T.replace "#body" bodyContent $ T.unlines $ filter (not . T.null) body
 
 truncateFabricNames :: [Text] -> Text
-truncateFabricNames allFabricNames =
-  let totalNames = length allFabricNames
-      (displayNames, maybeFooter) = 
-        if totalNames > maxNamesToList then
-          -- A. The list is too long. Take the first 15.
-          let truncatedList = take maxNamesToList allFabricNames
-              -- B. Calculate how many are left over.
-              remainingCount = totalNames - maxNamesToList
-              -- C. Create the footer text.
-              footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
-          in (truncatedList, Just footer)
-        else
-            -- The list is short enough. Display all names and no footer.
-            (allFabricNames, Nothing)
-
-      -- Build the final text body
-      -- a. Create the numbered list from the (potentially truncated) 'displayNames'
-      numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] displayNames
-      listContent = T.unlines numberedItems
-      -- b. Add the footer if it exists
-  in case maybeFooter of
-       Just footer -> listContent <> "\n" <> footer
-       Nothing     -> listContent
+truncateFabricNames allFabricNames 
+  | length allFabricNames <= maxNamesToList =
+    let numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] allFabricNames
+    in T.unlines numberedItems
+  | otherwise =  
+    let truncatedList = take maxNamesToList allFabricNames
+        -- Calculate how many are left over.
+        remainingCount = length allFabricNames - maxNamesToList
+        -- Create the footer text.
+        footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
+        numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] truncatedList
+    in T.unlines numberedItems <> "\n" <> footer
