@@ -308,16 +308,17 @@ formatOrderItemLine :: DB.OrderItem -> Text
 formatOrderItemLine item =
     let
         name = DB.oiName item -- Assume it's already sanitized
+        pricePerMetre = fromMaybe 0 $ DB.oiPricePerMetre item
         -- Create a detail string for rolls
-        details = case DB.oiFabricType item of -- Assuming DB.OrderItem has an 'oiType'
+        totalPrice = case DB.oiFabricType item of -- Assuming DB.OrderItem has an 'oiType'
             Roll ->
                 let len = fromMaybe 0.0 (DB.oiLengthM item)
-                in "(Отрез " <> T.pack (show len) <> "м)"
+                in "Отрез " <> T.pack (show len) <> " м * " <> T.pack (show pricePerMetre) <> " руб/м"
             PreCut ->
                 -- For pre-cuts, the name often already includes the length
-                ""
+                T.pack (show (DB.oiTotalPrice item)) <> " руб"
     in
-    "• " <> name <> " " <> details <> " | " <> DB.oiArticle item <> "\n"
+    "• " <> name <> " | " <> totalPrice <> " | " <> DB.oiArticle item <> "\n"
 
 
 mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
