@@ -45,7 +45,7 @@ import Infrastructure.Database.Types (DailyDigestStatus (Published))
 
 
 maxNamesToList :: Int
-maxNamesToList = 15
+maxNamesToList = 10
 
 data CollageJobs =
      CollageJobs
