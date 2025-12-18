@@ -572,7 +572,7 @@ fetchCatalogSummaryItemStatement =
           WHERE
             CAST(f.updated_at AS date) = $1 :: date
             AND f.is_sold = FALSE
-            AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0)) > $2 :: float8
+            AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0.0)) > $2 :: float8
 
           UNION ALL
 
@@ -750,7 +750,7 @@ searchFabricCardStatement =
         ON cl.fabric_id = f.id
         WHERE $1 :: text = 'roll' 
         AND f.id = $2 :: int8
-        AND COALESCE(cl.length, 0.0) >= $3 :: float8 
+        AND (f.available_length_m - COALESCE(cl.length, 0.0)) > $3 :: float8
       UNION ALL
         SELECT
           jsonb_build_object(
