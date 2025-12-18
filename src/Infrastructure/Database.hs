@@ -316,33 +316,33 @@ placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasq
 
 setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
 setTelegramMessageStatement =
-   lmap (app3 fromIntegral . $(recordToTuple ''SetTelegramMessageRequest))
+   lmap $(recordToTuple ''SetTelegramMessageRequest)
    [Hasql.rowsAffectedStatement| 
      INSERT INTO order_telegram_bindings 
      (order_id, chat_id, message_id) 
-     VALUES ($1 :: text, $2 :: int8, $3 :: int4) |]
+     VALUES ($1 :: text, $2 :: int8, $3 :: int8) |]
 
 setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> IO (Either Text Int64)
 setTelegramMessage message pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
 
-getChatDetailsStatement :: Hasql.Statement Text (Maybe Int)
-getChatDetailsStatement = rmap (fmap fromIntegral) [Hasql.maybeStatement| SELECT message_id :: int FROM order_telegram_bindings WHERE order_id = $1 :: text |]
+getChatDetailsStatement :: Hasql.Statement Text (Maybe Int64)
+getChatDetailsStatement = rmap (fmap fromIntegral) [Hasql.maybeStatement| SELECT message_id :: int8 FROM order_telegram_bindings WHERE order_id = $1 :: text |]
 
-getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int))
+getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int64))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
 
-updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int
+updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int64
 updateOrderStatusStatement = 
   dimap (second statusToSQL) fromIntegral
   [Hasql.singletonStatement| 
     UPDATE orders 
     SET status = CAST($2 :: text AS order_status) 
     WHERE id = $1 :: text 
-    RETURNING internal_notification_message_id :: int4
+    RETURNING internal_notification_message_id :: int8
   |]
 
-updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> IO (Either Text Int)
+updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> IO (Either Text Int64)
 updateOrderStatus orderId status pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ (orderId, status) `Hasql.statement` updateOrderStatusStatement
 
 -- | Updates inventory logic.
@@ -448,15 +448,14 @@ getOrdersInTransitStatement =
   where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
         mkError = error "aeson decode failed on order status"
 
-markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text (Int, Text))
+markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text (Int64, Text))
 markOrderAsInvalid orderId uuid pool = 
   fmap (first (pack . show)) $ 
   runTransaction pool Hasql.Write $
     (orderId, uuid) `Hasql.statement` markOrderAsInvalidStatement
 
-markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int, Text)
+markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int64, Text)
 markOrderAsInvalidStatement =
-  rmap (first fromIntegral)
   [Hasql.singletonStatement| 
     UPDATE orders
     SET is_removed_from_delivery_provider = TRUE
@@ -678,7 +677,7 @@ fetchPendingPaymentsStatement =
 fetchPendingPayments :: Hasql.Pool -> IO (Either Text [(Text, Text)])
 fetchPendingPayments pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ PENDING `Hasql.statement` fetchPendingPaymentsStatement
 
-updatePaymentStatusStatement :: Hasql.Statement (Text, Status, Status) Int64
+updatePaymentStatusStatement :: Hasql.Statement (Text, Status, Status) Int
 updatePaymentStatusStatement = 
   dimap (app3 encodeToText . app2 encodeToText) fromIntegral $
   [Hasql.rowsAffectedStatement|
@@ -690,7 +689,7 @@ updatePaymentStatusStatement =
       order_id = $1 :: text
   |]
 
-updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> IO (Either Text Int)
+updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> IO (Either Text Int64)
 updatePaymentStatus orderId paymentStatus orderStatus pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ do

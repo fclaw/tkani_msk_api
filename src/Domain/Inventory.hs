@@ -17,6 +17,7 @@ import Data.Aeson (Result (..))
 import Control.Monad (join, void)
 import Data.Either (lefts)
 import Data.Maybe (isJust)
+import Data.Int (Int64)
 
 
 import App (AppM, _appDBPool, _thresholdMetres, render, _cutTolerance)
@@ -35,12 +36,12 @@ import Infrastructure.Services.Tinkoff.Types.GetState (Status (CONFIRMED, PENDIN
 import  Domain.Warehouse.Types (FabricType (..))
 
 
-data Template = RollBranch (Maybe Int) (AppM Text) | PrecutBranch Int
+data Template = RollBranch (Maybe Int64) (AppM Text) | PrecutBranch Int64
 
 
 data InventoryResult 
-  = StockOK Int
-  | FabricSoldOutOrPrecut Int [Template] -- We pass info back to create a nice message
+  = StockOK Int64
+  | FabricSoldOutOrPrecut Int64 [Template] -- We pass info back to create a nice message
 
 
 adjustInventoryForOrder :: Text -> AppM (Either Text InventoryResult)
@@ -85,7 +86,7 @@ adjustInventoryForOrder orderId = do
       let res = lefts $ map (uncurry soldOutOrPrecut) adjFabrics
       return $ case res of 
         [] -> StockOK mId
-        xs -> FabricSoldOutOrPrecut mId xs     
+        xs -> FabricSoldOutOrPrecut mId xs    
     return $ case res of
       Success inventory -> Right inventory
       Error err -> Left $ pack err

@@ -330,7 +330,7 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   , DB._orderDeliveryPointId = orDeliveryPointId
   , DB._orderSdekRequestUuid = trackingUuid
   , DB._orderSdekTrackingNumber = trackingNumber
-  , DB._orderInternalNotificationMessageId = fromIntegral @Int @Int64 (coerce telegramMsgId)
+  , DB._orderInternalNotificationMessageId = coerce telegramMsgId
   , DB._orderTelegramUserId = orTelegramUserId
   }
 

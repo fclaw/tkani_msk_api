@@ -27,6 +27,8 @@ import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Data.Foldable (for_)
 import Control.Exception (SomeException)
 import Control.Exception.Lifted (catch)
+import Data.Int (Int64)
+
 
 import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render, _tinkoffCred, tinkoffTerminalKey, tinkoffSecret)
 import  API.Types (OrderStatus (Cancelled))
@@ -239,10 +241,10 @@ finalizeTelegram orderId suffix tm = do
 notifyMessage :: Text -> AppM ()
 notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing Nothing
 
-replyMessage :: Int -> AppM ()
+replyMessage :: Int64 -> AppM ()
 replyMessage msgId = do 
   message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Paid") mempty
   void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
 
-replyPrecutBought :: Int -> Text -> AppM ()
+replyPrecutBought :: Int64 -> Text -> AppM ()
 replyPrecutBought msgId message = void $ sendOrEditTelegramMessage mempty message WAREHOUSE Nothing (Just msgId) Nothing

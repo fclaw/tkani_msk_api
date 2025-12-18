@@ -60,7 +60,7 @@ deriving instance Exception TelegramError
 
 
 -- You'll need to define a FromJSON instance for this to parse the message_id
-newtype MessageIdResponse = MessageIdResponse { message_id :: Int }
+newtype MessageIdResponse = MessageIdResponse { message_id :: Int64 }
   deriving (Show, Generic)
 instance A.FromJSON MessageIdResponse where
   parseJSON = A.withObject "Message" $ \o -> fmap MessageIdResponse (o A..: "result" >>= (A..: "message_id"))
@@ -81,8 +81,8 @@ sendOrEditTelegramMessage
   :: Text                         -- ^ The message text, pre-formatted with MarkdownV2
   -> Text
   -> ChatKey                      -- ^ The target chat
-  -> Maybe Int                    -- ^ The target message_id
-  -> Maybe Int
+  -> Maybe Int64                  -- ^ The target message_id
+  -> Maybe Int64
   -> Maybe A.Value
   -> AppM (Either TelegramError MessageIdResponse)
 sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId mReplyMarkup = do
@@ -142,7 +142,7 @@ data TelegramResponse a = TelegramResponse
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tr" } ''TelegramResponse)
 
 
-deleteMessage :: Int -> ChatKey -> AppM (Either TelegramError ())
+deleteMessage :: Int64 -> ChatKey -> AppM (Either TelegramError ())
 deleteMessage messageId chatKey = do
   -- 1. Get the necessary config from our application environment
   bots <- fmap _bots ask

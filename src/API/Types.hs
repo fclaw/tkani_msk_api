@@ -290,7 +290,7 @@ data SetTelegramMessageRequest =
   SetTelegramMessageRequest
   { setOrderId   :: Text    -- Matches "order_id"
   , setChatId    :: Int64   -- Matches "chat_id" (Must be Int64)
-  , setMessageId :: Int     -- Matches "message_id"
+  , setMessageId :: Int64   -- Matches "message_id"
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "set" } ''SetTelegramMessageRequest)
