@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE RankNTypes  #-}
 
-module Application.Listener (runCollageJobListener) where
+module Application.Listener (runCollageJobListener, truncateFabricNames, cleanDigestText) where
 
 
 import Katip
@@ -31,9 +31,17 @@ import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Bifunctor (first)
 import Data.Maybe (isNothing)
+import Control.Exception (try, SomeException)
+import Network.Wreq (getWith, responseBody, Response, manager, defaults)
+import Control.Lens ((^.), (.~), (&))
+import Network.HTTP.Client (Manager)
+import Data.UUID (toText)
+import Data.UUID.V4 (nextRandom)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import System.FilePath ((</>))
 
 
-import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool) -- Your AppM types
+import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool, _galleryLink, _isCollageServiceOn, _collageStubPath, _configHttpManager) -- Your AppM types
 import API.Types (DailyDigest(DailyDigest)) 
 import Text (recordLabelModifier) 
 import Utils.CollageMaker (generateCollageViaService)
@@ -61,7 +69,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cj" } ''
 -- | This function runs in its own thread for the entire application lifetime.
 runCollageJobListener :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
 runCollageJobListener connInfo runAppM = do
-  $(logTM) InfoS "CollageJobListener starts listening..."  
+  $(logTM) InfoS "CollageJobListener starts listening..."
   -- Get the underlying libpq connection
   liftIO $ PG.withConnect connInfo $ \conn -> do
     -- 1. Subscribe to the channel. This must be done on the connection.
@@ -74,12 +82,13 @@ runCollageJobListener connInfo runAppM = do
       putStrLn $ "Received notification: " ++ show payload
       let eRes = eitherDecode @CollageJobs $ BL.fromStrict payload
       -- 3. Parse the payload (the ID of the digest)
-      for_ eRes $ \collageJobs ->
+      for_ eRes $ \collageJobs -> do
         -- 4. SPAWN THE WORKER THREAD
         -- IMPORTANT: We spawn a new async thread to do the actual work.
         -- This keeps the listener free to immediately wait for the next notification.
         -- You would run this in your AppM to get logging etc.
         -- For simplicity here, just showing the concept:
+        void $ runAppM $ $(logTM) InfoS $ ls $ $currentModule <> ":CollageJobs " <> show collageJobs
         void $ Async.async $ generateAndAttachCollageAndOPublish_worker runAppM collageJobs
       when (isLeft eRes) $ putStrLn $ "Failed to parse payload, error: " <> show eRes
 
@@ -90,9 +99,13 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
       putStrLn $ "Processing collage job for chat " <> show cjChatId
       jobId <- randomIO @Word32
       eitherFilePath <- 
-        fmap (join . first (T.pack . show)) $ 
-          runAppM $ 
-            generateCollageViaService cjUrls jobId
+        fmap (join . first (T.pack . show)) $ runAppM $ do
+          cfg <- ask
+          let isOn = _isCollageServiceOn cfg
+          let stubPath = _collageStubPath cfg
+          let mgr = _configHttpManager cfg
+          if isOn then generateCollageViaService cjUrls jobId
+          else liftIO $ fmap Right $ getStubFilePath mgr stubPath
       case eitherFilePath of
         Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
           -- Optionally, you could *edit the caption* to add an error note,
@@ -104,7 +117,8 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
           now <- getCurrentTime
           let today = utctDay now
           let dateStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" today
-          let deepLinkUrl = "https://t.me/tkaniMskConciergeBot" <> "?start=gallery_" <> dateStr
+          Right galleryLink <- runAppM $ fmap _galleryLink ask 
+          let deepLinkUrl = galleryLink <> dateStr
           let keyboard = 
                 object
                 [ "inline_keyboard" .=
@@ -159,3 +173,15 @@ truncateFabricNames allFabricNames
         footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
         numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] truncatedList
     in T.unlines numberedItems <> "\n" <> footer
+
+
+getStubFilePath :: Manager -> Text -> IO FilePath
+getStubFilePath mgr url = do
+   -- 1. Create a unique filename
+  uuid <- nextRandom
+  timestamp <- round `fmap` getPOSIXTime :: IO Int
+  let tempDir = "/tmp" -- Use the system's temp directory
+  let filename = tempDir </> (show timestamp <> "-" <> T.unpack (toText uuid) <> ".jpg")
+  let baseOpts = defaults & manager .~ Right mgr
+  eResp <- try $ getWith baseOpts (T.unpack url) :: IO (Either SomeException (Network.Wreq.Response BL.ByteString))
+  fmap (const filename) $ for_ eResp $ \r -> BL.writeFile filename (r ^. responseBody)

@@ -212,6 +212,9 @@ main = do
       dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
       collageServiceUrl <- fmap pack $ getEnv "COLLAGE_SERVICE_URL"
       cutTolerance <- fmap read $ getEnv "CUT_TOLERANCE"
+      galleryLink <- fmap pack $ getEnv "GALLERY_LINK"
+      isCollageServiceOn <- fmap (read @Bool) $ getEnv "IS_COLLAGE_SERVICE_ON"
+      collageStubPath <- fmap pack $ getEnv "COLLAGE_STUB_PATH"
 
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -237,6 +240,9 @@ main = do
             , _dailyDigestImgStub = dailyDigestImgStub
             , _collageServiceUrl = collageServiceUrl
             , _cutTolerance = cutTolerance
+            , _galleryLink = galleryLink
+            , _isCollageServiceOn = False
+            , _collageStubPath = "sdc"
             }
 
       tchan <- newTChanIO

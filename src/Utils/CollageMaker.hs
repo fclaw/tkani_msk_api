@@ -9,8 +9,8 @@ import System.Process (callProcess)
 import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
 import System.FilePath ((</>))
 import qualified Data.ByteString.Lazy as BL
-import Network.Wreq (get, responseBody, Response)
-import Control.Lens ((^.))
+import Network.Wreq (getWith, defaults, manager, responseBody, Response)
+import Control.Lens ((^.), (.~), (&))
 import Data.Text (Text)
 import qualified Data.Text as T
 import UnliftIO.Async (pooledMapConcurrentlyN)
@@ -22,6 +22,7 @@ import Katip
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Aeson.TH
+import Network.HTTP.Client (Manager)
 
 
 import App (AppM, _configHttpManager, _collageServiceUrl)
@@ -66,7 +67,8 @@ generateCollageViaService urls jobId = do
     $(logTM) InfoS $ ls $ "Downloading " <> showt (length urls) <> " images for job " <> showt jobId
     -- 'downloadImage' is a helper that takes a file_id and saves it to a path
     -- It returns the final path. We need to handle potential errors.
-    eDownloadedPaths <- liftIO $ try $ pooledMapConcurrentlyN 5 (downloadImage jobDir) (zip [1..] urls)
+    let mgr = _configHttpManager cfg
+    eDownloadedPaths <- liftIO $ try $ pooledMapConcurrentlyN 5 (downloadImage mgr jobDir) (zip [1..] urls)
 
     case eDownloadedPaths of
         Left (dlErr :: SomeException) -> do
@@ -85,7 +87,6 @@ generateCollageViaService urls jobId = do
                   }
 
             $(logTM) InfoS "Calling collage service..."
-            let mgr = _configHttpManager cfg
             eResult <- postReq @CollageResponse mgr (collageServiceUrl <> "/generate-collage") requestPayload Nothing
 
             -- 4. Clean up the temporary input images immediately
@@ -106,12 +107,12 @@ generateCollageViaService urls jobId = do
 
 
 -- | Helper to download a single URL and save to a file
-downloadImage :: FilePath -> (Int, Text) -> IO FilePath
-downloadImage dir (index, url) = do
-    let filename = dir </> "img_" <> show index <> ".jpg"
-    eResp <- try $ get (T.unpack url) :: IO (Either SomeException (Network.Wreq.Response BL.ByteString))
-    for_ eResp $ \r -> BL.writeFile filename (r ^. responseBody)
-    return filename
+downloadImage :: Manager -> FilePath -> (Int, Text) -> IO FilePath
+downloadImage mgr dir (index, url) = do
+  let filename = dir </> "img_" <> show index <> ".jpg"
+  let baseOpts = defaults & manager .~ Right mgr
+  eResp <- try $ getWith baseOpts (T.unpack url) :: IO (Either SomeException (Network.Wreq.Response BL.ByteString))
+  fmap (const filename) $ for_ eResp $ \r -> BL.writeFile filename (r ^. responseBody)
 
 -- | Strips the shared volume's base path to create a relative path.
 --   Example: makeRelative "/app/tmp" "/app/tmp/job_123/1.jpg" -> "job_123/1.jpg"

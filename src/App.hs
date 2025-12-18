@@ -158,6 +158,9 @@ data Config = Config
   , _dailyDigestImgStub :: Text
   , _collageServiceUrl :: Text
   , _cutTolerance :: Int
+  , _galleryLink :: Text
+  , _isCollageServiceOn :: Bool
+  , _collageStubPath :: Text
   }
 
 -- A helper type for parsing the YAML

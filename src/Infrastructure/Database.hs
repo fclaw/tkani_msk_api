@@ -325,10 +325,16 @@ setTelegramMessageStatement =
 setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> IO (Either Text Int64)
 setTelegramMessage message pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
 
-getChatDetailsStatement :: Hasql.Statement Text (Maybe Int64)
-getChatDetailsStatement = rmap (fmap fromIntegral) [Hasql.maybeStatement| SELECT message_id :: int8 FROM order_telegram_bindings WHERE order_id = $1 :: text |]
+getChatDetailsStatement :: Hasql.Statement Text (Maybe (Int64, Int64))
+getChatDetailsStatement = 
+  [Hasql.maybeStatement| 
+    SELECT 
+      chat_id :: int8, 
+      message_id :: int8 
+    FROM order_telegram_bindings 
+    WHERE order_id = $1 :: text |]
 
-getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe Int64))
+getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe (Int64, Int64)))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
 

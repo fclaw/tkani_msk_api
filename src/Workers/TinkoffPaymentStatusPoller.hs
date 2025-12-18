@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Workers.TinkoffPaymentStatusPoller (paymentStatusPoller) where
 
@@ -14,7 +15,7 @@ import qualified Control.Concurrent.STM as STM
 import Control.Monad.State.Class (get)
 import Control.Monad.Reader.Class (ask)
 import Control.Concurrent.Async.Lifted (async)
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, isInfixOf, unpack)
 import Control.Concurrent (threadDelay)
 import Data.Time.Clock (UTCTime, diffUTCTime, NominalDiffTime)
 import System.Timeout.Lifted (timeout)
@@ -25,21 +26,40 @@ import qualified Data.HashMap.Strict as HM
 import Data.Time (formatTime, defaultTimeLocale)
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Data.Foldable (for_)
-import Control.Exception (SomeException)
+import Control.Exception (SomeException (..), fromException)
 import Control.Exception.Lifted (catch)
 import Data.Int (Int64)
+import Network.HTTP.Client (HttpException (..))
+import qualified Data.Map.Strict         as M
+import Data.Traversable        (for)
+import qualified Data.Aeson              as A
+import Network.Wreq hiding (get)
+import Control.Lens            ((&), (.~), (^.))
+import           Data.Aeson.KeyMap       as A
 
-
-import App (AppM, runAppM, _tinkoffPaymentChan, _appDBPool, currentTime, ChatKey (..), render, _tinkoffCred, tinkoffTerminalKey, tinkoffSecret)
+import App 
+  ( AppM
+  , runAppM
+  , _tinkoffPaymentChan
+  , _appDBPool
+  , currentTime
+  , ChatKey (..)
+  , render
+  , _tinkoffCred
+  , tinkoffTerminalKey
+  , tinkoffSecret
+  , _configHttpManager
+  , _bots)
 import  API.Types (OrderStatus (Cancelled))
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
 import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, TelegramError (..))
 import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..), Template (..))
 import Infrastructure.Services.Tinkoff.Types.GetState
 import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Domain.Error (handleHttpError)
 
 
 -- Configuration constants (in microseconds)
@@ -232,10 +252,29 @@ finalizeTelegram orderId suffix tm = do
 
   cfg <- ask
   let pool = _appDBPool cfg
-  eMessageId <- liftIO $ getChatDetails orderId pool
-  for_ eMessageId $ \messageId ->
-    void $ sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE messageId Nothing Nothing
-  when(isLeft eMessageId) $ $(logTM) ErrorS $ ls $ "error while fetching chat details " <> pack (show eMessageId)
+  eDBRes <- liftIO $ getChatDetails orderId pool
+  for_ eDBRes $ \mDetails ->
+    for_ mDetails $ \(chatId, messageId) -> do
+      eRes <- sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE (Just messageId) Nothing Nothing
+      when(isLeft eRes) $ do
+        let Left ex = eRes
+        case ex of 
+          ApiRequestFailed someEx ->
+            case fromException @HttpException someEx of 
+              Nothing -> $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
+              Just httpErr -> do 
+                let errorText = handleHttpError httpErr
+                if "message to edit not found" `isInfixOf` errorText
+                then do
+                  -- Handle the fallback logic as before
+                  $(logTM) WarningS $ ls $ "Could not edit message for " <> orderId <> ". Reason: " <> errorText
+                  -- ... send a new message ...
+                  resendFinalizedMessage orderId chatId message CONCIERGE
+                else
+                  -- It's a different, more serious error.
+                  $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> orderId <> ". " <> errorText
+          _ ->  $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
+  when(isLeft eDBRes) $ $(logTM) ErrorS $ ls $ "error while fetching chat details " <> pack (show eDBRes)
 
 
 notifyMessage :: Text -> AppM ()
@@ -248,3 +287,19 @@ replyMessage msgId = do
 
 replyPrecutBought :: Int64 -> Text -> AppM ()
 replyPrecutBought msgId message = void $ sendOrEditTelegramMessage mempty message WAREHOUSE Nothing (Just msgId) Nothing
+
+resendFinalizedMessage :: Text -> Int64 -> Text -> ChatKey -> AppM ()
+resendFinalizedMessage orderId chatId msg chatKey = do
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  mBotRes <- for botsInfo $ \(bot, _) -> do
+    httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+    let url = "https://api.telegram.org/bot" <> unpack bot <> "/sendMessage"
+    let payload = A.Object $ A.fromList
+          [ ("chat_id"    A..= pack (show chatId))
+          , ("text"       A..= msg)
+          , ("parse_mode" A..= ("MarkdownV2" :: Text))
+          ]
+    void $ liftIO $ postWith (defaults & manager .~ Right httpManager) url payload
+    $(logTM) InfoS $ ls $ "message for " <> orderId <> " has been resent"
+  when(isNothing mBotRes) $ $(logTM) ErrorS $ ls $ "bot not found " <> show chatKey

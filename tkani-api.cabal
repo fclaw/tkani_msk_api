@@ -27,7 +27,9 @@ library
   other-modules:
       API.WithField
       Concurrency
+      Domain.Error
       Domain.Inventory
+      Domain.Telegram.Types
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
       Handlers.AddToCart

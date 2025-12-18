@@ -20,7 +20,7 @@ import Control.Monad.IO.Class (liftIO)
 import System.Random (randomIO)
 import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
 
-import App (AppM, currentTime, ChatKey(WAREHOUSE), _bots, render, _appDBPool, _dailyDigestImgStub)
+import App (AppM, currentTime, ChatKey(WAREHOUSE), _bots, render, _appDBPool, _dailyDigestImgStub, _galleryLink, _configHttpManager)
 import API.Types (ApiResponse)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendPhotoToTelegram, MessageIdResponse (..))
@@ -44,10 +44,12 @@ handler = do
   for_ eRes $ \isAlready -> do
     when isAlready $ $(logTM) InfoS $ ls @String $ "announcement has already been registered"
     unless isAlready $ do
-      bots <- fmap _bots ask
+      cfg <- ask
+      let bots = _bots cfg
+      let galleryLink = _galleryLink cfg 
       let botsInfo = M.lookup WAREHOUSE bots
       for_ botsInfo $ \(bot, chatId) -> do
-        let deepLinkUrl = "https://t.me/tkaniMskConciergeBot" <> "?start=gallery_" <> dateStr
+        let deepLinkUrl = galleryLink <> dateStr
         -- Construct the 'reply_markup' JSON for the button
         let keyboard = 
               object
@@ -59,11 +61,13 @@ handler = do
                 ]]
               ]
 
-        filePath <- fmap _dailyDigestImgStub ask
+        cfg <- ask
+        let filePath = _dailyDigestImgStub cfg
+        let mgr = _configHttpManager cfg
         fId <- liftIO $ randomIO @Word32
         let tmpDir = "/tmp/stub_" <> show fId
         liftIO $ createDirectoryIfMissing True tmpDir
-        liftIO $ downloadImage tmpDir (1, filePath)
+        liftIO $ downloadImage mgr tmpDir (1, filePath)
         let img = tmpDir </> "img_" <> show 1 <> ".jpg"
 
         message <- fmap escapeMarkdownV2 $ render $currentModule $ HM.fromList [("date", dateStr)]
