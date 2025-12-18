@@ -1191,7 +1191,8 @@ patchRoll fabric pool =
             image_url = $8 :: text?,
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
-            media_type = $11 :: text
+            media_type = $11 :: text,
+            updated_at = now()
           WHERE id = $1 :: int8
         |]
 
@@ -1220,6 +1221,7 @@ patchPrecut fabric pool =
             image_url = $8 :: text?,
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
-            media_type = $11 :: text
+            media_type = $11 :: text,
+            updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
         |]
