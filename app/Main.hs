@@ -241,7 +241,7 @@ main = do
             , _collageServiceUrl = collageServiceUrl
             , _cutTolerance = cutTolerance
             , _galleryLink = galleryLink
-            , _isCollageServiceOn = False
+            , _isCollageServiceOn = isCollageServiceOn
             , _collageStubPath = collageStubPath
             }
 
