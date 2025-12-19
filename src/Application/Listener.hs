@@ -39,6 +39,7 @@ import Data.UUID (toText)
 import Data.UUID.V4 (nextRandom)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.FilePath ((</>))
+import System.Directory (getCurrentDirectory)
 
 
 import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool, _galleryLink, _isCollageServiceOn, _collageStubPath, _configHttpManager) -- Your AppM types
@@ -180,8 +181,8 @@ getStubFilePath mgr url = do
    -- 1. Create a unique filename
   uuid <- nextRandom
   timestamp <- round `fmap` getPOSIXTime :: IO Int
-  let tempDir = "/tmp" -- Use the system's temp directory
-  let filename = tempDir </> (show timestamp <> "-" <> T.unpack (toText uuid) <> ".jpg")
+  tempDir <- getCurrentDirectory -- Use the system's temp directory
+  let filename = tempDir </> (show timestamp <> "_" <> T.unpack (toText uuid) <> ".jpg")
   let baseOpts = defaults & manager .~ Right mgr
   eResp <- try $ getWith baseOpts (T.unpack url) :: IO (Either SomeException (Network.Wreq.Response BL.ByteString))
   fmap (const filename) $ for_ eResp $ \r -> BL.writeFile filename (r ^. responseBody)

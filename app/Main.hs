@@ -242,7 +242,7 @@ main = do
             , _cutTolerance = cutTolerance
             , _galleryLink = galleryLink
             , _isCollageServiceOn = False
-            , _collageStubPath = "sdc"
+            , _collageStubPath = collageStubPath
             }
 
       tchan <- newTChanIO
