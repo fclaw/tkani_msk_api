@@ -1017,19 +1017,18 @@ isPreCutAvailableStatement :: Hasql.Statement Int64 Bool
 isPreCutAvailableStatement =
   [Hasql.singletonStatement|
      SELECT
-       ( pc.in_stock AND
-         NOT EXISTS (
-           SELECT 1
-           FROM order_fabric_bindings ofb
-           JOIN orders o 
-           ON ofb.order_id = o.id
-           WHERE ofb.pre_cut_id = pc.id
-           AND o.status = 'registered'
-           AND o.created_at >
-               NOW() - INTERVAL '30 minutes')
-        ) :: bool
+       pc.in_stock :: bool
      FROM pre_cuts AS pc
      WHERE id = $1 :: int8
+     AND NOT EXISTS (
+      SELECT 1
+      FROM order_fabric_bindings ofb
+      JOIN orders o 
+      ON ofb.order_id = o.id
+      WHERE ofb.pre_cut_id = pc.id
+      AND o.status = 'registered'
+      AND o.created_at >
+          NOW() - INTERVAL '30 minutes')
      FOR UPDATE
   |]
 
