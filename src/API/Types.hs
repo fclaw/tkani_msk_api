@@ -265,7 +265,7 @@ formatStatus status = case status of
   OnRoute   -> "🚚 В ПУТИ"
 
   -- SDEK reports that the package has arrived at the final delivery point.
-  Delivered -> "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧI"
+  Delivered -> "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧИ"
 
   -- The customer has physically picked up the order. The transaction is fully complete.
   -- This status might be set manually or via another SDEK webhook.
