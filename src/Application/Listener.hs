@@ -164,7 +164,7 @@ cleanDigestText rawText bodyContent =
 
 truncateFabricNames :: [Text] -> Text
 truncateFabricNames allFabricNamesAll
-  | length allFabricNames <= maxNamesToList =
+  | length allFabricNamesAll <= maxNamesToList =
     let numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] allFabricNames
     in T.unlines numberedItems
   | otherwise =  
