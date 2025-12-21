@@ -37,8 +37,7 @@ BEGIN
              'chat_id', NEW.warehouse_chat_id, 
              'message_id', NEW.warehouse_message_id,
              'final_draft', NEW.final_draft,
-             'urls', COALESCE(random_urls, array[]::text[])) :: text,
-             'fabric_names', ... <- here
+             'urls', COALESCE(random_urls, array[]::text[])) :: text
         );
         
     END IF;
