@@ -1235,41 +1235,42 @@ patchPrecut fabric pool =
 deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> IO (Either Text ())
 deleteFabric fabricId fabricType pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
-      Hasql.statement fabricId $ statement
+    runTransaction pool Hasql.Write $
+      Hasql.statement fabricId $
+        rmap (const ()) statement
   where 
     statement = 
       case fabricType of
         DWT.Roll -> 
-          [Hasql.resultlessStatement|
+          [Hasql.rowsAffectedStatement|
             UPDATE fabrics
             SET
               in_stock = FALSE,
               is_sold = TRUE,
-              is_searchable = FALSE,
-              updated_at = NOW()
+              is_searchable = FALSE
             WHERE id = $1 :: int8
           |]
         DWT.PreCut ->
-          [Hasql.resultlessStatement|
+          [Hasql.rowsAffectedStatement|
             WITH updated_precut AS (
               UPDATE pre_cuts
               SET 
                 in_stock = FALSE,
                 is_searchable = FALSE
               WHERE id = $1 :: int8
-              RETURNING fabric_id)
+              RETURNING fabric_id, 
+              id AS pre_cut_id_just_updated)
             UPDATE fabrics f
             SET
               in_stock = FALSE,
               is_sold = TRUE,
-              is_searchable = FALSE,
-              updated_at = NOW()
+              is_searchable = FALSE
             FROM updated_precut up
             WHERE f.id = up.fabric_id
             AND NOT EXISTS (
               SELECT 1
               FROM pre_cuts pc
               WHERE pc.fabric_id = up.fabric_id 
-              AND pc.in_stock = TRUE)
+              AND pc.in_stock = TRUE
+              AND pc.id <> up.pre_cut_id_just_updated)
           |]
