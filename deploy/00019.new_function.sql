@@ -12,39 +12,39 @@ BEGIN
     -- Fire only when the status transitions to 'ready'
     IF NEW.status = 'ready' AND OLD.status <> 'ready' THEN
     
-        -- Use a CTE to select one (the newest) row for each unique fabric name
-        -- updated on the specified day.
+       -- Use a single CTE to find the set of unique fabrics for the day.
+        -- This is the "single source of truth" for the rest of the query.
         WITH unique_fabrics_today AS (
             SELECT DISTINCT ON (name)
                 name,
                 thumbnail_url,
-                created_at
+                created_at -- We need this for consistent ordering
             FROM fabrics
             WHERE updated_at::date = NEW.created_at::date
+              AND in_stock = TRUE
+              AND is_sold = FALSE
             ORDER BY
-                name, created_at DESC -- This picks the newest ('DESC') for each name group
+                name, created_at DESC -- Pick the newest item for each unique name
         )
-
-        -- === Step 1: Get ALL UNIQUE fabric names for the day ===
+        -- Now, run both aggregations against this CTE in a single query.
         SELECT
-            array_agg(name ORDER BY created_at DESC)
-        INTO
-            all_fabric_names
-        FROM unique_fabrics_today;
+            -- Aggregate 1: Get ALL unique names, ordered by creation time.
+            array_agg(name ORDER BY created_at DESC),
 
-        -- === Step 2: Get up to 9 random UNIQUE THUMBNAIL URLs for the collage ===
-        -- We select from our CTE of unique fabrics to avoid showing the same fabric twice.
-        SELECT
-            array_agg(thumbnail_url)
+            -- Aggregate 2: Get a random sample of up to 9 thumbnail URLs from the same set.
+            (SELECT array_agg(thumbnail_url)
+             FROM (
+                SELECT thumbnail_url
+                FROM unique_fabrics_today
+                WHERE thumbnail_url IS NOT NULL
+                ORDER BY random()
+                LIMIT 9
+             ) AS random_sample)
         INTO
+            all_fabric_names,
             collage_urls
-        FROM (
-            SELECT thumbnail_url
-            FROM unique_fabrics_today
-            WHERE thumbnail_url IS NOT NULL
-            ORDER BY random() -- Randomize the unique items
-            LIMIT 9
-        ) AS random_sample;
+        FROM
+            unique_fabrics_today;
 
         -- === Step 3: Construct and send the final JSON payload ===
         PERFORM pg_notify(
