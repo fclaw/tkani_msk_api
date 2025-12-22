@@ -39,6 +39,7 @@ library
       Handlers.DailyDigest.Draft
       Handlers.DailyDigest.New
       Handlers.DailyDigest.Publish
+      Handlers.DeleteFabric
       Handlers.GetCatalogSummary
       Handlers.GetDeliveryPoints
       Handlers.GetFabricPreview
@@ -151,6 +152,7 @@ executable tkani-api-exe
     , hasql-pool
     , http-client
     , http-client-tls
+    , http-types
     , katip
     , lifted-async
     , mtl

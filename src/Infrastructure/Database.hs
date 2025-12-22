@@ -45,6 +45,7 @@ module Infrastructure.Database
   , getOrderItemsForAdjustStatement
   , patchRoll
   , patchPrecut
+  , deleteFabric
   , module Types
   ) where
 
@@ -1230,3 +1231,45 @@ patchPrecut fabric pool =
             updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
         |]
+
+deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> IO (Either Text ())
+deleteFabric fabricId fabricType pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement fabricId $ statement
+  where 
+    statement = 
+      case fabricType of
+        DWT.Roll -> 
+          [Hasql.resultlessStatement|
+            UPDATE fabrics
+            SET
+              in_stock = FALSE,
+              is_sold = TRUE,
+              is_searchable = FALSE,
+              updated_at = NOW()
+            WHERE id = $1 :: int8
+          |]
+        DWT.PreCut ->
+          [Hasql.resultlessStatement|
+            WITH updated_precut AS (
+              UPDATE pre_cuts
+              SET 
+                in_stock = FALSE,
+                is_searchable = FALSE
+              WHERE id = $1 :: int8
+              RETURNING fabric_id)
+            UPDATE fabrics f
+            SET
+              in_stock = FALSE,
+              is_sold = TRUE,
+              is_searchable = FALSE,
+              updated_at = NOW()
+            FROM updated_precut up
+            WHERE f.id = up.fabric_id
+            AND NOT EXISTS (
+              SELECT 1
+              FROM pre_cuts pc
+              WHERE pc.fabric_id = up.fabric_id 
+              AND pc.in_stock = TRUE)
+          |]

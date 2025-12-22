@@ -104,7 +104,8 @@ executables:
       - http-client
       - http-client-tls
       - unordered-containers
-      - containers   
+      - containers
+      - http-types
 
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

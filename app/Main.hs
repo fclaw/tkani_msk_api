@@ -46,6 +46,10 @@ import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
 import qualified Data.HashSet as HS
 import qualified Data.Map.Strict as M
 import Data.Foldable (for_)
+import Network.Wai.Middleware.Cors
+import Network.Wai (Middleware)
+import Network.HTTP.Types.Method (StdMethod(DELETE, PUT, PATCH), renderStdMethod)
+
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
@@ -76,6 +80,9 @@ instance Show Workers where
   show CollageMaker = "Collage Maker"
   show CartsCleaner = "Carts Cleaner"
 
+
+methodsCors :: Middleware
+methodsCors = cors $ const (Just (simpleCorsResourcePolicy { corsMethods = map renderStdMethod [ DELETE, PUT, PATCH]}))
 
 handleYamlResult (Right providers) go = go providers
 handleYamlResult (Left error) _ = throwError $ userError ("cannot open yaml: " <> prettyPrintParseException error)
@@ -272,7 +279,7 @@ main = do
         -- Task 1: The Web Server
         let server = 
               run (configApiPort config) $ 
-                simpleCors $  
+                methodsCors $  
                   serve tkaniApiProxy $
                     hoistServer
                       tkaniApiProxy

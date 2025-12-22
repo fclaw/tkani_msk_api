@@ -8,7 +8,7 @@ module API where
 import GHC.Generics (Generic)
 import Servant.API.Generic
 import Data.Text (Text)
-import Servant (Get, Post, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
+import Servant (Get, Post, Put, Patch, Delete, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
 import Data.Proxy (Proxy (..))
 import Data.Int (Int64)
 
@@ -26,16 +26,22 @@ data Routes route = Routes
        :: route
        :- "warehouse"
        :> "fabric"
-       :> "ingest"
        :> ReqBody '[JSON] RawIngestRequest
-       :> Post '[JSON] (ApiResponse NewFabric)
+       :> Put '[JSON] (ApiResponse NewFabric)
   , _patchFabric
        :: route
        :- "warehouse"
        :> "fabric"
        :> Capture "fabric_id" Int64
        :> ReqBody '[JSON] RawIngestRequest
-       :> Post '[JSON] (ApiResponse NewFabric)
+       :> Patch '[JSON] (ApiResponse NewFabric)
+  , _deleteFabric
+       :: route
+       :- "warehouse"
+       :> "fabric"
+       :> Capture "fabric_id" Int64
+       :> Capture "fabric_type" FabricType
+       :> Delete '[JSON] (ApiResponse ())  
   , _getFabricPreview 
        :: route 
        :- "fabric"
