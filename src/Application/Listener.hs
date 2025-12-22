@@ -40,7 +40,6 @@ import Data.UUID.V4 (nextRandom)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.FilePath ((</>))
 import System.Directory (getCurrentDirectory)
-import Data.List (nub)
 
 
 import App (AppM, ChatKey(MAIN, WAREHOUSE), _appDBPool, _galleryLink, _isCollageServiceOn, _collageStubPath, _configHttpManager) -- Your AppM types
@@ -163,19 +162,18 @@ cleanDigestText rawText bodyContent =
           T.replace "#body" bodyContent $ T.unlines $ filter (not . T.null) body
 
 truncateFabricNames :: [Text] -> Text
-truncateFabricNames allFabricNamesAll
-  | length allFabricNamesAll <= maxNamesToList =
+truncateFabricNames allFabricNames
+  | length allFabricNames <= maxNamesToList =
     let numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] allFabricNames
     in T.unlines numberedItems
   | otherwise =  
     let truncatedList = take maxNamesToList allFabricNames
         -- Calculate how many are left over.
-        remainingCount = length allFabricNamesAll - maxNamesToList
+        remainingCount = length allFabricNames - maxNamesToList
         -- Create the footer text.
         footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
         numberedItems = zipWith (\n name -> T.pack (show n) <> ". " <> name) [1..] truncatedList
     in T.unlines numberedItems <> "\n" <> footer
-  where allFabricNames = nub allFabricNamesAll
 
 
 getStubFilePath :: Manager -> Text -> IO FilePath

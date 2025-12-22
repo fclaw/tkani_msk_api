@@ -25,14 +25,12 @@ BEGIN
                 name, created_at DESC -- This picks the newest ('DESC') for each name group
         )
 
-        -- === Step 1: Get ALL fabric names for the day ===
-        -- There's no LIMIT here. We get every name.
-        SELECT 
-            array_agg(name ORDER BY created_at DESC) -- Order them for a predictable list
-        INTO 
+        -- === Step 1: Get ALL UNIQUE fabric names for the day ===
+        SELECT
+            array_agg(name ORDER BY created_at DESC)
+        INTO
             all_fabric_names
-        FROM fabrics
-        WHERE updated_at::date = NEW.created_at::date;
+        FROM unique_fabrics_today;
 
         -- === Step 2: Get up to 9 random UNIQUE THUMBNAIL URLs for the collage ===
         -- We select from our CTE of unique fabrics to avoid showing the same fabric twice.
