@@ -91,6 +91,7 @@ data RawIngestRequest =
     , rawMediaType    :: MediaType   -- ^ Parsed via the Enum above
     , rawFileId       :: Maybe Text  -- ^ The file ID
     , rawThumbnailUrl :: Maybe Text
+    , rawGalleryDate  :: Day
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)

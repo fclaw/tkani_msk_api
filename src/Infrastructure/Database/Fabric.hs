@@ -12,6 +12,7 @@ import Data.Int (Int32, Int64)
 import Data.Text (Text)
 import Data.Maybe (fromMaybe)
 import Control.Monad (void, when)
+import Data.Time (Day)
 
 import Text (encodeToText)
 
@@ -45,7 +46,10 @@ ingestFabricDB fabric req = do
       rawThumbnailUrl req,             -- $10 preview on a search list
       fromIntegral (fWidth fabric),    -- $11 the width of a fabric
       fIsSearchable fabric && 
-      fType fabric == Roll
+      fType fabric == Roll,
+      if fType fabric == Roll then 
+        Just (rawGalleryDate req)
+      else Nothing  
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -56,7 +60,8 @@ ingestFabricDB fabric req = do
       let isSearchable = 
              fIsSearchable fabric && 
              fType fabric == PreCut
-      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable) insertPreCutQuery
+      let galleryDate = if fType fabric == PreCut then Just (rawGalleryDate req) else Nothing
+      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable, galleryDate) insertPreCutQuery
     else return Nothing
   return $ (fromMaybe parentId precut_id, article)
 
@@ -64,7 +69,21 @@ ingestFabricDB fabric req = do
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery :: Hasql.Statement (Maybe Text, Text, Maybe Int32, Text, Int64, Maybe Text, Maybe Text, Text, Double, Maybe Text, Int32, Bool) (Int64, Text)
+upsertFabricQuery 
+  :: Hasql.Statement 
+     ( Maybe Text
+     , Text
+     , Maybe Int32
+     , Text
+     , Int64
+     , Maybe Text
+     , Maybe Text
+     , Text
+     , Double
+     , Maybe Text
+     , Int32
+     , Bool
+     , Maybe Day) (Int64, Text)
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -80,7 +99,8 @@ upsertFabricQuery =
       available_length_m,
       thumbnail_url,
       width,
-      is_searchable
+      is_searchable,
+      daily_digest_id
     ) 
     VALUES (
       COALESCE($1 :: text?, next_fabric_article()),
@@ -95,7 +115,10 @@ upsertFabricQuery =
       $9 :: float8,
       $10 :: text?,
       $11 :: int4,
-      $12 :: bool
+      $12 :: bool,
+      (SELECT id 
+       FROM daily_digests 
+       WHERE announcement_date = $13 :: date?)
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -121,19 +144,23 @@ upsertFabricQuery =
     RETURNING id :: int8, article :: text
 |]
 
-insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool) Int64
+insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool, Maybe Day) Int64
 insertPreCutQuery = 
   [Hasql.singletonStatement| 
     INSERT INTO pre_cuts 
     (fabric_id, 
      length_m, 
      price_rub, 
-     is_searchable)
+     is_searchable,
+     daily_digest_id)
     VALUES (
       $1 :: int8, 
       $2 :: float8, 
       $3 :: int4, 
-      $4 :: bool)
+      $4 :: bool,
+      (SELECT id 
+       FROM daily_digests 
+       WHERE announcement_date = $5 :: date?))
     ON CONFLICT (fabric_id, length_m, price_rub) 
     DO UPDATE SET
       is_searchable = EXCLUDED.is_searchable,

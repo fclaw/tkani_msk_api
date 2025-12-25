@@ -576,8 +576,10 @@ fetchCatalogSummaryItemStatement =
             GROUP BY ofb.fabric_id 
           ) AS locked_stock
           ON f.id = locked_stock.fabric_id
+          INNER JOIN daily_digests AS dd
+          ON dd.id = f.daily_digest_id
           WHERE
-            CAST(f.updated_at AS date) = $1 :: date
+            dd.announcement_date = $1 :: date
             AND f.is_sold = FALSE
             AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0.0)) > $2 :: float8
 
@@ -608,7 +610,9 @@ fetchCatalogSummaryItemStatement =
           JOIN fabrics AS f ON pc.fabric_id = f.id
           LEFT JOIN pre_cut_in_order as pcio
           ON pcio.pre_cut_id = ci.id
-          WHERE CAST(f.updated_at AS date) = $1 :: date
+          INNER JOIN daily_digests AS dd
+          ON dd.id = pc.daily_digest_id
+          WHERE dd.announcement_date = $1 :: date
           AND pc.in_stock = TRUE
           AND ci.pre_cut_id IS NULL
           AND pcio.pre_cut_id IS NULL
@@ -1181,9 +1185,7 @@ patchRoll fabric pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       Hasql.statement fabric $
-        lmap ( app4 fromIntegral 
-             . app5 fromIntegral 
-             . $(recordToTuple ''PatchedFabric))
+        lmap ($(recordToTuple ''PatchedFabric))
         [Hasql.resultlessStatement|
           UPDATE fabrics 
           SET
@@ -1198,6 +1200,10 @@ patchRoll fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
+            daily_digests_id = (
+              SELECT id 
+              FROM daily_digests 
+              WHERE announcement_date = $12 :: date),
             updated_at = now()
           WHERE id = $1 :: int8
         |]
@@ -1207,16 +1213,18 @@ patchPrecut fabric pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       Hasql.statement fabric $
-        lmap ( app4 fromIntegral
-             . app5 fromIntegral
-             . $(recordToTuple ''PatchedFabric))
+        lmap ($(recordToTuple ''PatchedFabric))
         [Hasql.resultlessStatement|
           WITH new_precut AS (
             UPDATE pre_cuts
             SET
              length_m = $3 :: float8,
              price_rub = $5 :: int4,
-             is_searchable = $6 :: bool
+             is_searchable = $6 :: bool,
+             daily_digests_id = (
+              SELECT id 
+              FROM daily_digests 
+              WHERE announcement_date = $12 :: date)
             WHERE id = $1 :: int8
             RETURNING fabric_id :: int8)
           UPDATE fabrics

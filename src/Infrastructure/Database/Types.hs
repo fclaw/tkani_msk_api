@@ -8,12 +8,12 @@ module Infrastructure.Database.Types where
 
 import           Data.Aeson -- You might want to derive To/FromJSON
 import           Data.Text (Text)
-import           Data.Time (UTCTime)
+import           Data.Time (UTCTime, Day)
 import           GHC.Generics (Generic)
 import           Control.Lens (makeLenses)
 import           Data.UUID (UUID) -- For the SDEK tracking UUID
 import           Data.Aeson.TH
-import           Data.Int (Int64)
+import           Data.Int (Int64, Int32)
 import           Data.Char (toLower)
 
 import Text (recordLabelModifier, encodeToText)
@@ -111,27 +111,30 @@ data PatchedFabric =
      { prId  :: Int64
      , prDescription :: Text
      , prLength :: Double
-     , prWidth :: Int
-     , prPrice :: Int
+     , prWidth :: Int32
+     , prPrice :: Int32
      , prIsSearchable :: Bool
      , prName :: Text
      , prFileId :: Maybe Text                 
      , prMediaGroupId :: Maybe Text   
      , prThumbnailUrl :: Maybe Text          
      , prMediaType :: Text
-     }
+     , prGalleryDate :: Day
+     } deriving (Show, Eq, Generic)
+
 
 mkPatchedFabric :: Int64 -> Fabric -> RawIngestRequest -> PatchedFabric
 mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
   let prId = fabricId
       prDescription = fDescription
       prLength = fLength
-      prWidth = fWidth
-      prPrice = fPrice
+      prWidth = fromIntegral fWidth
+      prPrice = fromIntegral fPrice
       prIsSearchable = fIsSearchable
       prName = fName
       prFileId = rawFileId
       prMediaGroupId = rawMediaGroupId
       prThumbnailUrl = rawThumbnailUrl
       prMediaType = encodeToText rawMediaType
+      prGalleryDate = rawGalleryDate
   in PatchedFabric {..}
