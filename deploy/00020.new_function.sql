@@ -3,14 +3,14 @@
 BEGIN;
 
 -- XXX Add DDLs here.
-ALTER TABLE fabrics ADD COLUMN daily_digests_id BIGINT NULL;
-ALTER TABLE pre_cuts ADD COLUMN daily_digests_id BIGINT NULL;
+ALTER TABLE fabrics ADD COLUMN daily_digest_id BIGINT NULL;
+ALTER TABLE pre_cuts ADD COLUMN daily_digest_id BIGINT NULL;
 
 -- === STEP 1: Update 'fabrics' ONLY if they are "Rolls" (have no pre-cuts) ===
 
 UPDATE fabrics f
 SET 
-    daily_digests_id = dd.id
+    daily_digest_id = dd.id
 FROM 
     daily_digests AS dd
 WHERE
@@ -33,7 +33,7 @@ WHERE
 
 UPDATE pre_cuts pc
 SET 
-    daily_digests_id = dd.id
+    daily_digest_id = dd.id
 FROM 
     fabrics AS f,
     daily_digests AS dd
