@@ -49,6 +49,8 @@ import App
   , tinkoffTerminalKey
   , tinkoffSecret
   , _configHttpManager
+  , _messageCannotBeDeleted
+  , _messageNotFound
   , _bots)
 import  API.Types (OrderStatus (Cancelled))
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
@@ -60,6 +62,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState
 import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Domain.Error (handleHttpError)
+import Text (tshow)
 
 
 -- Configuration constants (in microseconds)
@@ -161,8 +164,8 @@ processJob (orderId, getStateReq) = do
                 RollBranch maybeMsgId renderMessage -> do
                   msg <- renderMessage
                   notifyMessage $ escapeMarkdownV2 msg
-                  for_ maybeMsgId $ (`deleteMessage` WAREHOUSE)
-                PrecutBranch msgId -> void $ deleteMessage msgId WAREHOUSE
+                  for_ maybeMsgId $ deleteFabric
+                PrecutBranch msgId -> deleteFabric msgId
           when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
           -- EXIT LOOP
         ------------------------------------------------------------
@@ -262,9 +265,10 @@ finalizeTelegram orderId suffix tm = do
           ApiRequestFailed someEx ->
             case fromException @HttpException someEx of 
               Nothing -> $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
-              Just httpErr -> do 
+              Just httpErr -> do
+                msg <- fmap _messageNotFound ask
                 let errorText = handleHttpError httpErr
-                if "message to edit not found" `isInfixOf` errorText
+                if msg `isInfixOf` errorText
                 then do
                   -- Handle the fallback logic as before
                   $(logTM) WarningS $ ls $ "Could not edit message for " <> orderId <> ". Reason: " <> errorText
@@ -303,3 +307,29 @@ resendFinalizedMessage orderId chatId msg chatKey = do
     void $ liftIO $ postWith (defaults & manager .~ Right httpManager) url payload
     $(logTM) InfoS $ ls $ "message for " <> orderId <> " has been resent"
   when(isNothing mBotRes) $ $(logTM) ErrorS $ ls $ "bot not found " <> show chatKey
+
+
+deleteFabric :: Int64 -> AppM ()
+deleteFabric msgId = do
+  eRes <- deleteMessage msgId WAREHOUSE
+  when(isLeft eRes) $ do
+    let Left ex = eRes
+    case ex of 
+      ApiRequestFailed someEx ->
+        case fromException @HttpException someEx of 
+          Nothing -> $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
+          Just httpErr -> do
+            msg <- fmap _messageCannotBeDeleted ask
+            let errorText = handleHttpError httpErr
+            if msg `isInfixOf` errorText
+            then do
+                   -- Handle the fallback logic as before
+                   $(logTM) WarningS $ ls $ "Could not delete message for " <> tshow msgId <> ". Reason: " <> errorText
+                   -- ... send a new message ...
+                   -- reply
+                   message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Fabric") mempty
+                   void $ sendOrEditTelegramMessage mempty message WAREHOUSE Nothing (Just msgId) Nothing
+            else
+                -- It's a different, more serious error.
+                $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText
+      _ ->  $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex

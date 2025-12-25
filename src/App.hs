@@ -161,6 +161,8 @@ data Config = Config
   , _galleryLink :: Text
   , _isCollageServiceOn :: Bool
   , _collageStubPath :: Text
+  , _messageCannotBeDeleted :: Text
+  , _messageNotFound :: Text
   }
 
 -- A helper type for parsing the YAML

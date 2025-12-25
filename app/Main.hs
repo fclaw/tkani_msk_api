@@ -223,6 +223,10 @@ main = do
       isCollageServiceOn <- fmap (read @Bool) $ getEnv "IS_COLLAGE_SERVICE_ON"
       collageStubPath <- fmap pack $ getEnv "COLLAGE_STUB_PATH"
 
+      -- telegram error messages 
+      messageCannotBeDeleted <- fmap pack $ getEnv "MESSAGE_CANNOT_BE_DELETED"
+      messageNotFound <- fmap pack $ getEnv "MESSAGE_NOT_FOUND"
+
       -- 6. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool
@@ -250,6 +254,8 @@ main = do
             , _galleryLink = galleryLink
             , _isCollageServiceOn = isCollageServiceOn
             , _collageStubPath = collageStubPath
+            , _messageCannotBeDeleted = messageCannotBeDeleted
+            , _messageNotFound = messageNotFound
             }
 
       tchan <- newTChanIO
