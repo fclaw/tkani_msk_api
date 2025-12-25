@@ -44,6 +44,6 @@ handler fabricId rawIngestReq = do
     eDbRes <- if fType fabric == Roll then
       liftIO $ patchRoll patchedFabric pool
      else liftIO $ patchPrecut patchedFabric pool
-    return $ first (const (mkError "server error")) $ (second (const resp)) eDbRes
+    return $ first (ApiError "server error") $ (second (const resp)) eDbRes
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res    

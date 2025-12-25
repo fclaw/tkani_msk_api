@@ -1200,10 +1200,11 @@ patchRoll fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
-            daily_digests_id = (
+            daily_digest_id = (
               SELECT id 
               FROM daily_digests 
-              WHERE announcement_date = $12 :: date),
+              WHERE announcement_date = $12 :: date
+              LIMIT 1),
             updated_at = now()
           WHERE id = $1 :: int8
         |]
@@ -1221,10 +1222,11 @@ patchPrecut fabric pool =
              length_m = $3 :: float8,
              price_rub = $5 :: int4,
              is_searchable = $6 :: bool,
-             daily_digests_id = (
-              SELECT id 
+             daily_digest_id = (
+              SELECT id
               FROM daily_digests 
-              WHERE announcement_date = $12 :: date)
+              WHERE announcement_date = $12 :: date
+              LIMIT 1)
             WHERE id = $1 :: int8
             RETURNING fabric_id :: int8)
           UPDATE fabrics
