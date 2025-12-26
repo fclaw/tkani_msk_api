@@ -54,7 +54,7 @@ import Network.HTTP.Types.Method (StdMethod(DELETE, PUT, PATCH), renderStdMethod
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import Config (loadConfig, AppConfig(..))
 import API.Types (ProviderInfo)
-import App (AppM(..), SDEKCredentials (..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
+import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
@@ -63,6 +63,7 @@ import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
+import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
 
 
 
@@ -178,8 +179,9 @@ main = do
   withLogEnv tlsManager $ \logEnv -> do
     eProviders <- decodeFileEither @[ProviderInfo] "providers.yaml"
     eMetroCities <- decodeFileEither @[MetroCity] "data/metro_cities.yaml"
-    let res = (,) <$> eProviders <*> eMetroCities
-    handleYamlResult res $ \(providers, cities) -> do
+    eSdekConfig <- decodeFileEither @SdekConfig "config/sdek.yaml"
+    let res = (,,) <$> eProviders <*> eMetroCities <*> eSdekConfig
+    handleYamlResult res $ \(providers, cities, sdekConfig) -> do
       tplMap <- loadTemplatesFromDirectory "templates"
 
       -- 2. Load configuration from environment variables
@@ -202,9 +204,6 @@ main = do
       -- getEnv reads a String from an env var. It will crash if the var is not set.
       sdekClientId <- fmap pack $ getEnv "SDEK_CLIENT_ID"
       sdekClientSecret <- fmap pack $ getEnv "SDEK_CLIENT_SECRET"
-      sdekUrl <- fmap pack $ getEnv "SDEK_URL"
-      sdekTariffCode <- fmap (read @Int) $ getEnv "SDEK_TARIFF_CODE" 
-      sdekShipmentPoint <- fmap pack $ getEnv "SDEK_SHIPMENT_POINT" 
       orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
       conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
       warehouseBotToken <- fmap pack $ getEnv "WAREHOUSE_BOT_TOKEN"
@@ -232,11 +231,8 @@ main = do
             { _appDBPool = pool
             , _appLogEnv = logEnv
             , _providers = providers
-            , _sdekCred  = SdekCreds {..}
             , _tinkoffCred = TinkoffCredentials {..}
-            , _sdekUrl   = sdekUrl
-            , _sdekTariffCode = sdekTariffCode
-            , _sdekShipmentPoint = sdekShipmentPoint
+            , _sdekConfig = sdekConfig { credentials = SdekCredentials sdekClientId sdekClientSecret }
             , _bots =
                 M.fromList
                   [(CONCIERGE, (conciergeBotToken, conciergeChatId)),

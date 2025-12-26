@@ -23,7 +23,7 @@ import Data.HashSet (member)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.STM (atomically, readTVar, modifyTVar')
 
-import App (AppM, runAppM, sdekAccessToken, _sdekUrl, _metroCityCodes, _metroStations, _pointCache, currentTime, _configHttpManager)
+import App (AppM, runAppM, _sdekConfig, sdekAccessToken, _metroCityCodes, _metroStations, _pointCache, currentTime, _configHttpManager)
 import API.Types (DeliveryPoint, ApiResponse)
 import API.WithField (WithField)
 import Text (recordLabelModifier)
@@ -34,6 +34,7 @@ import TH.Location (currentModule)
 import API.WithField (WithField (..))
 import Infrastructure.Services.Overpass.Types (MetroStation)
 import Infrastructure.Services.Overpass.Geo (findNearestMetros)
+import qualified Infrastructure.Services.Sdek.Types.Config as Sdek (url)
 
 
 -- | Internal data type to decode the full delivery points response from SDEK.
@@ -102,7 +103,7 @@ storeDeliveryPoints :: Int -> AppM (ApiResponse [WithField "dpMetros" [Text] Del
 storeDeliveryPoints cityCode = do
   $(logTM) InfoS $ logStr $ "Found SDEK city code " <> T.pack (show cityCode) <> ". Fetching points."
   cfg <- ask
-  let url = (T.unpack . _sdekUrl) cfg
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
   let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]

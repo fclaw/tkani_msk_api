@@ -20,6 +20,8 @@ library:
     - Infrastructure.Services.Overpass
     - Application.Listener
     - Application.Cart
+    - Infrastructure.Services.Sdek.Types
+    - Infrastructure.Services.Sdek.Types.Config
   dependencies:
     # This list should already be complete
     - aeson
@@ -72,6 +74,7 @@ library:
     - postgresql-simple
     - process
     - unliftio
+    - yaml
 
 executables:
   tkani-api-exe:

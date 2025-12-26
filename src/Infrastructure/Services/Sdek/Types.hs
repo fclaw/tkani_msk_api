@@ -104,14 +104,28 @@ data SdekService = SdekService
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ss" } ''SdekService)
 
+-- | Represents the sender's address for a "from the door" tariff.
+--   The fields here are based on the standard SDEK API structure.
+data SdekFromLocation = SdekFromLocation
+  { sflAddress   :: Text -- Full street address, e.g., "ул. Ленина, д. 1, кв. 2"
+  , sflCode      :: Int  -- SDEK's internal numeric code for the city
+  , sflPostCode  :: Maybe Text -- Postal code, often required
+  } deriving (Show, Eq, Generic)
+
+-- Generate snake_case JSON instance (e.g., sflCityCode -> city_code)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sfl"} ''SdekFromLocation)
+
+defSdekFromLocation :: SdekFromLocation
+defSdekFromLocation = SdekFromLocation mempty 0 Nothing
+
 
 -- This is the main record you will construct. It contains only the fields
 -- SDEK requires to get an order into their system for later manual editing.
 data SdekOrderRequest = SdekOrderRequest
-  { sorTariffCode :: Int            -- REQUIRED: e.g., 137 for "Склад-ПВЗ".
-  , sorRecipient  :: SdekRecipient  -- REQUIRED: Minimal recipient info.
-  , sorPackages   :: [SdekPackage]  -- REQUIRED: Minimal package info.
-  , sorShipmentPoint :: Text           -- REQUIRED: The code of the PVZ you are shipping FROM.
+  { sorTariffCode    :: Int            -- REQUIRED: e.g., 137 for "Склад-ПВЗ".
+  , sorRecipient     :: SdekRecipient  -- REQUIRED: Minimal recipient info.
+  , sorPackages      :: [SdekPackage]  -- REQUIRED: Minimal package info.
+  , sorFromLocation  :: SdekFromLocation  -- REQUIRED: Location point
   , sorDeliveryPoint :: Text           -- REQUIRED: The code of the PVZ the customer chose.
   , sorServices      :: [SdekService]
   } deriving (Show, Generic)

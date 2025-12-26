@@ -40,7 +40,7 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred)
+import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -59,6 +59,7 @@ import Infrastructure.Utils.Http (HttpError)
 import Text (encodeToText, tshow)
 import Domain.Warehouse.Types (FabricType (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 
 
 
@@ -87,15 +88,22 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   cfg <- lift ask
   st <- lift get
   let pool = _appDBPool cfg
-  let tariffCode = _sdekTariffCode cfg
-  let shipmentPoint = _sdekShipmentPoint cfg
+  let sdekConfig = _sdekConfig cfg
+  let tariffCode = Sdek.doorToWarehouse (Sdek.tariffs sdekConfig)
+  let senderLocation = Sdek.senderLocation sdekConfig
+  let fromLocation = 
+        Sdek.defSdekFromLocation 
+        { Sdek.sflAddress = Sdek.address senderLocation
+        , Sdek.sflCode = Sdek.cityCode senderLocation
+        , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation
+        }
   -- fetch total price for a given fabric
   items <- wrap (liftIO (getOrderItems orTelegramUserId pool)) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
 
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items tariffCode shipmentPoint
+  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items tariffCode fromLocation
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
   orderId <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)

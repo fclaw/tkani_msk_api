@@ -17,7 +17,6 @@ module App
   , AppM(..),
   Config (..),
   SdekToken (..),
-  SDEKCredentials (..),
   MetroCity (..),
   ChatKey (..),
   TinkoffCredentials (..),
@@ -66,6 +65,7 @@ import API.WithField (WithField)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
+import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 
 
 
@@ -142,27 +142,24 @@ type Bots = M.Map ChatKey (Text, Int)
 
 -- | AppState holds all the shared, read-only resources for our application.
 data Config = Config
-  { _appDBPool :: Pool
-  , _appLogEnv :: LogEnv
-  , _providers :: [ProviderInfo]
-  , _sdekCred  :: SDEKCredentials
-  , _tinkoffCred :: TinkoffCredentials
-  , _sdekUrl   :: Text
-  , _sdekTariffCode :: Int
-  , _sdekShipmentPoint :: Text
-  , _bots              :: Bots
-  , _configHttpManager :: Manager
-  , configTemplateMap :: TemplateMap
-  , _metroCityCodes :: HS.HashSet Int
-  , _thresholdMetres :: Double -- Threshold: If stock falls below this, hide the fabric.
-  , _dailyDigestImgStub :: Text
-  , _collageServiceUrl :: Text
-  , _cutTolerance :: Int
-  , _galleryLink :: Text
-  , _isCollageServiceOn :: Bool
-  , _collageStubPath :: Text
+  { _appDBPool              :: Pool
+  , _appLogEnv              :: LogEnv
+  , _providers              :: [ProviderInfo]
+  , _tinkoffCred            :: TinkoffCredentials
+  , _sdekConfig             :: SdekConfig
+  , _bots                   :: Bots
+  , _configHttpManager      :: Manager
+  , configTemplateMap       :: TemplateMap
+  , _metroCityCodes         :: HS.HashSet Int
+  , _thresholdMetres        :: Double -- Threshold: If stock falls below this, hide the fabric.
+  , _dailyDigestImgStub     :: Text
+  , _collageServiceUrl      :: Text
+  , _cutTolerance           :: Int
+  , _galleryLink            :: Text
+  , _isCollageServiceOn     :: Bool
+  , _collageStubPath        :: Text
   , _messageCannotBeDeleted :: Text
-  , _messageNotFound :: Text
+  , _messageNotFound        :: Text
   }
 
 -- A helper type for parsing the YAML
@@ -170,11 +167,6 @@ newtype MetroCity = MetroCity { code :: Int }
 instance FromJSON MetroCity where
   parseJSON = withObject "MetroCity" $ \v -> MetroCity <$> v .: "code"
 
- -- Construct the SdekCreds record, converting String to Text
-data SDEKCredentials = SdekCreds
-  { sdekClientId :: Text
-  , sdekClientSecret :: Text
-  }
 
 data TinkoffCredentials =
      TinkoffCredentials 

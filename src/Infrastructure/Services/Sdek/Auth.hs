@@ -19,6 +19,7 @@ import GHC.Generics (Generic)
 import Network.Wreq (FormParam(..)) -- Import the FormParam builder
 import Data.Time (UTCTime, NominalDiffTime, addUTCTime, diffUTCTime)
 import Data.Traversable (for)
+import Infrastructure.Services.Sdek.Types.Config (SdekCredentials (..), credentials, url)
 
 
 import App
@@ -40,13 +41,13 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "str" } '
 sdekAuthUrl :: String -> String
 sdekAuthUrl url = "https://" <> url <> "/v2/oauth/token" -- The sandbox URL is correct
 
-internalGetSdekAccessToken :: SDEKCredentials -> Text -> AppM (Either HttpError SdekToken)
+internalGetSdekAccessToken :: SdekCredentials -> Text -> AppM (Either HttpError SdekToken)
 internalGetSdekAccessToken cred url = do
  -- Build the payload as a list of FormParams, NOT a JSON object.
   let payload :: FormParams
       payload = [ "grant_type"    := ("client_credentials" :: Text)
-                , "client_id"     := sdekClientId cred
-                , "client_secret" := sdekClientSecret cred
+                , "client_id"     := clientId cred
+                , "client_secret" := clientSecret cred
                 ]
   
   -- Call our new, specialized function.
@@ -91,7 +92,7 @@ getValidSdekToken = do
   $(logTM) InfoS "Checking SDEK token validity..."
 
   stateTVar <- get
-  config    <- ask
+  sdekConfig <- fmap _sdekConfig ask
   now       <- currentTime
 
   -- 1. Read the current state atomically
@@ -111,7 +112,7 @@ getValidSdekToken = do
       $(logTM) InfoS "SDEK token is missing or expired. Refreshing..."
             
       -- Call the internal function to get a new token from SDEK's API
-      eToken <- internalGetSdekAccessToken (_sdekCred config) (_sdekUrl config)      
+      eToken <- internalGetSdekAccessToken (credentials sdekConfig) (url sdekConfig)      
       case eToken of
         Left err -> do
           $(logTM) ErrorS $ ls $ "Failed to fetch SDEK token: " <> show err

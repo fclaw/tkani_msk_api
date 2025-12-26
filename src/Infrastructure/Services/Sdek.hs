@@ -30,7 +30,7 @@ import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Data.Traversable (for)
 
-import App (AppM, sdekAccessToken, _sdekUrl, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
+import App (AppM, sdekAccessToken, _sdekConfig, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
 import API.Types
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
@@ -41,12 +41,13 @@ import Infrastructure.Services.Sdek.Types
 import Data.Maybe (fromMaybe)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 import Infrastructure.Database.Types (OrderItem (..))
+import qualified Infrastructure.Services.Sdek.Types.Config as Sdek (url)
 
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
 getDeliveryPoints city = do
   cfg <-  ask
-  let url = (T.unpack . _sdekUrl) cfg
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "Fetching SDEK city code for " <> city
   let cityUrl = "https://" <> url <> "/v2/location/cities"
@@ -104,7 +105,7 @@ data MinimalOrderRequestData = MinimalOrderRequestData
   , mordDeliveryPointCode :: Text
 
   , mordTariffCode :: Int
-  , mordShipmentPoint :: Text
+  , mordFromLocation :: SdekFromLocation
   , mordItems :: [OrderItem]
   }
 
@@ -119,14 +120,14 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Text -> MinimalOrderRequestData
-makeMinimalOrderRequestData OrderRequest {..} items tariffCode shipmentPoint =
+makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> SdekFromLocation -> MinimalOrderRequestData
+makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
   , mordDeliveryPointCode = fromMaybe orDeliveryPointId (T.stripPrefix "sdek_" orDeliveryPointId)
   , mordTariffCode = tariffCode
-  , mordShipmentPoint = shipmentPoint
+  , mordFromLocation = fromLocation
   , mordItems = items
   }
 
@@ -169,7 +170,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
         sorTariffCode = mordTariffCode -- e.g., "Посылка склад-ПВЗ"
       , sorRecipient = recipient
       , sorPackages = [package]
-      , sorShipmentPoint = mordShipmentPoint
+      , sorFromLocation = mordFromLocation
       , sorDeliveryPoint = mordDeliveryPointCode
       , sorServices = [SdekService INSURANCE (Just (T.pack (show (totalPrice + 1))))]
       }
@@ -178,7 +179,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
 registerOrder :: SdekOrderRequest -> AppM (Either SdekError UUID)
 registerOrder order = do
   cfg <-  ask
-  let url = (T.unpack . _sdekUrl) cfg
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   -- Step 1: Find the SDEK city code.
   $(logTM) InfoS $ logStr $ "registering order in sdek" <> show order
   let ordersUrl = show HTTPS <> url <> "/v2/orders"
@@ -220,7 +221,7 @@ getOrderStatus :: UUID -> AppM (Either SdekError SdekOrderStatusResponse)
 getOrderStatus uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
   cfg <-  ask
-  let url = (T.unpack . _sdekUrl) cfg
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
@@ -232,7 +233,7 @@ getOrdersInTransit :: UUID -> AppM (Either HttpError SdekOrderInTransitResponse)
 getOrdersInTransit uuid = do
   $(logTM) DebugS $ "Polling SDEK for status of order UUID: " <> ls (UUID.toText uuid)
   cfg <-  ask
-  let url = (T.unpack . _sdekUrl) cfg
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)

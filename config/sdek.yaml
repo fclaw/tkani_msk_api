@@ -1,0 +1,36 @@
+# In your main config file
+
+# ... other settings like database, server_port, etc.
+
+# Base URL for the SDEK API (can be test or prod)
+url: "api.cdek.ru"
+
+# Your API credentials for authentication
+credentials:
+  client_id: "YOUR_SDEK_CLIENT_ID"
+  client_secret: "YOUR_SDEK_CLIENT_SECRET"
+
+# Details about your office for courier pickup (from_location)
+sender_location:
+  # Full, detailed address for the courier. YES, include floor/office.
+  address: "г. Москва, ул. Тверская, д. 10, стр. 2, этаж 3, офис 305"
+  
+  # SDEK's internal numeric code for the city (44 for Moscow)
+  city_code: 44
+  
+  # Postal code is often mandatory
+  postal_code: "125009"
+
+# Your default tariff codes for different delivery types
+tariffs:
+  # Courier pickup -> Customer pickup at PVZ (Door-to-Warehouse)
+  door_to_warehouse: 138
+  
+
+# Your standard daily window for courier pickup requests
+pickup_window:
+  from: "18:00"
+  to: "19:00"
+
+# Business account number for reference
+account_number: "YOUR_SDEK_ACCOUNT_NUMBER"
