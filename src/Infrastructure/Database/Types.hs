@@ -119,7 +119,7 @@ data PatchedFabric =
      , prMediaGroupId :: Maybe Text   
      , prThumbnailUrl :: Maybe Text          
      , prMediaType :: Text
-     , prGalleryDate :: Day
+     , prGalleryDate :: Maybe Day
      } deriving (Show, Eq, Generic)
 
 

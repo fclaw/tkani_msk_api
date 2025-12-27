@@ -10,7 +10,7 @@ import Domain.Warehouse.Types (Fabric(..), FabricType(..))
 import  API.Types (RawIngestRequest (..))
 import Data.Int (Int32, Int64)
 import Data.Text (Text)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Control.Monad (void, when)
 import Data.Time (Day)
 
@@ -47,9 +47,10 @@ ingestFabricDB fabric req = do
       fromIntegral (fWidth fabric),    -- $11 the width of a fabric
       fIsSearchable fabric && 
       fType fabric == Roll,
-      if fType fabric == Roll then 
-        Just (rawGalleryDate req)
-      else Nothing  
+      if fType fabric == Roll &&
+         isJust (rawGalleryDate req) then 
+        rawGalleryDate req
+      else Nothing 
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -60,13 +61,13 @@ ingestFabricDB fabric req = do
       let isSearchable = 
              fIsSearchable fabric && 
              fType fabric == PreCut
-      let galleryDate = if fType fabric == PreCut then Just (rawGalleryDate req) else Nothing
+      let galleryDate = if fType fabric == PreCut && isJust (rawGalleryDate req) then rawGalleryDate req else Nothing
       fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable, galleryDate) insertPreCutQuery
     else return Nothing
 
   return $ case precutRes of
-     Nothing -> (parentId, article, isGalleryRoll)
-     Just (precutId, isGalleryPreCut) -> (precutId, article, isGalleryRoll || isGalleryPreCut)
+    Nothing -> (parentId, article, isGalleryRoll)
+    Just (precutId, isGalleryPreCut) -> (precutId, article, isGalleryRoll || isGalleryPreCut)
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
