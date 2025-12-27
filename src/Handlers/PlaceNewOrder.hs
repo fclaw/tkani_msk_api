@@ -60,6 +60,7 @@ import Text (encodeToText, tshow)
 import Domain.Warehouse.Types (FabricType (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
+import qualified Infrastructure.Services.Sdek.Types.State as Sdek
 
 
 
@@ -92,7 +93,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let tariffCode = Sdek.doorToWarehouse (Sdek.tariffs sdekConfig)
   let senderLocation = Sdek.senderLocation sdekConfig
   let fromLocation = 
-        Sdek.defSdekFromLocation 
+        Sdek.defSdekFromLocation
         { Sdek.sflAddress = Sdek.address senderLocation
         , Sdek.sflCode = Sdek.cityCode senderLocation
         , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation

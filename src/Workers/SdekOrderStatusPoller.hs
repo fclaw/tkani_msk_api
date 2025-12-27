@@ -39,7 +39,8 @@ orderStatusPoller = forever $ do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask
-  eUuids <- liftIO $ getOrdersInTransit [Registered, Paid, OnRoute, Delivered] pool
+  let requiredStatuses = [Registered, Paid, OnRoute, Delivered, PickedUpByCourier]
+  eUuids <- liftIO $ getOrdersInTransit requiredStatuses pool
   for_ eUuids $ \uuids ->
     void $ pooledForConcurrentlyN 3 uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
@@ -80,7 +81,8 @@ handleSdekFailure orderId uuid (NetworkError ex) =
       let code = statusCode (responseStatus response)
       -- SCENARIO A: FATAL ERROR (400 Bad Request)
       -- SDEK says: "I don't know this UUID".
-      if code == 400 then do
+      if code == 400 || 
+         code == 404 then do
          $(logTM) ErrorS $ ls $ "SDEK UUID " <> pack (show uuid) <> " is invalid or deleted. Stopping tracking."
          pool <- fmap _appDBPool ask
          ePair <- liftIO $ markOrderAsInvalid orderId uuid pool

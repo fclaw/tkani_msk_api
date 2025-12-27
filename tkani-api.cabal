@@ -21,6 +21,8 @@ library
       Infrastructure.Templating
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
+      Workers.SdekPickUpScheduler
+      Workers.SdekPickupRStatusPoller
       Infrastructure.Services.Overpass
       Application.Listener
       Application.Cart
@@ -31,6 +33,7 @@ library
       Concurrency
       Domain.Error
       Domain.Inventory
+      Domain.Services.Shipping
       Domain.Telegram.Types
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
@@ -62,7 +65,10 @@ library
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedDeliveryPoints
+      Infrastructure.Services.Sdek.Types.Courier
+      Infrastructure.Services.Sdek.Types.Error
       Infrastructure.Services.Sdek.Types.OrderInTransit
+      Infrastructure.Services.Sdek.Types.State
       Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Security

@@ -60,6 +60,8 @@ import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (orderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
+import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
+import Workers.SdekPickupRStatusPoller (pickupStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
@@ -73,6 +75,8 @@ data Workers =
       | Tinkoff 
       | CollageMaker 
       | CartsCleaner
+      | SdekPickUpScheduler
+      | PickupStatusPoller
 
 instance Show Workers where
   show WebServer = "Web Server"
@@ -80,6 +84,8 @@ instance Show Workers where
   show Tinkoff = "Tinkoff Poller"
   show CollageMaker = "Collage Maker"
   show CartsCleaner = "Carts Cleaner"
+  show SdekPickUpScheduler = "SDEK Pickup Scheduler"
+  show PickupStatusPoller = "SDEK Pickup Status Poller"
 
 
 methodsCors :: Middleware
@@ -287,26 +293,35 @@ main = do
                       tkaniApiProxy
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
-        -- Task 2: The SDEK Polling Worker
-        let sdekPoller = runInIO orderStatusPoller >>= showErrorInWorker Sdek
-        -- Task 2: The Tinkoff Polling Worker
-        let tinkoffPoller = runInIO paymentStatusPoller >>= showErrorInWorker Tinkoff
-        -- Task 3: Collage Maker
-        let connInfo = configConnInfo config
-        let collageMakerListener = do 
-              res <- runInIO (runCollageJobListener connInfo runInIO)
-              showErrorInWorker CollageMaker res
-        let cartsCleaner = do 
-              res <- runInIO runCartsCleaner
-              showErrorInWorker CartsCleaner res
 
         let tasks :: [(Workers, IO ())]
             tasks = 
               [ (WebServer, server)
-              , (Sdek, sdekPoller)
-              , (Tinkoff, tinkoffPoller)
-              , (CollageMaker, collageMakerListener)
-              , (CartsCleaner, cartsCleaner)
+              , (Sdek, 
+                 runInIO orderStatusPoller 
+                   >>= showErrorInWorker Sdek)
+              , (Tinkoff, 
+                 runInIO paymentStatusPoller 
+                   >>= showErrorInWorker 
+                        Tinkoff)
+              , (CollageMaker,
+                 let connInfo = configConnInfo config 
+                 in
+                   runInIO (runCollageJobListener connInfo runInIO)
+                     >>= showErrorInWorker 
+                          CollageMaker)
+              , (CartsCleaner, 
+                 runInIO runCartsCleaner 
+                   >>= showErrorInWorker 
+                       CartsCleaner)
+              , (SdekPickUpScheduler,
+                 runInIO runSdekPickUpScheduler 
+                   >>= showErrorInWorker 
+                        SdekPickUpScheduler)
+              , (PickupStatusPoller,
+                 runInIO pickupStatusPoller 
+                   >>= showErrorInWorker 
+                        PickupStatusPoller)          
               ]
 
         putStrLn "Spawning concurrent workers..."

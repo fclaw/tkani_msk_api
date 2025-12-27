@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TupleSections #-}
 
 
 module Infrastructure.Services.Sdek 
@@ -14,6 +15,8 @@ module Infrastructure.Services.Sdek
        , buildMinimalOderRequest
        , getOrderStatus
        , getOrdersInTransit
+       , scheduleSingleOrderCourier
+       , getPickupApplicationByUUID
        ) where
 
 import Data.Text (Text)
@@ -29,9 +32,13 @@ import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Data.Traversable (for)
+import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay)
+import Data.Bifunctor (second)
+
 
 import App (AppM, sdekAccessToken, _sdekConfig, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
 import API.Types
+import Text (tshow)
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import TH.Location (currentModule)
@@ -41,7 +48,9 @@ import Infrastructure.Services.Sdek.Types
 import Data.Maybe (fromMaybe)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 import Infrastructure.Database.Types (OrderItem (..))
-import qualified Infrastructure.Services.Sdek.Types.Config as Sdek (url)
+import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
+import Infrastructure.Services.Sdek.Types.Courier
+import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
 
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
@@ -238,3 +247,37 @@ getOrdersInTransit uuid = do
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
+
+
+scheduleSingleOrderCourier :: (Text, UUID) -> AppM (Either HttpError (Text, SdekCourierResponse))
+scheduleSingleOrderCourier (orderId, uuid) = do
+  $(logTM) InfoS $ ls $ "scheduling courier for order " <> orderId <> " with SDEK UUID " <> tshow uuid
+  today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
+  cfg <-  ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let courierUrl = show HTTPS <> url <> "/v2/intakes"
+  let httpManager = _configHttpManager cfg
+  let sdekConfig = _sdekConfig cfg
+  let sdekCourierRequest = 
+        SdekCallCourierRequest
+        { sccrOrderUuid = uuid
+        , sccrIntakeDate = tshow today
+        , sccrIntakeTimeFrom = Sdek.from (Sdek.pickupWindow sdekConfig)
+        , sccrIntakeTimeTo = Sdek.to (Sdek.pickupWindow sdekConfig)
+        , sccrSender = SdekCallCourierSender
+            { scsName = Sdek.name (Sdek.sender sdekConfig)
+            , scsPhones = [SenderPhone (Sdek.phone (Sdek.sender sdekConfig))]
+            }
+        }
+  let courierReq = getValidSdekToken >>= (_postReq' httpManager courierUrl sdekCourierRequest . Just . sdekAccessToken)
+  fmap (second (orderId,)) $ makeRequestWithRetries @SdekCourierResponse (Just (void $ getValidSdekToken)) courierReq
+
+getPickupApplicationByUUID :: UUID -> AppM (Either HttpError SdekPickupApplicationResponse)
+getPickupApplicationByUUID uuid = do
+  $(logTM) DebugS $ "Polling SDEK for pickup application UUID: " <> ls (UUID.toText uuid)
+  cfg <-  ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
+  let httpManager = _configHttpManager cfg
+  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
+  makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq

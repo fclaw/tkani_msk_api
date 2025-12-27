@@ -17,6 +17,8 @@ library:
     - Infrastructure.Templating
     - Workers.SdekOrderStatusPoller
     - Workers.TinkoffPaymentStatusPoller
+    - Workers.SdekPickUpScheduler
+    - Workers.SdekPickupRStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Listener
     - Application.Cart

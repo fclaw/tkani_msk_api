@@ -46,6 +46,12 @@ module Infrastructure.Database
   , patchRoll
   , patchPrecut
   , deleteFabric
+  , pickupOrdersForShipment
+  , createCourierPickup
+  , recordCourierPickupFailure
+  , recordCourierPickupFailureExt
+  , getPendingPickupRequests
+  , updatePickupStatus
   , module Types
   ) where
 
@@ -60,7 +66,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5, sel2)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -1284,3 +1290,140 @@ deleteFabric fabricId fabricType pool =
               AND pc.in_stock = TRUE
               AND pc.id <> up.pre_cut_id_just_updated)
           |]
+
+
+-- Statement takes () and returns a list of (orderId, sdekUuid)
+-- GUARD 1: TIME WINDOW CHECK (in Moscow Time)
+-- Convert the current time to 'Europe/Moscow' timezone before extracting the hour, MSK is UTC+3.
+-- GUARD 2: IDEMPOTENCY CHECK (also using Moscow Time for the date)
+pickupOrdersForShipment :: Day -> Int32 -> Int32 -> Hasql.Pool -> IO (Either Text [(Text, UUID)])
+pickupOrdersForShipment day from to pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      Hasql.statement (day, from, to) $
+       rmap V.toList $
+       [Hasql.vectorStatement|
+          SELECT 
+            id :: text, 
+            sdek_request_uuid :: uuid
+          FROM orders
+          WHERE status = 'paid'
+          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') >= $2 :: int4
+          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') < $3 :: int4
+          AND CAST(updated_at AT TIME ZONE 'Europe/Moscow' AS date) <= $1 :: date
+       |]
+
+
+upsertCourierPickupsStatement :: Hasql.Statement (V.Vector (UUID, Text, Day)) ()
+upsertCourierPickupsStatement =
+  lmap V.unzip3 $
+  [Hasql.resultlessStatement|
+    INSERT INTO courier_pickups (request_uuid, status, pickup_date)
+    SELECT
+        unnest_data.request_uuid,
+        CAST(unnest_data.status AS pickup_status),
+        unnest_data.pickup_date
+    FROM
+        UNNEST($1 :: uuid[], $2 :: text[], $3 :: date[])
+          AS unnest_data(request_uuid, status, pickup_date)
+    ON CONFLICT (request_uuid) DO UPDATE SET status = EXCLUDED.status
+  |]
+
+updateOrdersWithPickupUuidStatement :: Hasql.Statement (UUID, V.Vector Text) ()
+updateOrdersWithPickupUuidStatement =
+  [Hasql.resultlessStatement|
+    UPDATE orders
+    SET
+      courier_pickup_uuid = $1 :: uuid,
+      status = 'picked_up_by_courier' :: order_status
+    WHERE id = ANY($2 :: text[])
+  |]
+
+
+createCourierPickup :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> IO (Either Text ())
+createCourierPickup records date pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ do 
+      -- Prepare the data for the vector statements
+      let pickupData = V.fromList [(uuid, status, date) | (_, uuid, status) <- records]
+      let orderIds = V.fromList [orderId | (orderId, _, _) <- records]
+      let pickupUuid = sel2 (head records) -- Assuming all records in a batch share ONE pickup UUID
+
+      -- STEP 1: Insert all new pickup records.
+      -- This uses UNNEST to handle the vector of data.
+      Hasql.statement pickupData upsertCourierPickupsStatement
+
+      -- STEP 2: Update all associated orders to link them to this pickup.
+      Hasql.statement (pickupUuid, orderIds) updateOrdersWithPickupUuidStatement
+
+
+recordCourierPickupFailure :: UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+recordCourierPickupFailure uuid errorMsg pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ do
+      Hasql.statement (uuid, errorMsg)
+        [Hasql.resultlessStatement|
+          INSERT INTO courier_pickups 
+          (request_uuid, status, pickup_date, error_message)
+          VALUES ($1 :: uuid, 'invalid' :: pickup_status, current_date, $2 :: text)
+          ON CONFLICT (request_uuid) 
+          DO UPDATE
+          SET status = 'invalid' :: pickup_status,
+              error_message = $2 :: text
+        |]
+
+
+recordCourierPickupFailureExt :: Text -> UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+recordCourierPickupFailureExt orderId uuid errorMsg pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ do
+      Hasql.statement (orderId, uuid, errorMsg)
+        [Hasql.resultlessStatement|
+          WITH updated_order AS (
+            UPDATE orders 
+            SET status = 'paid'
+            WHERE id = $1 :: text
+          )
+          INSERT INTO courier_pickups 
+          (request_uuid, status, pickup_date, error_message)
+          VALUES (
+            $2 :: uuid,
+            'invalid' :: pickup_status, 
+            current_date,
+            $3 :: text)
+          ON CONFLICT (request_uuid) 
+          DO UPDATE
+          SET status = 'invalid' :: pickup_status,
+              error_message = $3 :: text
+        |]
+
+-- Statement takes () and returns a list of UUIDs to be checked.
+getPendingPickupRequests :: Hasql.Pool -> IO (Either Text [(UUID, Int64, Text, Text)])
+getPendingPickupRequests pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Read $ 
+      Hasql.statement () $
+        rmap V.toList $
+        [Hasql.vectorStatement|
+          SELECT
+            request_uuid :: uuid, 
+            internal_notification_message_id :: int8,
+            o.id :: text,
+            o.sdek_tracking_number :: text
+          FROM courier_pickups AS cp
+          JOIN orders AS o
+          ON o.courier_pickup_uuid = cp.request_uuid
+          WHERE cp.status IN ('accepted', 'waiting')
+          AND cp.created_at > NOW() - INTERVAL '3 days'
+        |]
+
+updatePickupStatus :: UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+updatePickupStatus uuid status pool = 
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement (uuid, status)
+        [Hasql.resultlessStatement|
+          UPDATE courier_pickups
+          SET status = CAST($2 :: text AS pickup_status)
+          WHERE request_uuid = $1 :: uuid
+        |]

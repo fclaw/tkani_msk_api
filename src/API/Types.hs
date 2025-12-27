@@ -235,20 +235,20 @@ data OrderStatus
   | Delivered           -- Customer has received the package.
   | Completed
   | Cancelled
-  | Cart                -- the order may consists of several fabrics, notion of cart with lifetime of 30 min
+  | PickedUpByCourier     -- the order has been picked up by the courier
   deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''OrderStatus)
 
 statusToSQL :: OrderStatus -> Text
 statusToSQL s = case s of
-    Registered -> "registered"
-    Paid       -> "paid"      -- Match your Postgres enum string EXACTLY
-    OnRoute    -> "on_route"
-    Delivered  -> "delivered"
-    Completed  -> "completed"
-    Cancelled  -> "cancelled"
-    Cart       -> "Cart"
+    Registered      -> "registered"
+    Paid            -> "paid"      -- Match your Postgres enum string EXACTLY
+    OnRoute         -> "on_route"
+    Delivered       -> "delivered"
+    Completed       -> "completed"
+    Cancelled       -> "cancelled"
+    PickedUpByCourier -> "picked_up_by_courier"
     -- etc...
 
 -- | Converts an OrderStatus into a human-readable, formatted Russian Text
@@ -257,23 +257,26 @@ formatStatus :: OrderStatus -> Text
 formatStatus status = case status of
   -- After packing, the order has been successfully registered with SDEK (via API),
   -- and a tracking number has been generated. Ready for courier pickup.
-  Registered -> "📝 ЗАРЕГИСТРИРОВАН В СЛУЖБЕ ДОСТАВКИ"
+  Registered        -> "📝 ЗАРЕГИСТРИРОВАН В СЛУЖБЕ ДОСТАВКИ"
 
   -- Payment is confirmed via Tinkoff webhook. Time to pick and pack.
-  Paid      -> "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
+  Paid              -> "✅ ОПЛАЧЕН, ГОТОВ К СБОРКЕ"
 
   -- The courier has scanned the package. It is now in transit.
-  OnRoute   -> "🚚 В ПУТИ"
+  OnRoute           -> "🚚 В ПУТИ"
 
   -- SDEK reports that the package has arrived at the final delivery point.
-  Delivered -> "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧИ"
+  Delivered         -> "📦 ДОСТАВЛЕН В ПУНКТ ВЫДАЧИ"
 
   -- The customer has physically picked up the order. The transaction is fully complete.
   -- This status might be set manually or via another SDEK webhook.
-  Completed -> "🏁 ЗАВЕРШЁН (ВЫДАН КЛИЕНТУ)"
+  Completed         -> "🏁 ЗАВЕРШЁН (ВЫДАН КЛИЕНТУ)"
   
   -- The order was cancelled.
-  Cancelled -> "❌ ОТМЕНЁН"
+  Cancelled         -> "❌ ОТМЕНЁН"
+
+  -- The courier has picked up the package from our warehouse.
+  PickedUpByCourier -> "📬 ЗАБРАН КУРЬЕРОМ"
 
 
 -- A record to hold all the necessary information for the final confirmation.

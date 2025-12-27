@@ -15,6 +15,9 @@ import Data.Text (Text)
 import Data.UUID (UUID, fromText)
 import qualified Data.Vector as V
 
+import Text (camelToSnake)
+import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
+
 
 -- | Internal data type to decode the city search response from SDEK.
 newtype SdekCity = SdekCity { code :: Int }
@@ -133,33 +136,6 @@ data SdekOrderRequest = SdekOrderRequest
 -- This instance converts Haskell's camelCase to SDEK's snake_case.
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sor" } ''SdekOrderRequest)
 
--- | ================================================================
--- | The Asynchronous Request State ENUM
--- | ================================================================
-
--- | Represents the state of an asynchronous request, as returned by SDEK.
-data SdekRequestState
-  = Accepted     -- "ACCEPTED":   Request is valid and queued for processing.
-  | Waiting      -- "WAITING":    Request is waiting for another request to complete.
-  | Successful   -- "SUCCESSFUL": The entity (e.g., order) was successfully created.
-  | Invalid      -- "INVALID":    The request failed deep validation.
-  | UnknownState Text -- A catch-all for any future statuses SDEK might add.
-  deriving (Show, Eq, Generic)
-
--- To parse this enum from SDEK's JSON strings, we need a custom FromJSON instance.
-instance FromJSON SdekRequestState where
-  parseJSON = withText "SdekRequestState" $ \t ->
-    pure $ case t of
-      "ACCEPTED"   -> Accepted
-      "WAITING"    -> Waiting
-      "SUCCESSFUL" -> Successful
-      "INVALID"    -> Invalid
-      -- This catch-all makes our parsing robust against API changes.
-      other        -> UnknownState other
-
--- to meet the derivation of SdekConfirmation
-instance ToJSON SdekRequestState where
-  toJSON _ = undefined
 
 -- | ================================================================
 -- | The Order Creation RESPONSE
@@ -255,3 +231,32 @@ instance FromJSON SdekPollingStatus where
         case fromText rawUuidText of
           Nothing -> fail $ errorMsg rawUuidText
           Just uuid -> pure uuid
+
+data SenderPhone = SenderPhone { spNumber :: Text }
+  deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 2 } ''SenderPhone)
+
+data SdekCallCourierSender = SdekCallCourierSender
+  { scsName  :: Text
+  , scsPhones :: [SenderPhone]
+  } deriving (Show, Eq, Generic)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''SdekCallCourierSender)
+
+-- | Request body for the "Call Courier" endpoint.
+data SdekCallCourierRequest = SdekCallCourierRequest
+  { -- | The UUID of the order for which we are requesting a courier pickup.
+    sccrOrderUuid      :: UUID
+    -- | The desired date for the courier to arrive (YYYY-MM-DD).
+  , sccrIntakeDate     :: Text
+    -- | The start of the pickup time window (HH:MM).
+  , sccrIntakeTimeFrom :: Text
+    -- | The end of the pickup time window (HH:MM).
+  , sccrIntakeTimeTo   :: Text
+    -- You would also include sender info here if not linked to the order
+  , sccrSender         :: SdekCallCourierSender
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''SdekCallCourierRequest)

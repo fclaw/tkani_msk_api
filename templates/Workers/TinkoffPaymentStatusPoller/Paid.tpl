@@ -1,2 +1,2 @@
 ✅ Paid (#paid)
-‼️ @DedUIIIKa
+‼️ @sclaw
