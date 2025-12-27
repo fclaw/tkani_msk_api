@@ -207,7 +207,7 @@ getFabricPreview fabricId fabricType threshold pool =
     runTransaction pool Hasql.Read $
       (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
-putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text (Int64, Text))
+putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text (Int64, Text, Bool))
 putNewFabric fabric req pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $
@@ -1186,13 +1186,13 @@ getOrderItemsForAdjustStatement =
   |]
 
 
-patchRoll :: PatchedFabric -> Hasql.Pool -> IO (Either Text ())
+patchRoll :: PatchedFabric -> Hasql.Pool -> IO (Either Text Bool)
 patchRoll fabric pool = 
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
-        [Hasql.resultlessStatement|
+        [Hasql.singletonStatement|
           UPDATE fabrics 
           SET
             description = $2 :: text,
@@ -1213,15 +1213,20 @@ patchRoll fabric pool =
               LIMIT 1),
             updated_at = now()
           WHERE id = $1 :: int8
+          RETURNING EXISTS (
+            SELECT 1
+            FROM daily_digests 
+            WHERE announcement_date = $12 :: date
+          ) :: bool
         |]
 
-patchPrecut :: PatchedFabric -> Hasql.Pool -> IO (Either Text ())
+patchPrecut :: PatchedFabric -> Hasql.Pool -> IO (Either Text Bool)
 patchPrecut fabric pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
-        [Hasql.resultlessStatement|
+        [Hasql.singletonStatement|
           WITH new_precut AS (
             UPDATE pre_cuts
             SET
@@ -1246,6 +1251,11 @@ patchPrecut fabric pool =
             media_type = $11 :: text,
             updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
+          RETURNING EXISTS (
+            SELECT 1
+            FROM daily_digests 
+            WHERE announcement_date = $12 :: date
+          ) :: bool
         |]
 
 deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> IO (Either Text ())

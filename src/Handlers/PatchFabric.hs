@@ -38,12 +38,12 @@ handler fabricId rawIngestReq = do
     let pool = _appDBPool cfg
     -- 3. Run the database query inside our AppM monad using liftIO
     $(logTM) DebugS $ "Querying database for patching a fabric"
-    let resp = NewFabric fabricId (fType fabric) $ fromMaybe undefined (fArticle fabric)
+    let resp = NewFabric fabricId (fType fabric) (fromMaybe undefined (fArticle fabric)) 
     let patchedFabric = mkPatchedFabric fabricId fabric rawIngestReq
     $(logTM) DebugS $ ls $ "patched fabric: " <> show patchedFabric
     eDbRes <- if fType fabric == Roll then
       liftIO $ patchRoll patchedFabric pool
      else liftIO $ patchPrecut patchedFabric pool
-    return $ first (ApiError "server error") $ (second (const resp)) eDbRes
+    return $ first (ApiError "server error") $ (second resp) eDbRes
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res    

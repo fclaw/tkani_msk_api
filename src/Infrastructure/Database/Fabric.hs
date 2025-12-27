@@ -18,7 +18,7 @@ import Text (encodeToText)
 
 
 -- | Main Entry Point
-ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction (Int64, Text)
+ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction (Int64, Text, Bool)
 ingestFabricDB fabric req = do
   -- 1. Calculate 'Per Meter' properties for the Parent Fabric
   -- If it's a pre-cut, derive the meter price so the parent table stays consistent.
@@ -32,7 +32,7 @@ ingestFabricDB fabric req = do
   -- If New: Insert it.
   let rollLength | fType fabric == Roll = fLength fabric
                  | otherwise = 0.0
-  (parentId, article) <- 
+  (parentId, article, isGalleryRoll) <- 
     Hasql.statement (
       fArticle fabric,                 -- $1 Article (Unique Key)
       fName fabric,                    -- $2 Name
@@ -53,7 +53,7 @@ ingestFabricDB fabric req = do
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
-  precut_id <-
+  precutRes <-
     if fType fabric == PreCut then do
       let len = fLength fabric
       let total = fPrice fabric
@@ -63,7 +63,10 @@ ingestFabricDB fabric req = do
       let galleryDate = if fType fabric == PreCut then Just (rawGalleryDate req) else Nothing
       fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable, galleryDate) insertPreCutQuery
     else return Nothing
-  return $ (fromMaybe parentId precut_id, article)
+
+  return $ case precutRes of
+     Nothing -> (parentId, article, isGalleryRoll)
+     Just (precutId, isGalleryPreCut) -> (precutId, article, isGalleryRoll || isGalleryPreCut)
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
@@ -83,7 +86,7 @@ upsertFabricQuery
      , Maybe Text
      , Int32
      , Bool
-     , Maybe Day) (Int64, Text)
+     , Maybe Day) (Int64, Text, Bool)
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -141,10 +144,17 @@ upsertFabricQuery =
         updated_at = NOW(),
         in_stock = TRUE,
         is_sold = FALSE
-    RETURNING id :: int8, article :: text
+    RETURNING 
+      id :: int8, 
+      article :: text, 
+      EXISTS (
+        SELECT 1
+        FROM daily_digests 
+        WHERE announcement_date = $13 :: date?
+      ) :: bool
 |]
 
-insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool, Maybe Day) Int64
+insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool, Maybe Day) (Int64, Bool)
 insertPreCutQuery = 
   [Hasql.singletonStatement| 
     INSERT INTO pre_cuts 
@@ -165,5 +175,11 @@ insertPreCutQuery =
     DO UPDATE SET
       is_searchable = EXCLUDED.is_searchable,
       in_stock = TRUE
-    RETURNING id :: int8
+    RETURNING 
+      id :: int8,
+      EXISTS (
+        SELECT 1
+        FROM daily_digests 
+        WHERE announcement_date = $5 :: date?
+      ) :: bool
   |]

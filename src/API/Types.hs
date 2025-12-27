@@ -103,6 +103,7 @@ data NewFabric =
      { nfId :: Int64
      , nfType :: FabricType
      , nfArticle :: Text
+     , nfIsGallery :: Bool
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "nf" } ''NewFabric)

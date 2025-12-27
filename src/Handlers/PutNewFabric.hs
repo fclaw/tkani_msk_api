@@ -25,6 +25,10 @@ import Domain.Warehouse.Types (Fabric (..), FabricType (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
+uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (x1, x2, x3) = f x1 x2 x3
+
+
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
 handler :: RawIngestRequest -> AppM (ApiResponse NewFabric)
@@ -71,12 +75,12 @@ handler rawIngestReq = do
           else do
             dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
             when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-            let mkNewFabric id art = NewFabric id (fType fabric) art
-            return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes
+            let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
+            return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes
       else do
         dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
         when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-        let mkNewFabric id art = NewFabric id (fType fabric) art
-        return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes 
+        let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
+        return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes 
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res
