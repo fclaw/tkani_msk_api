@@ -45,8 +45,7 @@ prepareAndSchedulePickup = do
     let pool = _appDBPool cfg
     let minCourierPickup = pickupMinimum . _sdekConfig $ cfg
     let fromTime = fromIntegral . fromMaybe (error "cannot parse hour") . parseHour . from . pickupWindow . _sdekConfig $ cfg
-    let toTime = fromIntegral . fromMaybe (error "cannot parse hour") . parseHour . to . pickupWindow . _sdekConfig $ cfg
-    eOrdersToSchedule <- liftIO $ pickupOrdersForShipment today fromTime toTime pool
+    eOrdersToSchedule <- liftIO $ pickupOrdersForShipment (fromTime - 1) pool
     case eOrdersToSchedule of
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->

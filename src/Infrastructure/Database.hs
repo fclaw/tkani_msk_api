@@ -1293,26 +1293,32 @@ deleteFabric fabricId fabricType pool =
 
 
 -- Statement takes () and returns a list of (orderId, sdekUuid)
--- GUARD 1: TIME WINDOW CHECK (in Moscow Time)
--- Convert the current time to 'Europe/Moscow' timezone before extracting the hour, MSK is UTC+3.
--- GUARD 2: IDEMPOTENCY CHECK (also using Moscow Time for the date)
-pickupOrdersForShipment :: Day -> Int32 -> Int32 -> Hasql.Pool -> IO (Either Text [(Text, UUID)])
-pickupOrdersForShipment day from to pool =
+-- explanation:
+-- This statement selects all orders that are in 'paid' status and are ready to be picked up by the courier.
+-- time gate is applied based on the current hour in 'Europe/Moscow' timezone at least one hour earlier than the time of courier arrival.
+-- It uses a CTE (Common Table Expression) to first select the eligible orders and locks them for update 
+pickupOrdersForShipment :: Int32 -> Hasql.Pool -> IO (Either Text [(Text, UUID)])
+pickupOrdersForShipment hourToStart pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Read $ 
-      Hasql.statement (day, from, to) $
+      Hasql.statement hourToStart $
        rmap V.toList $
        [Hasql.vectorStatement|
-          SELECT 
-            id :: text, 
-            sdek_request_uuid :: uuid
+         WITH paid_orders_to_schedule AS (
+          SELECT id
           FROM orders
-          WHERE status = 'paid'
-          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') >= $2 :: int4
-          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') < $3 :: int4
-          AND CAST(updated_at AT TIME ZONE 'Europe/Moscow' AS date) <= $1 :: date
+          WHERE 
+            status = 'paid'
+            AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') = $1 :: int4
+          FOR UPDATE SKIP LOCKED
+         ) 
+         UPDATE orders
+         SET 
+           status = 'picked_up_by_courier',
+           updated_at = NOW()
+         WHERE id IN (SELECT id FROM paid_orders_to_schedule)
+         RETURNING id :: text, sdek_request_uuid :: uuid
        |]
-
 
 upsertCourierPickupsStatement :: Hasql.Statement (V.Vector (UUID, Text, Day)) ()
 upsertCourierPickupsStatement =
