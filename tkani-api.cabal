@@ -49,6 +49,7 @@ library
       Handlers.GetDeliveryPoints
       Handlers.GetFabricPreview
       Handlers.GetProviders
+      Handlers.MeasureOrder
       Handlers.PatchFabric
       Handlers.PlaceNewOrder
       Handlers.PutNewFabric

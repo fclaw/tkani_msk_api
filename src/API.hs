@@ -147,6 +147,13 @@ data Routes route = Routes
        :- "cart"
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ViewCart)
+  , _measureOrder
+       :: route
+       :- "warehouse"
+       :> "orders"
+       :> "measure"
+       :> ReqBody '[JSON] MeasureRequest
+       :> Post '[JSON] (ApiResponse MeasureResponse)    
   } deriving (Generic)
 
 

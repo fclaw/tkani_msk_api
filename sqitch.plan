@@ -22,3 +22,4 @@
 00019.new_function 2025-12-21T16:12:20Z System Administrator <root@Sonny.local> # new collage function
 00020.new_function 2025-12-25T12:08:39Z System Administrator <root@Sonny.local> # fabric: catalog id
 00021.new_status 2025-12-26T08:51:41Z System Administrator <root@Sonny.local> # order: new pick-up by courier
+00022.new_field 2025-12-28T06:16:36Z System Administrator <root@Sonny.local> # has_dimensions_and_weight in order

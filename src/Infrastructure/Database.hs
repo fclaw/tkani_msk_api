@@ -52,6 +52,7 @@ module Infrastructure.Database
   , recordCourierPickupFailureExt
   , getPendingPickupRequests
   , updatePickupStatus
+  , markedOrderAsMeasured
   , module Types
   ) where
 
@@ -1320,8 +1321,9 @@ pickupOrdersForShipment hourToStart pool =
           WHERE 
             status = 'paid'
             AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') = $1 :: int4
+            AND is_measured = TRUE
           FOR UPDATE SKIP LOCKED
-         ) 
+         )
          UPDATE orders
          SET 
            status = 'picked_up_by_courier',
@@ -1443,3 +1445,15 @@ updatePickupStatus uuid status pool =
           SET status = CAST($2 :: text AS pickup_status)
           WHERE request_uuid = $1 :: uuid
         |]
+
+markedOrderAsMeasured :: Text -> Hasql.Pool -> IO (Either Text Bool)
+markedOrderAsMeasured trackingN pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement trackingN $
+        rmap (> 0) $
+        [Hasql.rowsAffectedStatement|
+          UPDATE orders
+          SET is_measured = TRUE,
+              updated_at = NOW()
+          WHERE sdek_tracking_number = $1 :: text|]

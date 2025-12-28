@@ -481,3 +481,18 @@ data ViewCart =
      }  deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "vc" } ''ViewCart)
+
+
+data MeasureRequest =
+     MeasureRequest
+     { mrTrackingNumber :: Text
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "mr" } ''MeasureRequest)
+
+data MeasureResponse =
+     MeasureResponse
+     { mresIsMeasured :: Bool
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "mres" } ''MeasureResponse)
