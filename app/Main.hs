@@ -62,6 +62,7 @@ import Workers.SdekOrderStatusPoller (orderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
 import Workers.SdekPickupRStatusPoller (pickupStatusPoller)
+import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
@@ -77,6 +78,7 @@ data Workers =
       | CartsCleaner
       | SdekPickUpScheduler
       | PickupStatusPoller
+      | SdekStatusPoller
 
 instance Show Workers where
   show WebServer = "Web Server"
@@ -86,6 +88,7 @@ instance Show Workers where
   show CartsCleaner = "Carts Cleaner"
   show SdekPickUpScheduler = "SDEK Pickup Scheduler"
   show PickupStatusPoller = "SDEK Pickup Status Poller"
+  show SdekStatusPoller = "SDEK Status Poller"
 
 
 methodsCors :: Middleware
@@ -217,6 +220,7 @@ main = do
       warehouseChatId <- fmap read $ getEnv "WAREHOUSE_CHANNEL_ID"
       mainChatId <- fmap read $ getEnv "MAIN_CHANNEL_ID"
       orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
+      yamlOrderChatId <- fmap read $ getEnv "YAML_ORDER_CHAT_ID"
       thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
       tinkoffTerminalKey <- fmap pack $ getEnv "TINKOFF_TERMINAL_KEY"
       tinkoffSecret <- fmap pack $ getEnv "TINKOFF_SECRET"
@@ -244,7 +248,8 @@ main = do
                   [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
                    (ORDER, (orderBotToken, orderChatId)),
                    (WAREHOUSE, (warehouseBotToken, warehouseChatId)),
-                   (MAIN, (conciergeBotToken, mainChatId))
+                   (MAIN, (conciergeBotToken, mainChatId)),
+                   (YAML_ORDER, (warehouseBotToken, yamlOrderChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
@@ -260,13 +265,16 @@ main = do
             , _messageNotFound = messageNotFound
             }
 
-      tchan <- newTChanIO
+      tinkoffPaymentChan <- newTChanIO
+      appSdekChan <- newTChanIO
+
       let state =
            State 
            { _sdekToken = Nothing
            , _pointCache = mempty
            , _sdekPromises = mempty
-           , _tinkoffPaymentChan = tchan
+           , _tinkoffPaymentChan = tinkoffPaymentChan
+           , _appSdekChan = appSdekChan
            , _metroStations = []
            }
       initialState <- newTVarIO state
@@ -321,7 +329,11 @@ main = do
               , (PickupStatusPoller,
                  runInIO pickupStatusPoller 
                    >>= showErrorInWorker 
-                        PickupStatusPoller)          
+                        PickupStatusPoller)
+              , (SdekStatusPoller,
+                 runInIO runSdekStatusPoller 
+                   >>= showErrorInWorker 
+                        SdekStatusPoller)
               ]
 
         putStrLn "Spawning concurrent workers..."

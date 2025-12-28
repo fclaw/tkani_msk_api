@@ -21,6 +21,7 @@ module App
   ChatKey (..),
   TinkoffCredentials (..),
   Scheme (..),
+  SdekJob (..),
   currentTime,
   render,
   runAppM
@@ -52,6 +53,7 @@ import Data.Time (UTCTime)
 import qualified Data.HashSet as HS
 import Control.Concurrent (MVar)
 import Data.UUID (UUID)
+import Control.Concurrent.STM.TMVar (TMVar)
 
 -- Katip imports
 import Katip
@@ -120,6 +122,15 @@ data SdekFinalResult =
 -- The map from SDEK's tracking UUID to the MVar "promise".
 type SdekPromiseMap = HM.HashMap UUID (MVar SdekFinalResult)
 
+-- The TMVar will hold the final result
+type ReplyVar = TMVar (Either Text Text)
+
+-- The job passed to the poller
+data SdekJob = SdekJob
+  { sjSdekUuid :: UUID
+  , sjReplyVar :: ReplyVar -- The reply box
+  }
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
@@ -127,6 +138,7 @@ data State = State
   , _pointCache :: PointCache
   , _sdekPromises :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (Text, GetStateRequest)
+  , _appSdekChan :: TChan SdekJob
   , _metroStations :: [MetroStation]
   }
 
@@ -136,6 +148,7 @@ data ChatKey =
       | CONCIERGE 
       | WAREHOUSE
       | MAIN
+      | YAML_ORDER
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int)

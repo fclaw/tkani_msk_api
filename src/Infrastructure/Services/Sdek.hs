@@ -13,6 +13,7 @@ module Infrastructure.Services.Sdek
        , registerOrder
        , makeMinimalOrderRequestData
        , buildMinimalOderRequest
+       , makeMinimalYamlOrderRequestData
        , getOrderStatus
        , getOrdersInTransit
        , scheduleSingleOrderCourier
@@ -134,11 +135,41 @@ makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
-  , mordDeliveryPointCode = fromMaybe orDeliveryPointId (T.stripPrefix "sdek_" orDeliveryPointId)
+  , mordDeliveryPointCode = 
+      fromMaybe 
+        orDeliveryPointId 
+        (T.stripPrefix "sdek_" orDeliveryPointId)
   , mordTariffCode = tariffCode
   , mordFromLocation = fromLocation
   , mordItems = items
   }
+
+makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> SdekFromLocation -> MinimalOrderRequestData
+makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation =
+  let indexedItems = zip [1 ..] yorItems
+      items = 
+         flip map indexedItems $ \(idx, YamlOrderItem {..}) ->
+            OrderItem
+            { oiName = yoiName
+            , oiArticle = "ART-" <> tshow idx <> "-MAN"
+            , oiFabricType = yoiFabricType
+            , oiPricePerMetre = yoiPricePerMetre
+            , oiTotalPrice = yoiTotalPrice
+            , oiLengthM = yoiLengthM
+            , oiTelegramUrl = mempty
+            }
+  in
+    MinimalOrderRequestData 
+    { mordName = yorCustomerFullName
+    , mordPhone = yorCustomerPhone
+    , mordDeliveryPointCode = 
+        fromMaybe 
+          yorDeliveryPointId 
+          (T.stripPrefix "sdek_" yorDeliveryPointId)
+    , mordTariffCode = tariffCode
+    , mordFromLocation = fromLocation
+    , mordItems = items
+    }
 
 -- | Builds the minimal SdekOrderRequest payload needed to register an order.
 --   Offloads address/item details to be filled in manually later.

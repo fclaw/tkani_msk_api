@@ -25,6 +25,7 @@ import Text (camelToSnake, recordLabelModifier)
 import Domain.Warehouse.Types (FabricType)
 
 
+
 -- | A standard structure for an error response.
 data ApiError = ApiError
   { errorCode    :: Text -- A machine-readable error code, e.g., "product_not_found"
@@ -496,3 +497,34 @@ data MeasureResponse =
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "mres" } ''MeasureResponse)
+
+
+data YamlOrderItem =
+      YamlOrderItem
+     {
+       yoiName          :: Text
+     , yoiFabricType    :: FabricType  
+     , yoiPricePerMetre :: Maybe Double 
+     , yoiTotalPrice    :: Double
+     , yoiLengthM       :: Maybe Double
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yoi" } ''YamlOrderItem)
+
+data YamlOrderRequest =
+     YamlOrderRequest
+     { yorCustomerFullName :: Text
+     , yorCustomerPhone :: Text
+     , yorDeliveryPointId :: Text
+     , yorDeliveryProviderId :: Providers
+     , yorItems :: [YamlOrderItem]
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yor" } ''YamlOrderRequest)
+
+data YamlOrderResponse =
+     YamlOrderResponse
+     { yorOrderId :: Text
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yor" } ''YamlOrderResponse)

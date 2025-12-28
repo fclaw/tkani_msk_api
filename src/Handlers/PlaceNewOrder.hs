@@ -24,23 +24,24 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Control.Monad.Trans.Except
 import Data.Either (isLeft)
+import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.State.Class (get)
 import Control.Monad.Reader.Class (ask)
 import System.Timeout (timeout)
-import Control.Concurrent (threadDelay)
 import Data.List (find)
 import Data.Coerce (coerce)
 import Data.Int (Int64)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import Data.Aeson.Encode.Pretty (encodePretty)
+import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
 
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig)
+import App (AppM, SdekJob (..), currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig, _appSdekChan)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -60,13 +61,12 @@ import Text (encodeToText, tshow)
 import Domain.Warehouse.Types (FabricType (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
-import qualified Infrastructure.Services.Sdek.Types.State as Sdek
 
 
 
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
-  | SdekConfirmationTimeout                -- The poller took too long to get a final status
+  | SdekConfirmationTimeout -- SDEK did not confirm the order within the timeout period
   | TinkoffHttpError HttpError     -- Failed to create a payment link
   | TinkoffPaymentLinkFailed Text     -- Failed to create a payment link with a textual error
   | TinkoffQrCodeFailed Text         -- Failed to generate QR code
@@ -78,9 +78,6 @@ data PlaceOrderError
 
 
 wrap action error = withExceptT error (ExceptT action)
-
-sec :: Int
-sec = 1000000
 
 
 placeOrder :: OrderRequest -> MVar MessageIdResponse -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
@@ -110,13 +107,8 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
 
   -- This is the action for our background poller thread.
-  let thirtySeconds = 30 * sec
-  let pollerAction = pollForSingleOrder cfg st trackingUuid
-  -- We add a 30-second timeout to prevent the request from hanging forever.
-  let maybeToEither (Just v) = Right v
-      maybeToEither Nothing = Left ()
   lift $ $(logTM) InfoS $ "poller tries calling sdek for the final confirmation"
-  ePollerRes <- wrap (liftIO (fmap maybeToEither (timeout thirtySeconds pollerAction))) (const SdekConfirmationTimeout)
+  ePollerRes <- fetchOrderPollerRes trackingUuid
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
   
   -- STEP B. Generate the payment link
@@ -203,41 +195,28 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
 
   return OrderConfirmationDetails {..}
 
-pollForSingleOrder cfg st uuid = do
-  eRes <- runAppM cfg st (Sdek.getOrderStatus uuid)
-  case eRes of
-    Left err -> pure $ Left $ tshow err
-    Right (Right resp) -> do
-      case Sdek.sosrRequests resp of
-        [] -> do
-          let errMsg = Sdek.SdekError Sdek.unexpected_response $ "SDEK status response did not contain " <> UUID.toText uuid
-          log ErrorS $ ": " <> Sdek.seMessage errMsg
-          pure $ Left $ tshow [errMsg]
-        (reqStatus : _) ->
-          case Sdek.spsState 
-               reqStatus of
-            Sdek.Accepted -> do
-              -- The order is still processing. Wait and recurse.
-              log DebugS $ ": Status is still ACCEPTED. Retrying..."
-              threadDelay (3 * 1000000) -- Wait 3 seconds
-              pollForSingleOrder cfg st uuid
-            Sdek.Invalid -> do
-              -- FINAL STATE: SDEK rejected the order.
-              let errors = Sdek.spsErrors reqStatus
-              log WarningS $ " resulted in INVALID state. Errors: " <> tshow errors
-              -- Return the error result, which stops the loop.
-              pure $ Left $ tshow errors
-            Sdek.Successful -> do
-              -- FINAL STATE: SDEK accepted the order!
-              let trackingNumber = fromJust $ Sdek.sosrCdekNumber resp -- As you noted
-              log InfoS $ " resulted in SUCCESSFUL state. Tracking number: " <> trackingNumber
-              pure $ Right trackingNumber
-            other -> do
-              let errMsg = Sdek.SdekError Sdek.unexpected_response ("SDEK returned an unexpected final status: " <> tshow other)
-              log ErrorS $ ": " <> Sdek.seMessage errMsg
-              pure $ Left $ tshow [errMsg]
-    Right (Left err) -> pure $ Left $ tshow err
-  where log severity msg = runAppM cfg st $ $(logTM) severity $ logStr $ "Polling " <> UUID.toText uuid <> msg
+fetchOrderPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text Text)
+fetchOrderPollerRes uuid = do
+  st <- get
+  inChan <- fmap _appSdekChan $ liftIO $ atomically $ readTVar st -- The poller's INput chan
+  -- 1. Create a new, empty TMVar for the reply
+  replyVar <- liftIO newEmptyTMVarIO
+
+  -- 2. Create the job and put it on the poller's queue
+  let job = SdekJob uuid replyVar
+  liftIO $ atomically $ writeTChan inChan job
+
+  -- 3. Block and wait for the result to appear in our reply box
+  -- We use a timeout to prevent waiting forever.
+  mResult <- liftIO $ timeout (30 * 1000000) $ atomically $ takeTMVar replyVar
+
+  -- 4. Handle the outcome
+  case mResult of
+    -- Timeout occurred
+    Nothing -> throwE SdekConfirmationTimeout
+        
+    -- We got a result from the poller
+    Just result -> return result
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.

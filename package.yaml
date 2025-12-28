@@ -19,6 +19,7 @@ library:
     - Workers.TinkoffPaymentStatusPoller
     - Workers.SdekPickUpScheduler
     - Workers.SdekPickupRStatusPoller
+    - Workers.SdekStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Listener
     - Application.Cart

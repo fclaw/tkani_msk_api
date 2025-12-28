@@ -23,6 +23,7 @@ library
       Workers.TinkoffPaymentStatusPoller
       Workers.SdekPickUpScheduler
       Workers.SdekPickupRStatusPoller
+      Workers.SdekStatusPoller
       Infrastructure.Services.Overpass
       Application.Listener
       Application.Cart
@@ -52,6 +53,7 @@ library
       Handlers.MeasureOrder
       Handlers.PatchFabric
       Handlers.PlaceNewOrder
+      Handlers.PlaceYamlOrder
       Handlers.PutNewFabric
       Handlers.SearchFabricCard
       Handlers.SearchFabrics

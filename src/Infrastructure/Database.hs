@@ -53,6 +53,8 @@ module Infrastructure.Database
   , getPendingPickupRequests
   , updatePickupStatus
   , markedOrderAsMeasured
+   -- yaml order
+  , placeNewYamlOrder
   , module Types
   ) where
 
@@ -67,7 +69,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5, sel2)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5, sel2, del9)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -1457,3 +1459,41 @@ markedOrderAsMeasured trackingN pool =
           SET is_measured = TRUE,
               updated_at = NOW()
           WHERE sdek_tracking_number = $1 :: text|]
+
+
+placeNewYamlOrder :: Order -> Hasql.Pool -> IO (Either Text Text)
+placeNewYamlOrder order pool =
+  fmap (first (pack . show)) $ 
+    runTransaction pool Hasql.Write $ 
+      Hasql.statement order $
+        lmap (del9 . $(recordToTuple ''Order))
+        [Hasql.singletonStatement|
+          INSERT INTO orders (
+            id,
+            customer_full_name,
+            customer_phone,
+            delivery_provider_id,
+            delivery_point_id,
+            sdek_request_uuid,
+            sdek_tracking_number,
+            internal_notification_message_id,
+            created_at,
+            updated_at,
+            status
+            ) VALUES (
+            $1 :: text,
+            $2 :: text,
+            $3 :: text,
+            $4 :: text,
+            $5 :: text,
+            $6 :: uuid,
+            $7 :: text,
+            $8 :: int8,
+            now(),
+            now(),
+            'registered'
+            )
+            RETURNING id :: text
+        |]
+
+        

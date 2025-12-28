@@ -32,6 +32,7 @@ import qualified Handlers.ViewCart as ViewCart
 import qualified Handlers.PatchFabric as PatchFabric
 import qualified Handlers.DeleteFabric as DeleteFabric
 import qualified Handlers.MeasureOrder as MeasureOrder
+import qualified Handlers.PlaceYamlOrder as PlaceYamlOrder
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -58,4 +59,5 @@ apiHandlers = Routes
   , _patchFabric = PatchFabric.handler
   , _deleteFabric = DeleteFabric.handler
   , _measureOrder = MeasureOrder.handler
+  , _placeYamlOrder = PlaceYamlOrder.handler
   }
