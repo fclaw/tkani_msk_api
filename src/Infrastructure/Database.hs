@@ -284,6 +284,7 @@ placeNewOrderStatement =
        sdek_request_uuid,
        sdek_tracking_number,
        internal_notification_message_id,
+       tariff,
        created_at,
        updated_at,
        status
