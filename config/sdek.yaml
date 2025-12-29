@@ -22,11 +22,14 @@ sender_location:
   # Postal code is often mandatory
   postal_code: "111123"
 
+drop_off_point: MSK36
+
+
 # Your default tariff codes for different delivery types
 tariffs:
   # Courier pickup -> Customer pickup at PVZ (Door-to-Warehouse)
-  door_to_warehouse: 138
-  
+  - 136
+  - 138
 
 # Your standard daily window for courier pickup requests
 pickup_window:

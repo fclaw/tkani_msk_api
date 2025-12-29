@@ -216,14 +216,15 @@ instance FromJSON ProviderInfo where
 -- This is the data structure your bot will build and send to the API.
 data OrderRequest = OrderRequest
   { -- Customer & Delivery Information
-    orTelegramUserId   :: Int64 
-  , orCustomerFullName :: Text       -- Full name as a single string (e.g., "Иванов Иван Иванович").
-  , orCustomerPhone    :: Text       -- Phone number, normalized (e.g., "+79211234567").
+    orTelegramUserId     :: Int64 
+  , orCustomerFullName   :: Text       -- Full name as a single string (e.g., "Иванов Иван Иванович").
+  , orCustomerPhone      :: Text       -- Phone number, normalized (e.g., "+79211234567").
   
     -- delivery provider info
   , orDeliveryProviderId :: Providers  -- The code for the provider, e.g., "sdek".
   , orDeliveryPointId    :: Text       -- The unique ID of the chosen delivery point.
-  , orChatId      :: Int64
+  , orChatId             :: Int64
+  , orTariff             :: Int
   } deriving (Show, Generic)
 
 -- We'll need ToJSON/FromJSON instances for this to be sent over the API
@@ -518,6 +519,7 @@ data YamlOrderRequest =
      , yorDeliveryPointId :: Text
      , yorDeliveryProviderId :: Providers
      , yorItems :: [YamlOrderItem]
+     , yorTariff :: Int
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yor" } ''YamlOrderRequest)

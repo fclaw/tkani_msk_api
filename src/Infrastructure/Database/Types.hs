@@ -26,26 +26,27 @@ import API.Types (RawIngestRequest (..), MediaType)
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
 data Order = Order
   { -- | Primary key. The unique, human-friendly ID (e.g., "ORD-YYYYMMDD-XXXXXX").
-    _orderId                          :: Text
+    _orderId                            :: Text
 
     -- | Customer and delivery information gathered from the bot.
-  , _orderCustomerFullName            :: Text
-  , _orderCustomerPhone               :: Text
-  , _orderDeliveryProviderId          :: Text
-  , _orderDeliveryPointId             :: Text
+  , _orderCustomerFullName              :: Text
+  , _orderCustomerPhone                 :: Text
+  , _orderDeliveryProviderId            :: Text
+  , _orderDeliveryPointId               :: Text
 
     -- | The tracking UUID returned by SDEK's asynchronous registration.
     --   This is used by the polling worker.
-  , _orderSdekRequestUuid             :: UUID
+  , _orderSdekRequestUuid               :: UUID
 
     -- | The permanent, official SDEK tracking number, received when registration is 'SUCCESSFUL'.
-  , _orderSdekTrackingNumber          :: Text
+  , _orderSdekTrackingNumber            :: Text
 
     -- | The Telegram 'message_id' of the notification in the internal orders channel.
     --   Used to edit the message to update the status.
   , _orderInternalNotificationMessageId :: Int64
 
   , _orderTelegramUserId                :: Int64
+  , _orderTariff                        :: Int32
   } deriving (Show, Eq, Generic)
 
 -- This Template Haskell splice automatically generates lenses for each field.

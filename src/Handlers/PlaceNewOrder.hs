@@ -67,6 +67,7 @@ import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 data PlaceOrderError
   = SdekRegistrationFailed Sdek.SdekError  -- SDEK immediately rejected the payload
   | SdekConfirmationTimeout -- SDEK did not confirm the order within the timeout period
+  | SdekTariffNotFound
   | TinkoffHttpError HttpError     -- Failed to create a payment link
   | TinkoffPaymentLinkFailed Text     -- Failed to create a payment link with a textual error
   | TinkoffQrCodeFailed Text         -- Failed to generate QR code
@@ -87,7 +88,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   st <- lift get
   let pool = _appDBPool cfg
   let sdekConfig = _sdekConfig cfg
-  let tariffCode = Sdek.doorToWarehouse (Sdek.tariffs sdekConfig)
+  let tariffCodes = Sdek.tariffs sdekConfig
   let senderLocation = Sdek.senderLocation sdekConfig
   let fromLocation = 
         Sdek.defSdekFromLocation
@@ -95,13 +96,22 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , Sdek.sflCode = Sdek.cityCode senderLocation
         , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation
         }
+  let shipmentPoint = Sdek.dropOffPoint sdekConfig
+
+  when(orTariff `notElem` tariffCodes) $ undefined SdekTariffNotFound
+
+  let maybeFromLocation | orTariff == 136 = Just fromLocation
+                        | otherwise = Nothing
+  let maybeShipmentPoint | orTariff == 138 = Just shipmentPoint
+                         | otherwise = Nothing                  
+
   -- fetch total price for a given fabric
   items <- wrap (liftIO (getOrderItems orTelegramUserId pool)) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
 
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items tariffCode fromLocation
+  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items orTariff maybeFromLocation maybeShipmentPoint
   trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
   orderId <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
@@ -321,6 +331,7 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   , DB._orderSdekTrackingNumber = trackingNumber
   , DB._orderInternalNotificationMessageId = coerce telegramMsgId
   , DB._orderTelegramUserId = orTelegramUserId
+  , DB._orderTariff = fromIntegral orTariff
   }
 
 

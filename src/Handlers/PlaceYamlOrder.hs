@@ -15,10 +15,12 @@ import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import System.Timeout (timeout)
 import Control.Monad.State.Class (get)
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Data.Foldable (for_)
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Data.Time.Format (defaultTimeLocale, formatTime)
+import Data.Either (isLeft)
+
 
 import Text (tshow, encodeToText)
 import App (AppM, SdekJob (..), _appDBPool, _sdekConfig, _appSdekChan, currentTime, render, ChatKey (YAML_ORDER))
@@ -45,7 +47,7 @@ handler yamlOrderReq = do
   cfg <- ask
   let pool = _appDBPool cfg
   let sdekConfig = _sdekConfig cfg
-  let tariffCode = Sdek.doorToWarehouse (Sdek.tariffs sdekConfig)
+  let tariffCodes =  Sdek.tariffs sdekConfig
   let senderLocation = Sdek.senderLocation sdekConfig
   let fromLocation = 
         Sdek.defSdekFromLocation
@@ -53,7 +55,17 @@ handler yamlOrderReq = do
         , Sdek.sflCode = Sdek.cityCode senderLocation
         , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation
         }
-  let requestData = Sdek.makeMinimalYamlOrderRequestData yamlOrderReq tariffCode fromLocation        
+  let shipmentPoint = Sdek.dropOffPoint sdekConfig
+
+  let tariff = yorTariff yamlOrderReq
+  when(tariff`notElem` tariffCodes) $ error $ "YamlOrder: tariff not found: " <> show tariff
+
+  let maybeFromLocation | tariff == 138 = Just fromLocation
+                        | otherwise = Nothing
+  let maybeShipmentPoint | tariff == 136 = Just shipmentPoint
+                         | otherwise = Nothing
+    
+  let requestData = Sdek.makeMinimalYamlOrderRequestData yamlOrderReq tariff maybeFromLocation maybeShipmentPoint      
   eRes <- Sdek.registerOrder $ Sdek.buildMinimalOderRequest requestData
   case eRes of 
     Left err -> pure $ Left $ mkError $ tshow err
@@ -77,6 +89,7 @@ handler yamlOrderReq = do
               mkResponse (Left dbErr) = 
                 Left $ mkError $ "Failed to store order in DB: " <> dbErr  
           eDbRes <- liftIO $ placeNewYamlOrder yamlDbOrder pool
+          when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "YamlOrderRequest: db failure " <> show eDbRes
           for_ eDbRes $ const $ do 
             tm <- currentTime
             tz <- liftIO getCurrentTimeZone
@@ -114,6 +127,7 @@ mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber =
   , _orderSdekTrackingNumber = trackingNumber
   , _orderInternalNotificationMessageId = 0
   , _orderTelegramUserId = 0
+  , _orderTariff = fromIntegral yorTariff
   }
 
 -- buildTemplateData :: Text -> LocalTime -> Text -> YamlOrderRequest -> TemplateData

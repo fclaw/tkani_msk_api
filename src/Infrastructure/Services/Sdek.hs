@@ -115,7 +115,8 @@ data MinimalOrderRequestData = MinimalOrderRequestData
   , mordDeliveryPointCode :: Text
 
   , mordTariffCode :: Int
-  , mordFromLocation :: SdekFromLocation
+  , mordFromLocation :: Maybe SdekFromLocation
+  , mordShipmentPoint :: Maybe Text
   , mordItems :: [OrderItem]
   }
 
@@ -130,8 +131,8 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> SdekFromLocation -> MinimalOrderRequestData
-makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation =
+makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Maybe SdekFromLocation -> Maybe Text -> MinimalOrderRequestData
+makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation shipmentPoint =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
@@ -141,11 +142,12 @@ makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation =
         (T.stripPrefix "sdek_" orDeliveryPointId)
   , mordTariffCode = tariffCode
   , mordFromLocation = fromLocation
+  , mordShipmentPoint = shipmentPoint
   , mordItems = items
   }
 
-makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> SdekFromLocation -> MinimalOrderRequestData
-makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation =
+makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Maybe SdekFromLocation -> Maybe Text -> MinimalOrderRequestData
+makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation shipmentPoint =
   let indexedItems = zip [1 ..] yorItems
       items = 
          flip map indexedItems $ \(idx, YamlOrderItem {..}) ->
@@ -168,6 +170,7 @@ makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation =
           (T.stripPrefix "sdek_" yorDeliveryPointId)
     , mordTariffCode = tariffCode
     , mordFromLocation = fromLocation
+    , mordShipmentPoint = shipmentPoint
     , mordItems = items
     }
 
@@ -211,6 +214,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       , sorRecipient = recipient
       , sorPackages = [package]
       , sorFromLocation = mordFromLocation
+      , sorShipmentPoint = mordShipmentPoint
       , sorDeliveryPoint = mordDeliveryPointCode
       , sorServices = [SdekService INSURANCE (Just (T.pack (show (totalPrice + 1))))]
       }

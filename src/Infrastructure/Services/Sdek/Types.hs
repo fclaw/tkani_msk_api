@@ -128,13 +128,14 @@ data SdekOrderRequest = SdekOrderRequest
   { sorTariffCode    :: Int            -- REQUIRED: e.g., 137 for "Склад-ПВЗ".
   , sorRecipient     :: SdekRecipient  -- REQUIRED: Minimal recipient info.
   , sorPackages      :: [SdekPackage]  -- REQUIRED: Minimal package info.
-  , sorFromLocation  :: SdekFromLocation  -- REQUIRED: Location point
+  , sorFromLocation  :: Maybe SdekFromLocation  -- REQUIRED: Location point if tariff 232
+  , sorShipmentPoint :: Maybe Text  -- REQUIRED: Location point if tariff 234, cannot be used simultaneously with 232
   , sorDeliveryPoint :: Text           -- REQUIRED: The code of the PVZ the customer chose.
   , sorServices      :: [SdekService]
   } deriving (Show, Generic)
 
 -- This instance converts Haskell's camelCase to SDEK's snake_case.
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sor" } ''SdekOrderRequest)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sor", omitNothingFields = True } ''SdekOrderRequest)
 
 
 -- | ================================================================

@@ -20,13 +20,7 @@ data SdekPickupWindow = SdekPickupWindow
 
 instance FromJSON SdekPickupWindow
 
--- | Represents the 'tariffs' object
-data SdekTariffs = SdekTariffs
-  { doorToWarehouse :: Int -- Maps to door_to_warehouse
-  } deriving (Show, Generic)
 
-instance FromJSON SdekTariffs where
-  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
 
 -- | Represents the 'sender_location' object
 data SdekSenderLocation = SdekSenderLocation
@@ -61,11 +55,12 @@ data SdekConfig = SdekConfig
   { url             :: Text
   , credentials     :: SdekCredentials
   , senderLocation  :: SdekSenderLocation
-  , tariffs         :: SdekTariffs
+  , tariffs         :: [Int]
   , pickupWindow    :: SdekPickupWindow
   , accountNumber   :: Text
   , sender          :: Sender
   , pickupMinimum   :: Int
+  , dropOffPoint    :: Text
   } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where

@@ -296,6 +296,7 @@ placeNewOrderStatement =
        $6 :: uuid,
        $7 :: text,
        $8 :: int8,
+       $10 :: int4,
        now(),
        now(),
        'registered'
@@ -1324,6 +1325,7 @@ pickupOrdersForShipment hourToStart pool =
             status = 'paid'
             AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') = $1 :: int4
             AND is_measured = TRUE
+            AND tariff = 138
           FOR UPDATE SKIP LOCKED
          )
          UPDATE orders
@@ -1477,6 +1479,7 @@ placeNewYamlOrder order pool =
             sdek_request_uuid,
             sdek_tracking_number,
             internal_notification_message_id,
+            tariff,
             created_at,
             updated_at,
             status
@@ -1489,6 +1492,7 @@ placeNewYamlOrder order pool =
             $6 :: uuid,
             $7 :: text,
             $8 :: int8,
+            $9 :: int4,
             now(),
             now(),
             'paid'
