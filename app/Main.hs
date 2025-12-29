@@ -8,7 +8,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DataKinds #-}
 
-module Main where
+module Main (main) where
 
 import Network.Wai.Handler.Warp (run)
 import Servant (Handler)

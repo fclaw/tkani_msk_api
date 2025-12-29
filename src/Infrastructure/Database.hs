@@ -1491,7 +1491,7 @@ placeNewYamlOrder order pool =
             $8 :: int8,
             now(),
             now(),
-            'registered'
+            'paid'
             )
             RETURNING id :: text
         |]
