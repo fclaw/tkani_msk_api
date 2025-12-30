@@ -55,6 +55,7 @@ module Infrastructure.Database
   , markedOrderAsMeasured
    -- yaml order
   , placeNewYamlOrder
+  , getYamlOrderDetailsForPricing
   , module Types
   ) where
 
@@ -1315,7 +1316,7 @@ deleteFabric fabricId fabricType pool =
 pickupOrdersForShipment :: Int32 -> Hasql.Pool -> IO (Either Text [(Text, UUID)])
 pickupOrdersForShipment hourToStart pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransaction pool Hasql.Write $ 
       Hasql.statement hourToStart $
        rmap V.toList $
        [Hasql.vectorStatement|
@@ -1501,4 +1502,5 @@ placeNewYamlOrder order pool =
             RETURNING id :: text
         |]
 
-        
+getYamlOrderDetailsForPricing :: Text -> Hasql.Pool -> IO (Either Text ())
+getYamlOrderDetailsForPricing _ _ = undefined
