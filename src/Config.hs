@@ -1,11 +1,16 @@
 -- src/Config.hs
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Config
-  ( AppConfig(..)
+  ( Config(..)
   , loadConfig
+  , maskSecrets
   ) where
+
 
 import Control.Applicative ((<|>))
 import Data.Text (Text, pack, unpack, strip)
@@ -16,14 +21,46 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Control.Exception (catch, IOException)
 import Database.PostgreSQL.Simple (ConnectInfo (..), defaultConnectInfo)
+import Data.Int (Int64)
+import Text.Printf (printf)
+import GHC.Generics (Generic)
+import Data.Aeson
 
+
+import Text (textToInt, textToDouble, textToBool)
+
+
+instance ToJSON ConnectInfo
+ 
 
 -- | A data type to hold all our application's configuration.
-data AppConfig = AppConfig
-  { configDBConnString :: Text
-  , configApiPort      :: Int
-  , configConnInfo     :: ConnectInfo
-  } deriving (Show)
+data Config = Config
+  { configDBConnString       :: Text
+  , configApiPort            :: Int
+  , configConnInfo           :: ConnectInfo
+  , configSdekClientId       :: Text
+  , configSdekClientSecret   :: Text
+  , configOrderBotToken      :: Text
+  , configConciergeBotToken  :: Text
+  , configWarehouseBotToken  :: Text
+  , configConciergeChatId    :: Int64
+  , configWarehouseChatId    :: Int64
+  , configMainChatId         :: Int64
+  , configOrderChatId        :: Int64
+  , configYamlOrderChatId    :: Int64
+  , configThresholdMetres    :: Double
+  , configTinkoffTerminalKey :: Text
+  , configTinkoffSecret      :: Text
+  , configTinkoffUrl         :: Text
+  , configDailyDigestImgStub :: Text
+  , configCollageServiceUrl  :: Text
+  , configCutTolerance       :: Int
+  , configGalleryLink        :: Text
+  , configIsCollageServiceOn :: Bool
+  , configCollageStubPath    :: Text
+  , configMessageCannotBeDeleted :: Text
+  , configMessageNotFound    :: Text
+  } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
 
@@ -36,7 +73,10 @@ parseEnvLine line =
 
 -- | Reads a .env file and parses it into a Map.
 loadEnvFile :: FilePath -> IO EnvMap
-loadEnvFile path = (Map.fromList . mapMaybe parseEnvLine . T.lines <$> TIO.readFile path)
+loadEnvFile path = 
+  ( Map.fromList 
+  . mapMaybe parseEnvLine
+  . T.lines <$> TIO.readFile path)
   `catch` handleIOError
   where
     mapMaybe :: (a -> Maybe b) -> [a] -> [b]
@@ -45,16 +85,17 @@ loadEnvFile path = (Map.fromList . mapMaybe parseEnvLine . T.lines <$> TIO.readF
                           Just y  -> y : mapMaybe f xs
                           Nothing -> mapMaybe f xs
     handleIOError :: IOException -> IO EnvMap
-    handleIOError _ = do
-      putStrLn $ "Warning: .env file not found at " ++ path ++ ". Using defaults."
-      return Map.empty
+    handleIOError _ = fmap (const Map.empty) $ putStrLn $ "Warning: .env file not found at " <> path <> ". Using defaults."
 
 -- | Looks up a value in the EnvMap, returning a default if not found.
 lookupWithDefault :: EnvMap -> Text -> Text -> Text
 lookupWithDefault envMap key defValue = Map.findWithDefault defValue key envMap
 
+extractNumber loc = fromMaybe (error ("cannot read number from text: " <> loc))
+
+
 -- | The main function to load all configuration.
-loadConfig :: IO AppConfig
+loadConfig :: IO Config
 loadConfig = do
   -- 1. Load the .env file into a Map
   env <- loadEnvFile ".env"
@@ -66,23 +107,48 @@ loadConfig = do
   let dbPass = lookupWithDefault env "POSTGRES_PASSWORD" "yourpass"
   let dbName = lookupWithDefault env "POSTGRES_DB" "tkani_db"
   let apiPortStr = lookupWithDefault env "API_INTERNAL_PORT" "8080"
+
+  let configSdekClientId = (Map.!) env "SDEK_CLIENT_ID"
+  let configSdekClientSecret = (Map.!) env "SDEK_CLIENT_SECRET"
+  let configOrderBotToken = (Map.!) env "ORDER_BOT_TOKEN"
+  let configConciergeBotToken = (Map.!) env "CONCIERGE_BOT_TOKEN"
+  let configWarehouseBotToken = (Map.!) env "WAREHOUSE_BOT_TOKEN"
+  let configConciergeChatId = fromIntegral $ extractNumber "CONCIERGE_CHAT_ID" $ textToInt $ (Map.!) env "CONCIERGE_CHAT_ID"
   
+  let configWarehouseChatId = fromIntegral $ extractNumber "WAREHOUSE_CHANNEL_ID" $ textToInt $ (Map.!) env "WAREHOUSE_CHANNEL_ID"
+  let configMainChatId = fromIntegral $ extractNumber "MAIN_CHANNEL_ID" $ textToInt $ (Map.!) env "MAIN_CHANNEL_ID"
+  let configOrderChatId = fromIntegral $ extractNumber "ORDER_CHAT_ID" $ textToInt $ (Map.!) env "ORDER_CHAT_ID"
+  let configYamlOrderChatId = fromIntegral $ extractNumber "YAML_ORDER_CHAT_ID" $ textToInt $ (Map.!) env "YAML_ORDER_CHAT_ID"
+  let configThresholdMetres = extractNumber "METRES_THRESHOLD" $ textToDouble $ (Map.!) env "METRES_THRESHOLD"
+
+  let configTinkoffTerminalKey = (Map.!) env "TINKOFF_TERMINAL_KEY"
+  let configTinkoffSecret = (Map.!) env "TINKOFF_SECRET"
+  let configTinkoffUrl = (Map.!) env "TINKOFF_URL"
+
+  let configDailyDigestImgStub = (Map.!) env "DAILY_DIGEST_IMG_STUB"
+  let configCollageServiceUrl = (Map.!) env "COLLAGE_SERVICE_URL"
+  let configCutTolerance =  fromIntegral $ extractNumber "CUT_TOLERANCE" $ textToInt $ (Map.!) env "CUT_TOLERANCE"
+  let configGalleryLink = (Map.!) env "GALLERY_LINK"
+  let configIsCollageServiceOn = textToBool $ (Map.!) env "IS_COLLAGE_SERVICE_ON"
+  let configCollageStubPath = (Map.!) env "COLLAGE_STUB_PATH"
+
+
+  -- telegram error messages 
+  let configMessageCannotBeDeleted = (Map.!) env "MESSAGE_CANNOT_BE_DELETED"
+  let configMessageNotFound = (Map.!) env "MESSAGE_NOT_FOUND"
+
   -- 3. Parse the port number
-  let apiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)
+  let configApiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)
 
   -- 4. Construct the database connection string
-  let connString =
+  let configDBConnString =
         "host=" <> dbHost <>
         " port=" <> dbPort <>
         " user=" <> dbUser <>
         " password=" <> dbPass <>
         " dbname=" <> dbName
 
-  -- 5. Return the final AppConfig record
-  pure $ AppConfig
-    { configDBConnString = connString
-    , configApiPort      = apiPort
-    , configConnInfo = 
+  let configConnInfo =
         defaultConnectInfo 
         { connectHost = T.unpack dbHost
         , connectPort = fromIntegral (read (T.unpack dbPort))
@@ -90,4 +156,29 @@ loadConfig = do
         , connectPassword = T.unpack dbPass
         , connectDatabase = T.unpack dbName
         }
-    }
+
+  -- 5. Return the final Config record
+  pure $ Config {..}
+
+
+-- A helper to mask secrets for safe logging
+maskSecret :: Text -> Text
+maskSecret secret = 
+    if T.length secret > 4
+    then T.take 4 secret <> "..."
+    else "..."
+
+maskSecrets :: Config -> Config
+maskSecrets config = 
+  config 
+  { configSdekClientSecret = 
+      maskSecret (configSdekClientSecret config)
+  , configOrderBotToken = 
+      maskSecret (configOrderBotToken config)
+  , configConciergeBotToken = 
+      maskSecret (configOrderBotToken config)
+  , configWarehouseBotToken = 
+      maskSecret (configOrderBotToken config)
+  , configTinkoffSecret = 
+      maskSecret (configOrderBotToken config)
+  }

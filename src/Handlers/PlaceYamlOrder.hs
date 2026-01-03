@@ -24,12 +24,12 @@ import Data.Either (isLeft)
 
 import Text (tshow, encodeToText)
 import App (AppM, SdekJob (..), _appDBPool, _sdekConfig, _appSdekChan, currentTime, render, ChatKey (YAML_ORDER))
-import API.Types (ApiResponse, YamlOrderRequest (..), yorItems, mkError, YamlOrderResponse (..))
+import API.Types (ApiResponse, YamlOrderRequest (..), yorItems, mkError, YamlOrderResponse (..), OrderStatus (Paid), PhysicalDimensions (..), yoiWeight)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Utils.OrderId (generateOrderId)
-import Infrastructure.Database (placeNewYamlOrder, Order (..))
+import Infrastructure.Database (placeNewYamlOrder, YamlOrder (..))
 import TH.Location (currentModule)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
@@ -88,7 +88,7 @@ handler yamlOrderReq = do
                 { yorOrderId = orderId }
               mkResponse (Left dbErr) = 
                 Left $ mkError $ "Failed to store order in DB: " <> dbErr  
-          eDbRes <- liftIO $ placeNewYamlOrder yamlDbOrder pool
+          eDbRes <- liftIO $ placeNewYamlOrder yamlDbOrder (yorItems yamlOrderReq) pool
           when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "YamlOrderRequest: db failure " <> show eDbRes
           for_ eDbRes $ const $ do 
             tm <- currentTime
@@ -96,7 +96,7 @@ handler yamlOrderReq = do
             let localTime = utcToLocalTime tz tm
             -- Automatically finds and renders 'templates/Handlers/PlaceNewOrder.tpl'
             messageText <- render $currentModule $ buildTemplateData orderId localTime trackingNumber yamlOrderReq
-            void $ sendOrEditTelegramMessage ("new order: " <> orderId) (escapeMarkdownV2 messageText) YAML_ORDER Nothing Nothing Nothing
+            void $ sendOrEditTelegramMessage ("new order from yaml: " <> orderId) (escapeMarkdownV2 messageText) YAML_ORDER Nothing Nothing Nothing
           return $ mkResponse eDbRes
 
 fetchOrderPollerRes :: UUID.UUID -> AppM (Either Text Text)
@@ -115,27 +115,30 @@ fetchOrderPollerRes uuid = do
   fmap handleRes $ liftIO $ timeout (30 * 1000000) $ atomically $ takeTMVar replyVar
 
 
-mkYamlDbOrder :: Text -> YamlOrderRequest -> UUID.UUID -> Text -> Order
+mkYamlDbOrder :: Text -> YamlOrderRequest -> UUID.UUID -> Text -> YamlOrder
 mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber =
-  Order 
-  { _orderId = orderId
-  , _orderCustomerFullName = yorCustomerFullName
-  , _orderCustomerPhone =  yorCustomerPhone
-  , _orderDeliveryProviderId = encodeToText yorDeliveryProviderId
-  , _orderDeliveryPointId = yorDeliveryPointId
-  , _orderSdekRequestUuid = trackingUuid
-  , _orderSdekTrackingNumber = trackingNumber
-  , _orderInternalNotificationMessageId = 0
-  , _orderTelegramUserId = 0
-  , _orderTariff = fromIntegral yorTariff
+  YamlOrder 
+  { _yamlOrderId = orderId
+  , _yamlOrderCustomerFullName = yorCustomerFullName
+  , _yamlOrderCustomerPhone =  yorCustomerPhone
+  , _yamlOrderDeliveryProviderId = encodeToText yorDeliveryProviderId
+  , _yamlOrderDeliveryPointId = yorDeliveryPointId
+  , _yamlOrderSdekRequestUuid = trackingUuid
+  , _yamlOrderSdekTrackingNumber = trackingNumber
+  , _yamlOrderTariff = fromIntegral yorTariff
+  , _yamlOrderWeight = sum (map (fromIntegral . yoiWeight) yorItems) + 50        
+  , _yamlOrderLength = fromIntegral $ pdWidth yorPhysicalDimensions
+  , _yamlOrderWidth = fromIntegral $ pdLength yorPhysicalDimensions
+  , _yamlOrderHeight = fromIntegral $ pdHeight yorPhysicalDimensions
   }
 
 -- buildTemplateData :: Text -> LocalTime -> Text -> YamlOrderRequest -> TemplateData
 buildTemplateData orderId localTime trackingNumber YamlOrderRequest {..} =
-  HM.fromList
-  [ ("orderId", orderId)
-  , ("timestamp", pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" localTime)
-  , ("trackingNumber", trackingNumber)
-  , ("customerName", yorCustomerFullName)
-  , ("customerPhone", yorCustomerPhone)
-  ]
+  let tm = pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" localTime
+  in HM.fromList
+     [ ("orderId", orderId)
+     , ("timestamp", tm)
+     , ("trackingNumber", trackingNumber)
+     , ("customerName", yorCustomerFullName)
+     , ("customerPhone", yorCustomerPhone)
+     ]

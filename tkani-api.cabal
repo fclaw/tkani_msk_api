@@ -24,6 +24,8 @@ library
       Workers.SdekPickUpScheduler
       Workers.SdekPickupRStatusPoller
       Workers.SdekStatusPoller
+      Workers.SdekPriceCalculator
+      Workers.SdekGenerateReceipt
       Infrastructure.Services.Overpass
       Application.Listener
       Application.Cart
@@ -63,10 +65,12 @@ library
       Infrastructure.Database
       Infrastructure.Database.Fabric
       Infrastructure.Database.Types
+      Infrastructure.Database.Utils
       Infrastructure.Services.Overpass.Geo
       Infrastructure.Services.Overpass.Types
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
+      Infrastructure.Services.Sdek.CachedCityCodes
       Infrastructure.Services.Sdek.CachedDeliveryPoints
       Infrastructure.Services.Sdek.Types.Courier
       Infrastructure.Services.Sdek.Types.Error
@@ -155,8 +159,10 @@ executable tkani-api-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      async
+      aeson-pretty
+    , async
     , base >=4.18 && <5
+    , bytestring
     , containers
     , exceptions
     , hasql

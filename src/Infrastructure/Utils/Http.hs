@@ -10,6 +10,7 @@ module Infrastructure.Utils.Http
     getReq,
     postReq,
     postFormReq,
+    patchReq,
     
     makeRequestWithRetries,
 
@@ -17,6 +18,7 @@ module Infrastructure.Utils.Http
     _getReq',
     _postReq',
     _postFormReq',
+    _patchReq',
 
     handleApiResponse,
     handleWorkerApiResponse,
@@ -32,7 +34,7 @@ import           Data.Aeson             (FromJSON, ToJSON, eitherDecode, encode)
 import qualified Data.ByteString.Lazy   as LBS
 import           Data.Text              (Text)
 import qualified Data.Text              as T
-import           Network.Wreq           (Response, defaults, getWith, params,
+import           Network.Wreq           (Response, defaults, getWith, params, patchWith,
                                          postWith, responseBody, header, FormParam (..), manager) -- ADDED manager
 import qualified Data.Text.Encoding     as TE
 import           Servant                (ServerError, err500, errBody)
@@ -40,8 +42,9 @@ import           Control.Monad.Error.Class
 import           Katip
 import           Network.HTTP.Client             (HttpException (..),
                                                   HttpExceptionContent (..),
-                                                  responseStatus, Manager) -- ADDED Manager
+                                                  responseStatus, Manager, managerResponseTimeout, responseTimeoutMicro) -- ADDED Manager
 import qualified Network.HTTP.Client          as HTTP
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import           Network.HTTP.Types.Status       (statusCode)
 import           Control.Exception               (SomeException, fromException, try, Exception)
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
@@ -51,6 +54,7 @@ import           Control.Exception.Lifted (throwIO)
 import           Control.Concurrent (threadDelay)
 import           Control.Monad.Base (liftBase)
 import           Control.Monad.Trans.Control (MonadBaseControl)
+
 
 type QueryParams = [(Text, Text)]
 type FormParams = [FormParam]
@@ -154,7 +158,13 @@ initialDelay = 1000000
 _getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
 _getReq' mgr url queryParams maybeToken = do
   -- FIX: Use global manager
-  let baseOpts = defaults & manager .~ Right mgr
+  let baseOpts = 
+        defaults 
+        & manager .~ Right mgr
+        & manager .~ Left (
+           tlsManagerSettings 
+           { managerResponseTimeout = 
+             responseTimeoutMicro (60 * 1000000) })
   let opts = addToken maybeToken (baseOpts & params .~ queryParams)
   liftIO $ try (getWith opts url)
 
@@ -165,15 +175,41 @@ _postReq' mgr url body maybeToken = do
         & manager .~ Right mgr 
         & header "Content-Type" .~ 
           [BS8.pack "application/json; charset=utf-8"]
+        & manager .~ Left (
+            tlsManagerSettings 
+            { managerResponseTimeout = 
+              responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
 
   let opts = addToken maybeToken baseOpts
   let encoded_body = encode body
   liftIO $ try (postWith opts url encoded_body)
 
+_patchReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
+_patchReq' mgr url body maybeToken = do
+  -- FIX: Use global manager and set Content-Type
+  let baseOpts = defaults 
+        & manager .~ Right mgr 
+        & header "Content-Type" .~ 
+          [BS8.pack "application/json; charset=utf-8"]
+        & manager .~ Left (
+            tlsManagerSettings 
+            { managerResponseTimeout = 
+              responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
+
+  let opts = addToken maybeToken baseOpts
+  let encoded_body = encode body
+  liftIO $ try (patchWith opts url encoded_body)
+
 _postFormReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> FormParams -> m (Either SomeException (Response LBS.ByteString))
 _postFormReq' mgr url payload = do
   -- FIX: Use global manager
-  let opts = defaults & manager .~ Right mgr
+  let opts = 
+        defaults 
+        & manager .~ Right mgr
+        & manager .~ Left (
+           tlsManagerSettings 
+           { managerResponseTimeout = 
+             responseTimeoutMicro (60 * 1000000) })
   liftIO $ try (postWith opts url payload)
 
 
@@ -182,16 +218,20 @@ _postFormReq' mgr url payload = do
 -- ===================================================================
 
 getReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> QueryParams -> Maybe Text -> m (Either HttpError a)
-getReq mgr url queryParams maybeToken = do
-  makeRequestWithRetries Nothing (_getReq' mgr url queryParams maybeToken)
+getReq mgr url queryParams maybeToken = makeRequestWithRetries Nothing (_getReq' mgr url queryParams maybeToken)
+{-# INLINE getReq #-}
 
 postReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either HttpError a)
-postReq mgr url body maybeToken = do
-  makeRequestWithRetries Nothing (_postReq' mgr url body maybeToken)
+postReq mgr url body maybeToken = makeRequestWithRetries Nothing (_postReq' mgr url body maybeToken)
+{-# INLINE postReq #-}
 
 postFormReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> FormParams -> m (Either HttpError a)
-postFormReq mgr url payload = do
-  makeRequestWithRetries Nothing (_postFormReq' mgr url payload)
+postFormReq mgr url payload = makeRequestWithRetries Nothing (_postFormReq' mgr url payload)
+{-# INLINE postFormReq #-}
+
+patchReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m,  FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either HttpError a)
+patchReq mgr url body maybeToken = makeRequestWithRetries Nothing (_patchReq' mgr url body maybeToken)
+{-# INLINE patchReq #-}
 
 -- ... (Rest of adapters handleApiResponse, etc. remain the same) ...
 

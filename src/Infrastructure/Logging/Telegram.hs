@@ -106,7 +106,7 @@ telegramBatchWorker tlsManager config queue = forever $ do
     
     -- 2. Try to grab up to 4 more messages currently in the queue (Batch size = 5)
     --    This is non-blocking. If queue is empty, 'rest' is [].
-    rest <- atomically $ flushUpTo 3 queue
+    rest <- atomically $ flushUpTo 2 queue
 
     let batch = firstMsg : rest
     

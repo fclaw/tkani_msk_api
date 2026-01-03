@@ -139,3 +139,64 @@ mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
       prMediaType = encodeToText rawMediaType
       prGalleryDate = rawGalleryDate
   in PatchedFabric {..}
+
+
+data PriceInfo = 
+     PriceInfo 
+     { piTariff      :: Int
+     , piPickUpPoint :: Text
+     , piWeight      :: Int  {- Total weight (in grams) -}
+     , piLength      :: Int
+     , piWidth       :: Int
+     , piHeight      :: Int
+     , piPrice       :: Int
+     }
+  deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pi" } ''PriceInfo)
+
+defPriceInfo = PriceInfo 0 mempty 0 0 0 0
+
+data  YamlOrder =
+      YamlOrder 
+      { _yamlOrderId                  :: Text
+      , _yamlOrderCustomerFullName    :: Text
+      , _yamlOrderCustomerPhone       :: Text
+      , _yamlOrderDeliveryProviderId  :: Text
+      , _yamlOrderDeliveryPointId     :: Text
+      , _yamlOrderSdekRequestUuid     :: UUID
+      , _yamlOrderSdekTrackingNumber  :: Text
+      , _yamlOrderTariff              :: Int32
+      , _yamlOrderWeight              :: Int32
+      , _yamlOrderLength              :: Int32
+      , _yamlOrderWidth               :: Int32
+      , _yamlOrderHeight              :: Int32
+      } deriving (Show, Eq, Generic)
+
+makeLenses ''YamlOrder
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "_yamlOrder" } ''YamlOrder)
+
+
+data PatchedOrderDetailsItem = 
+     PatchedOrderDetailsItem 
+     { podiName :: Text
+     , podiArticle :: Text
+     , podiWeight :: Int
+     , podiCost :: Double
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "podi" } ''PatchedOrderDetailsItem)
+
+
+data PatchedOrderDetails =
+     PatchedOrderDetails
+     { podSdekUuid      :: UUID
+     , podParcelWeight  :: Int
+     , podLength        :: Int
+     , podWidth         :: Int
+     , podHeight        :: Int
+     , podItems :: [PatchedOrderDetailsItem]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pod" } ''PatchedOrderDetails)

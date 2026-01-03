@@ -502,15 +502,24 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "mres" } 
 
 data YamlOrderItem =
       YamlOrderItem
-     {
-       yoiName          :: Text
+     { yoiName          :: Text
      , yoiFabricType    :: FabricType  
      , yoiPricePerMetre :: Maybe Double 
      , yoiTotalPrice    :: Double
      , yoiLengthM       :: Maybe Double
+     , yoiWeight        :: Int -- in grams
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yoi" } ''YamlOrderItem)
+
+data PhysicalDimensions =
+     PhysicalDimensions
+     { pdWidth  :: Int
+     , pdLength :: Int
+     , pdHeight :: Int
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pd" } ''PhysicalDimensions)
 
 data YamlOrderRequest =
      YamlOrderRequest
@@ -520,6 +529,7 @@ data YamlOrderRequest =
      , yorDeliveryProviderId :: Providers
      , yorItems :: [YamlOrderItem]
      , yorTariff :: Int
+     , yorPhysicalDimensions :: PhysicalDimensions
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yor" } ''YamlOrderRequest)

@@ -69,7 +69,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cj" } ''
 
 -- | This function runs in its own thread for the entire application lifetime.
 runCollageJobListener :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
-runCollageJobListener connInfo runAppM = do
+runCollageJobListener connInfo runInIO = do
   $(logTM) InfoS "CollageJobListener starts listening..."
   -- Get the underlying libpq connection
   liftIO $ PG.withConnect connInfo $ \conn -> do
@@ -89,18 +89,18 @@ runCollageJobListener connInfo runAppM = do
         -- This keeps the listener free to immediately wait for the next notification.
         -- You would run this in your AppM to get logging etc.
         -- For simplicity here, just showing the concept:
-        void $ runAppM $ $(logTM) InfoS $ ls $ $currentModule <> ":CollageJobs " <> show collageJobs
-        void $ Async.async $ generateAndAttachCollageAndOPublish_worker runAppM collageJobs
+        void $ runInIO $ $(logTM) InfoS $ ls $ $currentModule <> ":CollageJobs " <> show collageJobs
+        void $ Async.async $ generateAndAttachCollageAndOPublish_worker runInIO collageJobs
       when (isLeft eRes) $ putStrLn $ "Failed to parse payload, error: " <> show eRes
 
 generateAndAttachCollageAndOPublish_worker :: (forall a. AppM a -> IO (Either ServerError a)) -> CollageJobs -> IO ()
-generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
-  | isNothing cjFinalDraft = void $ runAppM $ $(logTM) ErrorS $ "Failed to generate collage: empty body"
+generateAndAttachCollageAndOPublish_worker runInIO CollageJobs {..}
+  | isNothing cjFinalDraft = void $ runInIO $ $(logTM) ErrorS $ "Failed to generate collage: empty body"
   | otherwise = do
       putStrLn $ "Processing collage job for chat " <> show cjChatId
       jobId <- randomIO @Word32
       eitherFilePath <- 
-        fmap (join . first (T.pack . show)) $ runAppM $ do
+        fmap (join . first (T.pack . show)) $ runInIO $ do
           cfg <- ask
           let isOn = _isCollageServiceOn cfg
           let stubPath = _collageStubPath cfg
@@ -108,7 +108,7 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
           if isOn then generateCollageViaService cjUrls jobId
           else liftIO $ fmap Right $ getStubFilePath mgr stubPath
       case eitherFilePath of
-        Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
+        Left err -> void $ runInIO $ $(logTM) ErrorS $ ls $ "Failed to generate collage: " <> err
           -- Optionally, you could *edit the caption* to add an error note,
           -- but for simplicity, we'll just log it.
           
@@ -118,7 +118,7 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
           now <- getCurrentTime
           let today = utctDay now
           let dateStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" today
-          Right galleryLink <- runAppM $ fmap _galleryLink ask 
+          Right galleryLink <- runInIO $ fmap _galleryLink ask 
           let deepLinkUrl = galleryLink <> dateStr
           let keyboard = 
                 object
@@ -137,12 +137,12 @@ generateAndAttachCollageAndOPublish_worker runAppM CollageJobs {..}
           --- NEW LOGIC: TRUNCATE THE LIST ---
           let truncatedNames = truncateFabricNames cjFabricNames
           let finalText = escapeMarkdownV2 $ cleanDigestText body truncatedNames
-          eResult <- runAppM $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
-          when(isLeft eResult) $ void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
+          eResult <- runInIO $ sendPhotoToTelegram $currentModule finalText MAIN (Just keyboard) collagePath
+          when(isLeft eResult) $ void $ runInIO $ $(logTM) ErrorS $ ls $ "Failed to update Telegram message: " <> show eResult
           removeFile collagePath
-          void $ runAppM $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
+          void $ runInIO $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
           -- publish status
-          void $ runAppM $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
+          void $ runInIO $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
 
 -- | Removes known digest tags and surrounding whitespace from the input text.
 --   It handles multiple possible tags like #digest

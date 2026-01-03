@@ -12,6 +12,7 @@ module Infrastructure.Services.Telegram
   , deleteMessage
   , sendPhotoToTelegram
   , editMessageMediaWithPhoto
+  , sendDocument
   , TelegramError(..)
   , MessageIdResponse (..)
   )
@@ -27,7 +28,7 @@ import qualified Data.Aeson              as A
 import           Data.Text               (Text)
 import qualified Data.Text               as T
 import           Network.Wreq            hiding (JSONError)
-import           Control.Lens            ((&), (.~), (^.))
+import           Control.Lens            ((&), (.~), (^.), (?~))
 import           Katip
 import qualified Data.ByteString.Lazy as LBS
 import           GHC.Generics
@@ -39,13 +40,14 @@ import qualified Data.Map.Strict         as M
 import           Data.Traversable        (for)
 import qualified Data.Text.Encoding      as TE
 import qualified Data.ByteString.Lazy    as BL
+import qualified Data.ByteString         as B
 import           Data.Bifunctor (first)
 import           Data.Either (isLeft)
 import qualified Network.Wreq as W
 
 -- (Assuming your AppM and Config are defined in App)
 import           App (Config(..), AppM, ChatKey)
-import           Text (recordLabelModifier)
+import           Text (recordLabelModifier, tshow)
 
 
 -- Custom Error Type for better error handling
@@ -57,6 +59,10 @@ data TelegramError
   deriving (Show)
 
 deriving instance Exception TelegramError
+
+data ParseMode = MarkdownV2 | Markdown 
+  deriving Show
+
 
 
 -- You'll need to define a FromJSON instance for this to parse the message_id
@@ -105,7 +111,7 @@ sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId mRepl
     let basePayload =
           [ Just ("chat_id"    A..= chat)
           , Just ("text"       A..= messageText)
-          , Just ("parse_mode" A..= T.pack "MarkdownV2")
+          , Just ("parse_mode" A..= T.pack (show MarkdownV2))
           , ("reply_to_message_id" A..=) <$> mbReplyId
           , ("reply_markup" A..=) <$> mReplyMarkup
           ]
@@ -197,11 +203,11 @@ sendPhotoToTelegram context caption chatKey mbKeyboard path = do
     httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
     let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendPhoto"
     -- We need to build a multipart/form-data request
-    let part = partFile "photo" path & partContentType .~ Just "image/jpeg"
+    let part = partFile "photo" path & W.partContentType .~ Just "image/jpeg"
     let payload = [ part
                   , partBS "chat_id" (TE.encodeUtf8 (T.pack (show chat)))
                   , partBS "caption" (TE.encodeUtf8 caption)
-                  , partBS "parse_mode" "MarkdownV2"
+                  , partBS "parse_mode" (TE.encodeUtf8 (T.pack (show MarkdownV2)))
                   ] ++ maybe [] (\k -> [partLBS "reply_markup" (A.encode k)]) mbKeyboard
 
     -- Using wreq's 'post' with a list of 'Part's
@@ -259,4 +265,45 @@ editMessageMediaWithPhoto context chatId msgId chatKey maybeNewCaption filePath 
             if "\"ok\":true" `T.isInfixOf` (TE.decodeUtf8 . BL.toStrict $ response ^. W.responseBody)
                 then return $ Right ()
                 else return $ Left (TelegramApiError "Failed to edit media")
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ Right ();
+ 
+
+sendDocument 
+  :: ChatKey
+  -> Text                  -- ^ The caption for the document
+  -> Text                  -- ^ The filename to display in Telegram
+  -> B.ByteString          -- ^ The raw binary content of the file
+  -> AppM (Either TelegramError ())
+sendDocument chatKey caption filename fileContent = do
+  -- 1. Get the necessary config from our application environment
+  bots <- fmap _bots ask
+  let botsInfo = M.lookup chatKey bots
+  res <- for botsInfo $ \(bot, chat) -> do
+    httpManager <- fmap _configHttpManager ask -- Assumes Manager is in your Config
+    let fullUrl = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendDocument"
+        
+    -- Wreq's 'post' can take a list of 'Part's to build the multipart request.
+    -- The other parameters are sent as form fields, not a JSON body.
+     -- --- THIS IS THE FIX ---
+    -- 1. Create a 'Part' manually for the in-memory file content.
+    let filePart = 
+          (W.partBS "document" fileContent) 
+          & W.partFileName ?~ (T.unpack filename)
+          & W.partContentType ?~ "application/pdf"
+
+    -- 2. Create the other parts for chat_id and caption.
+    let chatPart = W.partText "chat_id" (tshow chat)
+    let captionPart = W.partText "caption" caption
+    let parseModePart = W.partText "parse_mode" "MarkdownV2"
+
+    let opts = W.defaults & manager .~ Right httpManager
+        -- The Content-Type header will be set automatically by wreq for multipart.
+        -- We don't need to set it manually.
+    
+    -- 3. The 'post' function takes a list of 'Part's.
+    let parts = [chatPart, captionPart, parseModePart, filePart]
+    eResponse <- liftIO $ try' (postWith opts fullUrl parts)
+    case eResponse of
+      Left httpErr -> return $ Left (ApiRequestFailed (toException httpErr))
+      Right _ -> return $ Right () 
   case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ Right ();

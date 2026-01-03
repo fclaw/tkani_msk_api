@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
-module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG, tshow) where
+module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG, tshow, textToInt, textToDouble, textToBool) where
 
 import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
@@ -10,6 +11,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as TE
+import Data.Text.Read (signed, decimal, double)
+
 
 camelToSnake :: String -> String
 camelToSnake [] = []
@@ -41,3 +44,29 @@ encodeToText val = T.replace "\"" "" $ LT.toStrict (TE.decodeUtf8 (encode val))
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
+
+-- | A more performant way to convert Text to Int, avoiding the String conversion.
+textToInt :: Text -> Maybe Integer
+textToInt t =
+  case signed decimal t of
+    -- The parser succeeded and consumed the ENTIRE string
+    Right (intValue, "") -> Just intValue
+    -- The parser succeeded but there was leftover text (e.g., for "123a")
+    Right (_, _rest)     -> Nothing
+    -- The parser failed
+    Left _               -> Nothing
+
+-- | A more performant way to convert Text to Double.
+textToDouble :: Text -> Maybe Double
+textToDouble t =
+  -- First, normalize the decimal separator
+  let normalizedText = T.replace "," "." t
+  in
+  case signed double normalizedText of
+    -- Ensure the entire string was consumed
+    Right (doubleValue, "") -> Just doubleValue
+    -- Any other result is a failure
+    _                       -> Nothing
+
+textToBool :: Text -> Bool
+textToBool = read @Bool . T.unpack

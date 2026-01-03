@@ -65,7 +65,11 @@ pollForSingleOrder sdekUuid = do
     Right resp -> do
       case Sdek.sosrRequests resp of
         [] -> do
-          let errMsg = Sdek.SdekError Sdek.unexpected_response $ "SDEK status response did not contain " <> UUID.toText sdekUuid
+          let errMsg = 
+               Sdek.SdekError 
+                Sdek.unexpected_response $ 
+                  "SDEK status response did not contain " <> 
+                  UUID.toText sdekUuid
           log ErrorS $ ": " <> Sdek.seMessage errMsg
           pure $ Left $ tshow [errMsg]
         (reqStatus : _) ->
@@ -88,7 +92,11 @@ pollForSingleOrder sdekUuid = do
               log InfoS $ " resulted in SUCCESSFUL state. Tracking number: " <> trackingNumber
               pure $ Right trackingNumber
             other -> do
-              let errMsg = Sdek.SdekError Sdek.unexpected_response ("SDEK returned an unexpected final status: " <> tshow other)
+              let errMsg = 
+                   Sdek.SdekError 
+                    Sdek.unexpected_response $ 
+                      "SDEK returned an unexpected final status: " <> 
+                      tshow other
               log ErrorS $ ": " <> Sdek.seMessage errMsg
               pure $ Left $ tshow [errMsg]
     Left err -> pure $ Left $ tshow err

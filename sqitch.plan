@@ -24,3 +24,4 @@
 00021.new_status 2025-12-26T08:51:41Z System Administrator <root@Sonny.local> # order: new pick-up by courier
 00022.new_field 2025-12-28T06:16:36Z System Administrator <root@Sonny.local> # has_dimensions_and_weight in order
 00023.new_field 2025-12-29T08:32:22Z System Administrator <root@Sonny.local> # order: tariff field
+00024.order_event 2025-12-30T05:44:32Z System Administrator <root@Sonny.local> # order: weight, event

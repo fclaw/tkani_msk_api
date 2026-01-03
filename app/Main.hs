@@ -28,7 +28,7 @@ import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
-import System.Environment (getEnv, getArgs)
+import System.Environment (getArgs)
 import Data.Text (pack)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO, modifyTVar')
 import Control.Monad.Except (runExceptT)
@@ -49,12 +49,15 @@ import Data.Foldable (for_)
 import Network.Wai.Middleware.Cors
 import Network.Wai (Middleware)
 import Network.HTTP.Types.Method (StdMethod(DELETE, PUT, PATCH), renderStdMethod)
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.ByteString.Lazy as BL
 
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
-import Config (loadConfig, AppConfig(..))
+import qualified Config as GlobalCfg (loadConfig, Config(..), maskSecrets)
 import API.Types (ProviderInfo)
-import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..))
+import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..), CityCodeByPVZCache (..))
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
@@ -63,6 +66,8 @@ import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
 import Workers.SdekPickupRStatusPoller (pickupStatusPoller)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
+import Workers.SdekPriceCalculator (runSdekPriceCalculator)
+import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
@@ -72,23 +77,27 @@ import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredential
 
 data Workers = 
         WebServer 
-      | Sdek 
+      | SdekOrderStatusPoller 
       | Tinkoff 
       | CollageMaker 
       | CartsCleaner
       | SdekPickUpScheduler
       | PickupStatusPoller
       | SdekStatusPoller
+      | SdekPriceCalculator
+      | SdekGenerateReceipt
 
 instance Show Workers where
   show WebServer = "Web Server"
-  show Sdek = "SDEK Poller"
+  show SdekOrderStatusPoller = "SDEK Order Status Poller"
   show Tinkoff = "Tinkoff Poller"
   show CollageMaker = "Collage Maker"
   show CartsCleaner = "Carts Cleaner"
   show SdekPickUpScheduler = "SDEK Pickup Scheduler"
   show PickupStatusPoller = "SDEK Pickup Status Poller"
   show SdekStatusPoller = "SDEK Status Poller"
+  show SdekPriceCalculator = "SDEK Price Calculator"
+  show SdekGenerateReceipt = "SDEK Generate Receipt"
 
 
 methodsCors :: Middleware
@@ -194,14 +203,17 @@ main = do
       tplMap <- loadTemplatesFromDirectory "templates"
 
       -- 2. Load configuration from environment variables
-      config <- loadConfig
+      cfg@GlobalCfg.Config {..} <- GlobalCfg.loadConfig
+
+      let maskSecretCfg = GlobalCfg.maskSecrets cfg
+      TIO.putStrLn $ "global config has been loaded: \n" <> decodeUtf8 (BL.toStrict (encodePretty maskSecretCfg))
 
       -- 3. Define the connection string.
-      let connString = string (configDBConnString config)
+      let connString = string configDBConnString
         
       -- 4. Build the configuration using the DSL.
       let poolConfig = Config.settings
-            [ Config.size 10                         -- Pool size of 10
+            [ Config.size 50                         -- Pool size of 10
             , Config.acquisitionTimeout 10           -- Timeout of 10 seconds
             , Config.staticConnectionSettings [connection connString] -- The connection string itself
             ]
@@ -209,32 +221,10 @@ main = do
       -- 5. Acquire the pool using the generated config.
       pool <- Pool.acquire poolConfig
 
-      -- --- Read SDEK credentials from environment variables ---
-      -- getEnv reads a String from an env var. It will crash if the var is not set.
-      sdekClientId <- fmap pack $ getEnv "SDEK_CLIENT_ID"
-      sdekClientSecret <- fmap pack $ getEnv "SDEK_CLIENT_SECRET"
-      orderBotToken <- fmap pack $ getEnv "ORDER_BOT_TOKEN"
-      conciergeBotToken <- fmap pack $ getEnv "CONCIERGE_BOT_TOKEN"
-      warehouseBotToken <- fmap pack $ getEnv "WAREHOUSE_BOT_TOKEN"
-      conciergeChatId <- fmap read $ getEnv "CONCIERGE_CHAT_ID"
-      warehouseChatId <- fmap read $ getEnv "WAREHOUSE_CHANNEL_ID"
-      mainChatId <- fmap read $ getEnv "MAIN_CHANNEL_ID"
-      orderChatId <- fmap read $ getEnv "ORDER_CHAT_ID"
-      yamlOrderChatId <- fmap read $ getEnv "YAML_ORDER_CHAT_ID"
-      thresholdMetres <- fmap read $ getEnv "METRES_THRESHOLD"
-      tinkoffTerminalKey <- fmap pack $ getEnv "TINKOFF_TERMINAL_KEY"
-      tinkoffSecret <- fmap pack $ getEnv "TINKOFF_SECRET"
-      tinkoffUrl <- fmap pack $ getEnv "TINKOFF_URL"
-      dailyDigestImgStub <- fmap pack $ getEnv "DAILY_DIGEST_IMG_STUB"
-      collageServiceUrl <- fmap pack $ getEnv "COLLAGE_SERVICE_URL"
-      cutTolerance <- fmap read $ getEnv "CUT_TOLERANCE"
-      galleryLink <- fmap pack $ getEnv "GALLERY_LINK"
-      isCollageServiceOn <- fmap (read @Bool) $ getEnv "IS_COLLAGE_SERVICE_ON"
-      collageStubPath <- fmap pack $ getEnv "COLLAGE_STUB_PATH"
+      let tinkoffTerminalKey = configTinkoffTerminalKey
+      let tinkoffSecret      = configTinkoffSecret
+      let tinkoffUrl         = configTinkoffUrl
 
-      -- telegram error messages 
-      messageCannotBeDeleted <- fmap pack $ getEnv "MESSAGE_CANNOT_BE_DELETED"
-      messageNotFound <- fmap pack $ getEnv "MESSAGE_NOT_FOUND"
 
       -- 6. Create the shared AppState
       let appConfig = Config
@@ -242,31 +232,39 @@ main = do
             , _appLogEnv = logEnv
             , _providers = providers
             , _tinkoffCred = TinkoffCredentials {..}
-            , _sdekConfig = sdekConfig { credentials = SdekCredentials sdekClientId sdekClientSecret }
+            , _sdekConfig = 
+                 sdekConfig 
+                 { credentials = 
+                   SdekCredentials 
+                   configSdekClientId 
+                   configSdekClientSecret }
             , _bots =
                 M.fromList
-                  [(CONCIERGE, (conciergeBotToken, conciergeChatId)),
-                   (ORDER, (orderBotToken, orderChatId)),
-                   (WAREHOUSE, (warehouseBotToken, warehouseChatId)),
-                   (MAIN, (conciergeBotToken, mainChatId)),
-                   (YAML_ORDER, (warehouseBotToken, yamlOrderChatId))
+                  [(CONCIERGE, (configConciergeBotToken, configConciergeChatId)),
+                   (ORDER, (configOrderBotToken, configOrderChatId)),
+                   (WAREHOUSE, (configWarehouseBotToken, configWarehouseChatId)),
+                   (MAIN, (configConciergeBotToken, configMainChatId)),
+                   (YAML_ORDER, (configWarehouseBotToken, configYamlOrderChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
             , _metroCityCodes = HS.fromList (map code cities)
-            , _thresholdMetres = thresholdMetres
-            , _dailyDigestImgStub = dailyDigestImgStub
-            , _collageServiceUrl = collageServiceUrl
-            , _cutTolerance = cutTolerance
-            , _galleryLink = galleryLink
-            , _isCollageServiceOn = isCollageServiceOn
-            , _collageStubPath = collageStubPath
-            , _messageCannotBeDeleted = messageCannotBeDeleted
-            , _messageNotFound = messageNotFound
+            , _thresholdMetres = configThresholdMetres
+            , _dailyDigestImgStub = configDailyDigestImgStub
+            , _collageServiceUrl = configCollageServiceUrl
+            , _cutTolerance = configCutTolerance
+            , _galleryLink = configGalleryLink
+            , _isCollageServiceOn = configIsCollageServiceOn
+            , _collageStubPath = configCollageStubPath
+            , _messageCannotBeDeleted = configMessageCannotBeDeleted
+            , _messageNotFound = configMessageNotFound
             }
 
       tinkoffPaymentChan <- newTChanIO
       appSdekChan <- newTChanIO
+
+      cityCacheVar <- newTVarIO M.empty
+      pvzCacheVar <- newTVarIO M.empty
 
       let state =
            State 
@@ -276,6 +274,7 @@ main = do
            , _tinkoffPaymentChan = tinkoffPaymentChan
            , _appSdekChan = appSdekChan
            , _metroStations = []
+           , _cityCodeByPVZCache = CityCodeByPVZCache {..}
            }
       initialState <- newTVarIO state
   
@@ -283,7 +282,7 @@ main = do
       let runInIO :: forall a. AppM a -> IO (Either ServerError a)
           runInIO = runAppM appConfig initialState
 
-      when(not isMetroMode) $ 
+      when(not isMetroMode) $
         putStrLn "--> Running in NO-METRO mode. Metro data will not be loaded."
 
       eAllMetros <- if not isMetroMode then return (Right []) else runInIO fetchAllRussianMetros
@@ -294,7 +293,7 @@ main = do
         -- Define our concurrent tasks as a list of IO actions.
         -- Task 1: The Web Server
         let server = 
-              run (configApiPort config) $ 
+              run configApiPort $ 
                 methodsCors $  
                   serve tkaniApiProxy $
                     hoistServer
@@ -302,22 +301,22 @@ main = do
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
 
+        let connInfo = configConnInfo
         let tasks :: [(Workers, IO ())]
             tasks = 
               [ (WebServer, server)
-              , (Sdek, 
+              , (SdekOrderStatusPoller, 
                  runInIO orderStatusPoller 
-                   >>= showErrorInWorker Sdek)
+                   >>= showErrorInWorker 
+                        SdekOrderStatusPoller)
               , (Tinkoff, 
                  runInIO paymentStatusPoller 
                    >>= showErrorInWorker 
                         Tinkoff)
               , (CollageMaker,
-                 let connInfo = configConnInfo config 
-                 in
-                   runInIO (runCollageJobListener connInfo runInIO)
-                     >>= showErrorInWorker 
-                          CollageMaker)
+                  runInIO (runCollageJobListener connInfo runInIO)
+                    >>= showErrorInWorker 
+                         CollageMaker)
               , (CartsCleaner, 
                  runInIO runCartsCleaner 
                    >>= showErrorInWorker 
@@ -334,6 +333,14 @@ main = do
                  runInIO runSdekStatusPoller 
                    >>= showErrorInWorker 
                         SdekStatusPoller)
+              , (SdekPriceCalculator,
+                  runInIO (runSdekPriceCalculator connInfo runInIO)
+                   >>= showErrorInWorker
+                        SdekPriceCalculator)
+              , (SdekGenerateReceipt, 
+                  runInIO (runSdekGenerateReceipt connInfo runInIO)
+                   >>= showErrorInWorker 
+                        SdekGenerateReceipt)
               ]
 
         putStrLn "Spawning concurrent workers..."

@@ -2,6 +2,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE DataKinds  #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE DuplicateRecordFields  #-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Infrastructure.Services.Sdek.Types where
 
@@ -14,9 +18,11 @@ import qualified Data.Text as T
 import Data.Text (Text)
 import Data.UUID (UUID, fromText)
 import qualified Data.Vector as V
+import Data.Maybe (listToMaybe)
 
 import Text (camelToSnake)
-import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
+import Infrastructure.Services.Sdek.Types.State
+import Infrastructure.Services.Sdek.Types.Error
 
 
 -- | Internal data type to decode the city search response from SDEK.
@@ -58,7 +64,7 @@ data SdekRecipient = SdekRecipient
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "rcp" } ''SdekRecipient)
 
 -- SDEK requires a 'payment' object for the item cost.
-data SdekPayment = SdekPayment { payValue :: Double } deriving (Show, Generic)
+data SdekPayment = SdekPayment { payValue :: Double } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pay" } ''SdekPayment)
 
@@ -261,3 +267,216 @@ data SdekCallCourierRequest = SdekCallCourierRequest
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''SdekCallCourierRequest)
+
+
+data DeliveryPoint = 
+     DeliveryPoint
+     { dpCityCode :: Int
+     , dpCityName :: Text
+     }
+  deriving (Show, Eq, Generic)
+
+instance FromJSON DeliveryPoint where
+  parseJSON = withObject "DeliveryPoint" $ \o -> do
+    loc <- o .: "location"
+    DeliveryPoint <$> loc .: "city_code" <*> loc .: "city"
+
+data SdekCityWithCode = 
+      SdekCityWithCode
+      { sccCode :: Int
+      , sccCity :: Text
+      , sccRegion :: Text
+      -- ... other fields you might need, like 'country_code'
+      } deriving (Show, Eq, Generic)
+
+instance FromJSON SdekCityWithCode where
+  parseJSON = withObject "SdekCityWithCode" $ \v -> 
+    SdekCityWithCode
+    <$> v .: "code"
+    <*> v .: "city"
+    <*> v .: "region"
+
+
+data Location = Location { lCode :: Int }
+  deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 1 } ''Location)
+
+data Package = Package { pWeight :: Int, pLength :: Int, pWidth :: Int, pHeight :: Int }
+  deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 1 } ''Package)
+
+
+data TotalSumRequestService = 
+     TotalSumRequestService 
+     { tsrsCode :: Text
+     , tsrsParameter :: Text
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''TotalSumRequestService)
+
+
+data TotalSumRequest = 
+     TotalSumRequest
+     { tsrTariffCode :: Int
+     , tsrFromLocation :: Location
+     , tsrToLocation :: Location
+     , tsrPackages :: [Package]
+     , tsrServices :: [TotalSumRequestService]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''TotalSumRequest)
+
+mkTotalSumRequest tariff fromCode toCode package service = 
+  let tsrTariffCode = tariff
+      tsrFromLocation = Location fromCode
+      tsrToLocation = Location toCode
+      tsrPackages = [package]
+      tsrServices = [service]
+  in TotalSumRequest {..}
+
+data TotalSumResponseService = 
+     TotalSumResponseService 
+     { tsrsTotalSum :: Double }
+ deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''TotalSumResponseService)
+
+data TotalSumResponse = 
+     TotalSumResponse
+     { tsrTotalSum :: Maybe Double
+     , tsrServices :: [TotalSumResponseService]
+     , tsrErrors :: Maybe [SdekErrorDetail]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''TotalSumResponse)
+
+data PatchedOrderRequestPackageItem =
+     PatchedOrderRequestPackageItem
+     { porpiName     :: Text
+     , porpiWareKey  :: Text -- article
+     , porpiPayment  :: SdekPayment
+     , porpiWeight   :: Int
+     , porpiAmount   :: Int
+     , porpiCost     :: Double
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 5 } ''PatchedOrderRequestPackageItem)
+
+data PatchedOrderRequestPackage =
+     PatchedOrderRequestPackage
+     { porpNumber    :: Text
+     , porpPackageId :: Text
+     , porpWeight    :: Int
+     , porpLength    :: Int
+     , porpWidth     :: Int
+     , porpHeight    :: Int
+     , porpItems     :: [PatchedOrderRequestPackageItem]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''PatchedOrderRequestPackage)
+
+defPatchedOrderRequestPackage = PatchedOrderRequestPackage "1" "1" 0 0 0 0 []
+
+data PatchedOrderRequest = 
+     PatchedOrderRequest 
+     { porUuid :: UUID
+     , porPackages :: [PatchedOrderRequestPackage]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''PatchedOrderRequest)
+
+data PatchedOrderResponseBody = 
+     PatchedOrderResponseBody 
+     { porbState :: SdekRequestState
+     , porbErrors :: Maybe [SdekErrorDetail]
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''PatchedOrderResponseBody)
+
+data PatchedOrderResponse = 
+     PatchedOrderResponse 
+     { porRequests :: [PatchedOrderResponseBody] }
+     deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''PatchedOrderResponse)
+
+-- | Represents the 'entity' object which contains the download URL.
+data ReceiptEntity = ReceiptEntity
+  { reUrl :: Maybe Text -- The URL to the PDF, only present on 'READY' status
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 2 } ''ReceiptEntity)
+
+-- | Re-use the existing SdekRequestDto for the 'requests' array.
+data ReceiptRequest =
+     ReceiptRequest 
+     { srrState :: SdekReceiptState
+     , srrErrors :: Maybe [SdekErrorDetail] 
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''ReceiptRequest)
+
+-- | The top-level response for the receipt status.
+data ReceiptStatusResponse = ReceiptStatusResponse
+  { rsrEntity   :: ReceiptEntity
+  , rsrRequests :: [ReceiptRequest]
+  } deriving (Show, Eq, Generic)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''ReceiptStatusResponse)
+
+data ReceiptRegisterRequestOrder = 
+     ReceiptRegisterRequestOrder 
+     { rrroOrderUuid :: UUID }
+     deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''ReceiptRegisterRequestOrder)
+
+
+data ReceiptRegisterRequest =
+     ReceiptRegisterRequest 
+     { rrrOrders :: [ReceiptRegisterRequestOrder]
+     , rrroCopyCount :: Int
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''ReceiptRegisterRequest)
+
+data SdekRequestDto = SdekRequestDto
+  { state :: SdekRequestState
+  , errors :: Maybe [SdekErrorDetail]
+  } deriving (Generic, FromJSON)
+
+data ReceiptRegisterResponse = 
+     ReceiptRegisterResponse
+     { rrrUuid    :: UUID
+     , rrrState   :: SdekRequestState
+     , rrrErrors  :: Maybe [SdekErrorDetail]  
+     }
+     deriving (Show, Eq, Generic)
+
+instance FromJSON ReceiptRegisterResponse where
+  parseJSON = 
+    withObject "ReceiptRegisterResponse" $ \o -> do
+      entity <- o .: "entity" 
+      uuid <- entity .: "uuid"
+      -- 1. Look for the "requests" key at the top level
+      requestsArray <- o .: "requests"
+    
+      -- 2. Safely get the first element from the array
+      case listToMaybe @SdekRequestDto requestsArray of
+      
+        -- If the array is empty, the parse fails with a clear message.
+        Nothing ->
+          fail "Could not parse ReceiptRegisterResponse: the 'requests' array is empty."
+        
+        -- If the array has at least one element...
+        Just firstRequest ->
+          -- 3. ...create the final record with that element.
+          --    Aeson will use the existing 'FromJSON SdekRequestDto' instance here.
+          pure $ ReceiptRegisterResponse 
+                { rrrUuid   = uuid
+                , rrrState  = state firstRequest
+                , rrrErrors = errors firstRequest }
+      

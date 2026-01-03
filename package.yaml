@@ -20,6 +20,8 @@ library:
     - Workers.SdekPickUpScheduler
     - Workers.SdekPickupRStatusPoller
     - Workers.SdekStatusPoller
+    - Workers.SdekPriceCalculator
+    - Workers.SdekGenerateReceipt
     - Infrastructure.Services.Overpass
     - Application.Listener
     - Application.Cart
@@ -112,6 +114,8 @@ executables:
       - unordered-containers
       - containers
       - http-types
+      - aeson-pretty
+      - bytestring
 
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

@@ -11,6 +11,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module App
   ( State(..)
@@ -22,9 +23,17 @@ module App
   TinkoffCredentials (..),
   Scheme (..),
   SdekJob (..),
+  CityCodeByPVZCache (..),
+  SdekPvzInfo (..),
+  SdekCity (..),
   currentTime,
   render,
-  runAppM
+  runAppM,
+  -- helper
+  readTVarIO,
+  -- extractors
+  extractFromMaybe,
+  extractFromEither
   ) where
 
 import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
@@ -32,7 +41,7 @@ import Servant (Handler, ServerError)
 import Control.Monad.Except (MonadError, ExceptT)
 import Hasql.Pool (Pool)
 import Data.Text (Text, pack)
-import Control.Concurrent.STM (TVar, TChan)
+import Control.Concurrent.STM (TVar, TChan, readTVar, atomically)
 import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
 import Control.Lens
 import GHC.Generics (Generic)
@@ -54,6 +63,7 @@ import qualified Data.HashSet as HS
 import Control.Concurrent (MVar)
 import Data.UUID (UUID)
 import Control.Concurrent.STM.TMVar (TMVar)
+import Data.Int (Int64)
 
 -- Katip imports
 import Katip
@@ -131,11 +141,32 @@ data SdekJob = SdekJob
   , sjReplyVar :: ReplyVar -- The reply box
   }
 
+
+-- Minimal info needed for a PVZ
+data SdekPvzInfo = SdekPvzInfo
+  { spvzCode    :: Text
+  , spvzCityName  :: Text -- The key to look up in the City Cache
+  }
+
+-- Info for a City
+data SdekCity = SdekCity
+  { scCode :: Int
+  , scName :: Text
+  -- ... other city info
+  }
+
+data CityCodeByPVZCache = 
+     CityCodeByPVZCache 
+     { cityCacheVar :: TVar (M.Map Text SdekCity)
+     , pvzCacheVar :: TVar (M.Map Text SdekPvzInfo) 
+     }
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
   { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
   , _pointCache :: PointCache
+  , _cityCodeByPVZCache :: CityCodeByPVZCache
   , _sdekPromises :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (Text, GetStateRequest)
   , _appSdekChan :: TChan SdekJob
@@ -151,7 +182,7 @@ data ChatKey =
       | YAML_ORDER
         deriving (Show, Ord, Eq)
 
-type Bots = M.Map ChatKey (Text, Int)
+type Bots = M.Map ChatKey (Text, Int64)
 
 -- | AppState holds all the shared, read-only resources for our application.
 data Config = Config
@@ -259,3 +290,14 @@ runAppM :: Config -> TVar State -> AppM a -> IO (Either ServerError a)
 runAppM config stateTVar appM =
   -- Unwind the monad stack to get to the base IO.
   runExceptT . fmap (\(a, _, _) -> a) $ runRWST (unAppM appM) config stateTVar
+
+readTVarIO = (liftIO @AppM) . atomically . readTVar
+
+
+extractFromMaybe :: Maybe a -> (a -> AppM ()) -> AppM ()
+extractFromMaybe (Just v) app = app v 
+extractFromMaybe Nothing _ = $(logTM) ErrorS $ "empty value"
+
+extractFromEither :: Show e => Either e a -> (a -> AppM ()) -> AppM ()
+extractFromEither (Right r) app = app r 
+extractFromEither (Left e) _ = $(logTM) ErrorS $ ls $ "either has resulted in error: " <> show e

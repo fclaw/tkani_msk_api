@@ -56,7 +56,10 @@ module Infrastructure.Database
    -- yaml order
   , placeNewYamlOrder
   , getYamlOrderDetailsForPricing
+  , getPatchedOrderDetails
+  , setReceiptReady
   , module Types
+  , module Utils
   ) where
 
 
@@ -70,13 +73,14 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, snocT, app4, app5, sel2, del9)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import qualified Data.Vector as V
 import Data.Either (fromRight, either)
 import Data.Time (Day)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 
 
 import API.Types -- Your data types
@@ -84,12 +88,13 @@ import TH.RecordToTuple (recordToTuple)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
 import Infrastructure.Database.Types as Types
-import Text (encodeToText)
+import Text (encodeToText, tshow)
 import Infrastructure.Database.Fabric (ingestFabricDB)
 import qualified Domain.Warehouse.Types as DWT
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
+import Infrastructure.Database.Utils as Utils
 
 --------------------------------------------------------------------------------
 -- Template Haskell Magic: Generate our statement functions automatically
@@ -105,11 +110,18 @@ convertFromJson value =
 runTransaction :: Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> IO (Either Hasql.UsageError a)
 runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable mode
 
+runTransactionM :: MonadIO m => Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> m (Either Hasql.UsageError a)
+runTransactionM pool mode = liftIO . Hasql.use pool . Hasql.transaction Hasql.Serializable mode
+
+
+extractADT = either error id
+
+
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
 getFabricPreviewStatement :: Hasql.Statement (Int64, FabricType, Double) FabricPreview
 getFabricPreviewStatement =
-  dimap (app1 fromIntegral . app2 encodeToText) (either error id . convertFromJson @FabricPreview)
+  dimap (app1 fromIntegral . app2 encodeToText) (extractADT . convertFromJson @FabricPreview)
   [Hasql.singletonStatement|
     WITH claimed_length AS (
       SELECT 
@@ -220,7 +232,7 @@ putNewFabric fabric req pool =
 
 getOrderItemsStatement :: Hasql.Statement Int64 [OrderItem]
 getOrderItemsStatement =
-  rmap (either error id . sequence . map (convertFromJson @OrderItem) . V.toList)
+  rmap (extractADT . sequence . map (convertFromJson @OrderItem) . V.toList)
   [Hasql.vectorStatement|
     SELECT
       jsonb_build_object(
@@ -479,7 +491,7 @@ markOrderAsInvalidStatement =
     UPDATE orders
     SET is_removed_from_delivery_provider = TRUE
     WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid
-    RETURNING internal_notification_message_id :: int8, sdek_tracking_number :: text
+    RETURNING COALESCE(internal_notification_message_id, 0) :: int8, sdek_tracking_number :: text
   |]
 
 
@@ -523,7 +535,7 @@ searchFabrics query limit offset metreThreshold pool =
 
 fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
 fetchCatalogSummaryItemStatement =
-  rmap (V.toList . V.map (either error id . convertFromJson)) $
+  rmap (V.toList . V.map (extractADT . convertFromJson)) $
   [Hasql.vectorStatement|
     WITH pre_cut_in_order AS (
       SELECT ofb.pre_cut_id as pre_cut_id
@@ -898,7 +910,7 @@ fetchPaymentId order pool = fmap (first (pack . show)) $ runTransaction pool Has
 
 isItemInCartStatement :: Hasql.Statement (Int64, FabricType, Int64) CartCheckStatus
 isItemInCartStatement =
-  dimap (app2 encodeToText) (either error id . convertFromJson @CartCheckStatus)
+  dimap (app2 encodeToText) (extractADT . convertFromJson @CartCheckStatus)
   [Hasql.singletonStatement|
     SELECT 
       to_jsonb((CASE
@@ -1139,7 +1151,7 @@ clearOldCarts pool =
 
 fetchCartItemsStatement :: Hasql.Statement Int64 [ViewCartItem]
 fetchCartItemsStatement =
-  rmap (either error id . sequence . map (convertFromJson @ViewCartItem) . V.toList)
+  rmap (extractADT. sequence . map (convertFromJson @ViewCartItem) . V.toList)
   [Hasql.vectorStatement|
      SELECT
        jsonb_build_object(
@@ -1465,12 +1477,12 @@ markedOrderAsMeasured trackingN pool =
           WHERE sdek_tracking_number = $1 :: text|]
 
 
-placeNewYamlOrder :: Order -> Hasql.Pool -> IO (Either Text Text)
-placeNewYamlOrder order pool =
+placeNewYamlOrder :: YamlOrder -> [YamlOrderItem] -> Hasql.Pool -> IO (Either Text Text)
+placeNewYamlOrder order items pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
-      Hasql.statement order $
-        lmap (del9 . $(recordToTuple ''Order))
+    runTransaction pool Hasql.Write $ do
+      orderId <- Hasql.statement order $
+        lmap ($(recordToTuple ''YamlOrder))
         [Hasql.singletonStatement|
           INSERT INTO orders (
             id,
@@ -1480,11 +1492,15 @@ placeNewYamlOrder order pool =
             delivery_point_id,
             sdek_request_uuid,
             sdek_tracking_number,
-            internal_notification_message_id,
             tariff,
+            actual_weight_grams,
+            length,
+            width,
+            height,
             created_at,
             updated_at,
-            status
+            status,
+            is_bot
             ) VALUES (
             $1 :: text,
             $2 :: text,
@@ -1493,14 +1509,118 @@ placeNewYamlOrder order pool =
             $5 :: text,
             $6 :: uuid,
             $7 :: text,
-            $8 :: int8,
+            $8 :: int4,
             $9 :: int4,
+            $10 :: int4,
+            $11 :: int4,
+            $12 :: int4,
             now(),
             now(),
-            'paid'
+            'paid',
+            false
             )
             RETURNING id :: text
         |]
 
-getYamlOrderDetailsForPricing :: Text -> Hasql.Pool -> IO (Either Text ())
-getYamlOrderDetailsForPricing _ _ = undefined
+      let params =
+           snocT (V.fromList (map (\idx -> "ART-" <> tshow idx) [1 .. length items])) $
+           consT orderId $ 
+             V.unzip6 $ 
+               V.fromList $ 
+                 map (app6 fromIntegral .
+                      app2 encodeToText .
+                      $(recordToTuple ''YamlOrderItem)) 
+                 items
+      Hasql.statement params
+        [Hasql.resultlessStatement|
+          INSERT INTO manual_order_items (
+            order_id,
+            item_name,
+            fabric_type,
+            price_per_metre,
+            total_price,
+            length_m,
+            weight,
+            article
+          )
+          SELECT
+            $1 :: text,
+            items.name,
+            items.fabric_type, 
+            items.price_per_metre,
+            items.total_price,
+            items.length_m,
+            items.weight,
+            items.article
+          FROM
+          UNNEST(
+            $2 :: text[],
+            $3 :: text[], 
+            $4 :: float8?[],
+            $5 :: float8[],
+            $6 :: float8?[],
+            $7 :: int4[],
+            $8 :: text[]
+          ) AS items(name, fabric_type, price_per_metre, total_price, length_m, weight, article)
+        |]
+
+      return orderId  
+
+getYamlOrderDetailsForPricing :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PriceInfo)
+getYamlOrderDetailsForPricing orderId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement orderId $
+        rmap (extractADT . convertFromJson @PriceInfo)
+        [Hasql.singletonStatement|
+          SELECT
+            jsonb_build_object(
+              'pick_up_point', TRIM(REGEXP_REPLACE(delivery_point_id, 'sdek_', '')),
+              'weight', actual_weight_grams,
+              'length', length,
+              'width', width,
+              'height', height,
+              'tariff', tariff,
+              'price', (
+                SELECT SUM(CAST(total_price AS int)) 
+                FROM manual_order_items
+                WHERE order_id = $1 :: text)) :: jsonb
+          FROM orders WHERE id = $1 :: text|]
+
+getPatchedOrderDetails :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PatchedOrderDetails)
+getPatchedOrderDetails orderId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement orderId $
+        rmap (extractADT . convertFromJson @PatchedOrderDetails)
+        [Hasql.singletonStatement|
+         SELECT 
+           jsonb_build_object(
+            'sdek_uuid', sdek_request_uuid,
+            'parcel_weight', o.actual_weight_grams,
+            'length', o.length,
+            'width', o.width,
+            'height', o.height,
+            'items', array_agg(jsonb_build_object (
+              'name', moi.item_name,
+              'article', moi.article,
+              'weight', moi.weight,
+              'cost', moi.total_price
+            ) ORDER BY moi.article)
+           ) :: jsonb
+         FROM orders AS o
+         INNER JOIN manual_order_items AS moi
+         ON o.id = moi.order_id 
+         WHERE o.id = $1 :: text
+         GROUP BY sdek_request_uuid, o.actual_weight_grams, o.length, o.width, o.height|]
+
+setReceiptReady :: MonadIO m => Text -> UUID -> Hasql.Pool -> m (Either Text ())
+setReceiptReady orderId uuid pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ 
+      Hasql.statement (orderId, uuid) $
+      [Hasql.resultlessStatement|
+        UPDATE orders 
+        SET receipt_ready = TRUE,
+        receipt_uuid = $2 :: uuid
+        WHERE id = $1 :: text|]

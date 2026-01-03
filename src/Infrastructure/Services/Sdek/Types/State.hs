@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE DataKinds  #-}
+{-# LANGUAGE DeriveAnyClass  #-}
 
 module Infrastructure.Services.Sdek.Types.State where
 
@@ -43,3 +44,12 @@ convertStateToSql Waiting      = "waiting"
 convertStateToSql Successful   = "successful"
 convertStateToSql Invalid      = "invalid"
 convertStateToSql (UnknownState t) = error $ "Unknown SdekRequestState: " <> show t
+
+
+data SdekReceiptState
+     = ACCEPTED
+     | INVALID      
+     | WAITING      
+     | SUCCESSFUL
+     | OTHER
+     deriving (Show, Eq, Generic, FromJSON, ToJSON)

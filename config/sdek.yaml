@@ -22,8 +22,7 @@ sender_location:
   # Postal code is often mandatory
   postal_code: "111123"
 
-drop_off_point: MSK36
-
+drop_off_point: MSK2184
 
 # Your default tariff codes for different delivery types
 tariffs:

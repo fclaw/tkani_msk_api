@@ -18,6 +18,12 @@ module Infrastructure.Services.Sdek
        , getOrdersInTransit
        , scheduleSingleOrderCourier
        , getPickupApplicationByUUID
+       , getDeliveryPointByCode
+       , getCityByName
+       , getTotalSumByTariff
+       , patchOrder
+       , obtainOrderReceiptUrl
+       , requestReceiptGeneration
        ) where
 
 import Data.Text (Text)
@@ -45,7 +51,8 @@ import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import TH.Location (currentModule)
 import API.WithField (WithField (..))
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
-import Infrastructure.Services.Sdek.Types
+import Infrastructure.Services.Sdek.Types hiding (DeliveryPoint)
+import qualified Infrastructure.Services.Sdek.Types as Sdek (DeliveryPoint)
 import Data.Maybe (fromMaybe)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 import Infrastructure.Database.Types (OrderItem (..))
@@ -153,7 +160,7 @@ makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation sh
          flip map indexedItems $ \(idx, YamlOrderItem {..}) ->
             OrderItem
             { oiName = yoiName
-            , oiArticle = "ART-" <> tshow idx <> "-MAN"
+            , oiArticle = "ART-" <> tshow idx
             , oiFabricType = yoiFabricType
             , oiPricePerMetre = yoiPricePerMetre
             , oiTotalPrice = yoiTotalPrice
@@ -190,7 +197,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       SdekPackageItem
       { pkiName = oiName -- A generic name is fine for your manual workflow
       , pkiWareKey = oiArticle -- Use your internal fabric ID
-      , pkiPayment = SdekPayment { payValue = 100 }
+      , pkiPayment = SdekPayment { payValue = 0 }
       , pkiWeight = 500 -- A sensible default weight in grams
       , pkiAmount = 1   -- It's one "item" (one piece of fabric)
       , pkiCost = round oiTotalPrice
@@ -316,3 +323,70 @@ getPickupApplicationByUUID uuid = do
   let httpManager = _configHttpManager cfg
   let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . sdekAccessToken)
   makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq
+
+
+getDeliveryPointByCode :: Text -> AppM (Either HttpError [Sdek.DeliveryPoint])
+getDeliveryPointByCode code = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
+  let params = [("code", code), ("type", "PVZ"), ("size", tshow 1)]
+  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl params . Just . sdekAccessToken)
+  ePoints <- makeRequestWithRetries @[Sdek.DeliveryPoint] (Just (void $ getValidSdekToken)) pointsReq
+  handleApiResponse @_ @[Sdek.DeliveryPoint] $(currentModule) ePoints $ pure . Right
+
+getCityByName :: Text -> AppM (Either HttpError [SdekCityWithCode])
+getCityByName cityName = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let cityUrl = "https://" <> url <> "/v2/location/cities"
+  let params = -- The query parameters for the API call
+        [ ("country_codes", ("RU" :: Text)) -- Best practice to limit search to Russia
+        , ("city", cityName)
+        , ("size", tshow 1)
+        ]
+  let pointsReq = getValidSdekToken >>= (_getReq' httpManager cityUrl params . Just . sdekAccessToken)
+  ePoints <- makeRequestWithRetries @[SdekCityWithCode] (Just (void $ getValidSdekToken)) pointsReq
+  handleApiResponse @_ @[SdekCityWithCode] $(currentModule) ePoints $ pure . Right
+
+
+getTotalSumByTariff :: TotalSumRequest -> AppM (Either HttpError TotalSumResponse)
+getTotalSumByTariff totalSum = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let tariffUrl = "https://" <> url <> "/v2/calculator/tariff"
+  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager tariffUrl totalSum . Just . sdekAccessToken)
+  makeRequestWithRetries @TotalSumResponse (Just (void $ getValidSdekToken)) totalSumReq
+
+
+patchOrder :: PatchedOrderRequest -> AppM (Either HttpError PatchedOrderResponse)
+patchOrder patchedOrder = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let patchUrl = "https://" <> url <> "/v2/orders"
+  let patchReq = getValidSdekToken >>= (_patchReq' httpManager patchUrl patchedOrder . Just . sdekAccessToken)
+  makeRequestWithRetries @PatchedOrderResponse (Just (void $ getValidSdekToken)) patchReq
+
+obtainOrderReceiptUrl :: UUID -> AppM (Either HttpError ReceiptStatusResponse)
+obtainOrderReceiptUrl uuid = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let receiptUrl = "https://" <> url <> "/v2/print/orders/" <> show uuid
+  let receiptReq = getValidSdekToken >>= (_getReq' httpManager receiptUrl [] . Just . sdekAccessToken)
+  makeRequestWithRetries @ReceiptStatusResponse (Just (void $ getValidSdekToken)) receiptReq
+
+
+requestReceiptGeneration :: UUID -> AppM (Either HttpError ReceiptRegisterResponse)
+requestReceiptGeneration uuid = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let printfUrl = "https://" <> url <> "/v2/print/orders"
+  let orders = ReceiptRegisterRequest [ReceiptRegisterRequestOrder uuid] 2
+  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl orders . Just . sdekAccessToken)
+  makeRequestWithRetries @ReceiptRegisterResponse (Just (void $ getValidSdekToken)) totalSumReq
