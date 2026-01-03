@@ -13,22 +13,22 @@ ALTER TABLE orders
 ADD COLUMN shipping_cost_kopecks INT; -- Store price in kopecks
 
 ALTER TABLE orders
-ADD column is_bot BOOLEAN
+ADD column is_bot BOOLEAN;
 
 ALTER TABLE orders
-ADD column length INT
+ADD column length INT;
 
 ALTER TABLE orders
-ADD column width INT
+ADD column width INT;
 
 ALTER TABLE orders
-ADD column height INT
+ADD column height INT;
 
 ALTER TABLE orders
 ADD COLUMN receipt_ready BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE orders
-ADD column receipt_uuid UUID
+ADD column receipt_uuid UUID;
 
 -- Optional but recommended: Add an index for the worker that will look for these jobs.
 CREATE INDEX idx_orders_receipt_ready ON orders (receipt_ready)
