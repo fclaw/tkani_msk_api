@@ -166,7 +166,7 @@ data Routes route = Routes
       :- "warehouse"
       :> "reports"
       :> "daily-sales"
-      :> Get '[JSON] (ApiResponse ())
+      :> Post '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 
