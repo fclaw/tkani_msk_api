@@ -331,7 +331,13 @@ getDeliveryPointByCode code = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
-  let params = [("code", code), ("type", "PVZ"), ("size", tshow 1)]
+      -- --- THIS IS THE FIX ---
+    -- We remove the 'type' and 'size' parameters.
+    -- When querying by a unique code, we don't need to filter by type.
+    -- 'size' is also irrelevant as we expect only one result.
+    -- When searching by a unique 'code', we should NOT filter by 'type'.
+    -- This allows the API to return the result whether it's a PVZ or a POSTAMAT.
+  let params = [("code", code)]
   let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl params . Just . sdekAccessToken)
   ePoints <- makeRequestWithRetries @[Sdek.DeliveryPoint] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[Sdek.DeliveryPoint] $(currentModule) ePoints $ pure . Right
