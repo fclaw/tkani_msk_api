@@ -34,6 +34,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Control.Exception (try)
 import Network.HTTP.Client (HttpException, responseBody)
 
+
 import App (AppM, extractFromEither, sdekAccessToken, _configHttpManager, ChatKey(ORDER))
 import Concurrency (runJobWithCleanup)
 import Text (camelToSnake, tshow)
@@ -89,7 +90,7 @@ processSingleJob (Right ReceiptJob {..}) = do
         let caption = "📄 Новая квитанция СДЭК для заказа `" <> escapeMarkdownV2 orderId <> "`\n" <> customer
         let filename = "receipt-" <> orderId <> ".pdf"
         -- 2. Call the new service function
-        void $ sendDocument ORDER caption filename pdfBytes
+        void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
         $(logTM) InfoS $ "Successfully sent SDEK receipt for " <> ls orderId <> " to admin channel."
 
 -- | Fetches a SDEK receipt PDF link by polling the status endpoint.

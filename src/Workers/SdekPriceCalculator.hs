@@ -14,7 +14,7 @@ import Data.Aeson
 import Data.Aeson.TH
 import Data.Either (isLeft)
 import Data.Foldable (for_)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics
@@ -30,6 +30,8 @@ import Control.Concurrent.Async (async)
 import Control.Concurrent (threadDelay)
 import System.Timeout.Lifted (timeout)
 import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.Ord (Down (..))
+import Data.List (sortOn)
 
 
 import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither)
@@ -44,7 +46,7 @@ import Infrastructure.Database
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
 import Infrastructure.Services.Sdek.CachedCityCodes (fetchCityCodeForPvz)
 import Infrastructure.Services.Sdek.Types.Config (dropOffPoint)
-import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration)
+import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration, getOrderStatus)
 import Infrastructure.Services.Sdek.Types
 import Concurrency (runJobWithCleanup)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
@@ -144,17 +146,24 @@ processSingleJob (Right PriceJob {..}) = do
                    (req:_) -> 
                      case porbState req of
                        Accepted -> do
-                                     $(logTM) InfoS $ ls $ 
-                                       "request for a receipt to be printed, order " <> 
-                                       orderId <> 
-                                       ", sdek uuid: " <> 
-                                       tshow podSdekUuid
-                                     eReqReq <- registerReceipt podSdekUuid
-                                     extractFromEither eReqReq $ \receiptUuid -> do
-                                       eDbRes <- setReceiptReady orderId receiptUuid pool 
-                                       extractValue eDbRes $ \_ -> 
-                                         $(logTM) InfoS $ ls $ "order " <> orderId <> " has been successfully patched"
-                                       when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "order " <> orderId <> ", db failure " <> tshow eDbRes
+                         $(logTM) InfoS $ "SDEK order patch ACCEPTED. Polling for completion..."
+                         ePollRes <- pollForPatchCompletion podSdekUuid
+                         case ePollRes of
+                           Left pollErr -> $(logTM) ErrorS $ "Polling for patch completion failed for order " <> ls orderId <> ": " <> ls pollErr
+                           Right finalOrderState -> do
+                             -- NOW it is safe to generate the receipt
+                             $(logTM) InfoS $ "SDEK order patch is complete. Requesting receipt generation..."
+                             $(logTM) InfoS $ ls $ 
+                               "request for a receipt to be printed, order " <> 
+                               orderId <> 
+                               ", sdek uuid: " <> 
+                               tshow podSdekUuid
+                             eReqReq <- registerReceipt podSdekUuid
+                             extractFromEither eReqReq $ \receiptUuid -> do
+                               eDbRes <- setReceiptReady orderId receiptUuid pool 
+                               extractValue eDbRes $ \_ -> 
+                                 $(logTM) InfoS $ ls $ "order " <> orderId <> " has been successfully patched"
+                               when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "order " <> orderId <> ", db failure " <> tshow eDbRes
                        state -> $(logTM) ErrorS $ ls $ "order " <> orderId <> " is not patched, state: " <> tshow state    
                        
 
@@ -175,3 +184,38 @@ registerReceipt sdekUuid = do
           let errorMsg = T.intercalate ", " (maybe [] (map message) (rrrErrors response))
           pure $ Left ("SDEK returned INVALID: " <> errorMsg)
         other -> pure $ Left ("Unexpected SDEK receipt status: " <> tshow other)
+
+-- | Polls an order's status until it is no longer in an 'ACCEPTED' state,
+--   confirming that a PATCH or other update has been fully processed.
+pollForPatchCompletion :: UUID -> AppM (Either Text SdekRequestState)
+pollForPatchCompletion orderUuid = go 1
+  where
+    maxAttempts = 10
+    delaySeconds = 3
+
+    go attempt
+      | attempt > maxAttempts = pure $ Left "Timed out waiting for SDEK order patch to complete."
+      | otherwise = do
+          eStatusResponse <- getOrderStatus orderUuid -- Your GET /v2/orders/{uuid} function
+          case eStatusResponse of
+            Left err -> pure $ Left ("API error during polling: " <> tshow err)
+            Right statusResponse ->
+                  -- Get the latest status from the history
+              let latestStatus = listToMaybe $ sortOn (Down . spsDateTime) (sosrRequests statusResponse)
+              in case latestStatus of
+                   Just s | spsState s == Accepted -> do
+                    -- The PATCH is still being processed. Wait and recurse.
+                     $(logTM) DebugS $ "Order " <> ls (tshow orderUuid) <> " is still ACCEPTED. Waiting..."
+                     liftIO $ threadDelay (delaySeconds * 1000000)
+                     go (attempt + 1)
+                        
+                   Just s -> do
+                     -- Any other status (e.g., CREATED, RECEIVED) means the patch is done.
+                     $(logTM) InfoS $ 
+                       "SDEK order patch for " <> 
+                       ls (tshow orderUuid) <> 
+                       " completed with status: " <> 
+                       ls (show (spsState s))
+                     pure $ Right $ spsState s
+
+                   Nothing -> pure $ Left "SDEK order has no status history."

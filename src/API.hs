@@ -160,7 +160,13 @@ data Routes route = Routes
        :> "orders"
        :> "create-from-yaml"
        :> ReqBody '[JSON] YamlOrderRequest
-       :> Put '[JSON] (ApiResponse YamlOrderResponse)         
+       :> Put '[JSON] (ApiResponse YamlOrderResponse)
+  , _reportDailySales
+      :: route
+      :- "warehouse"
+      :> "reports"
+      :> "daily-sales"
+      :> Get '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

@@ -58,6 +58,7 @@ module Infrastructure.Database
   , getYamlOrderDetailsForPricing
   , getPatchedOrderDetails
   , setReceiptReady
+  , refreshAndFetchDailyStats
   , module Types
   , module Utils
   ) where
@@ -68,6 +69,8 @@ import qualified Hasql.Transaction as Hasql
 import qualified Hasql.Transaction.Sessions as Hasql
 import qualified Hasql.Statement as Hasql
 import qualified Hasql.TH as Hasql
+import qualified Hasql.Encoders as HE
+import qualified Hasql.Decoders as HD
 import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
@@ -1624,3 +1627,30 @@ setReceiptReady orderId uuid pool =
         SET receipt_ready = TRUE,
         receipt_uuid = $2 :: uuid
         WHERE id = $1 :: text|]
+
+
+type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double)
+
+refreshAndFetchDailyStats :: MonadIO m => Hasql.Pool -> m (Either Text [DailyStatsRow])
+refreshAndFetchDailyStats pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      let refreshStatement :: Hasql.Statement () ()
+          refreshStatement = Hasql.Statement "REFRESH MATERIALIZED VIEW CONCURRENTLY daily_sales_stats" HE.noParams HD.noResult False
+
+      -- Execute the dynamic statement
+      Hasql.statement () refreshStatement
+
+      -- Step 2: Fetch the data for the last 30 days
+      fmap (V.toList) $ Hasql.statement () $
+        [Hasql.vectorStatement|
+          SELECT
+            sale_date :: date,
+            total_orders :: int4,
+            total_revenue :: float8,
+            pre_cuts_sold_count :: int4,
+            rolls_sold_count :: int4,
+            total_meters_sold :: float8?
+          FROM daily_sales_stats
+          ORDER BY sale_date DESC
+          LIMIT 30 |]

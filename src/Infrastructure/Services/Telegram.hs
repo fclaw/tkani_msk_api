@@ -273,8 +273,9 @@ sendDocument
   -> Text                  -- ^ The caption for the document
   -> Text                  -- ^ The filename to display in Telegram
   -> B.ByteString          -- ^ The raw binary content of the file
+  -> Text
   -> AppM (Either TelegramError ())
-sendDocument chatKey caption filename fileContent = do
+sendDocument chatKey caption filename fileContent contentType = do
   -- 1. Get the necessary config from our application environment
   bots <- fmap _bots ask
   let botsInfo = M.lookup chatKey bots
@@ -289,7 +290,7 @@ sendDocument chatKey caption filename fileContent = do
     let filePart = 
           (W.partBS "document" fileContent) 
           & W.partFileName ?~ (T.unpack filename)
-          & W.partContentType ?~ "application/pdf"
+          & W.partContentType ?~ TE.encodeUtf8 contentType
 
     -- 2. Create the other parts for chat_id and caption.
     let chatPart = W.partText "chat_id" (tshow chat)
@@ -303,7 +304,8 @@ sendDocument chatKey caption filename fileContent = do
     -- 3. The 'post' function takes a list of 'Part's.
     let parts = [chatPart, captionPart, parseModePart, filePart]
     eResponse <- liftIO $ try' (postWith opts fullUrl parts)
+    -- liftIO $ eResponse
     case eResponse of
       Left httpErr -> return $ Left (ApiRequestFailed (toException httpErr))
       Right _ -> return $ Right () 
-  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure $ Right ();
+  case res of Nothing -> pure $ Left BotNotFound; Just res -> pure res;

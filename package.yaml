@@ -80,6 +80,7 @@ library:
     - process
     - unliftio
     - yaml
+    - cassava
 
 executables:
   tkani-api-exe:

@@ -19,6 +19,7 @@ import Data.Text (Text)
 import Data.UUID (UUID, fromText)
 import qualified Data.Vector as V
 import Data.Maybe (listToMaybe)
+import Data.Time (UTCTime)
 
 import Text (camelToSnake)
 import Infrastructure.Services.Sdek.Types.State
@@ -223,6 +224,7 @@ instance FromJSON SdekOrderStatusResponse where
 data SdekPollingStatus = SdekPollingStatus
   { spsRequestUuid :: UUID
   , spsState       :: SdekRequestState -- Use our existing safe enum!
+  , spsDateTime    :: UTCTime 
   , spsErrors      :: [SdekError]
   } deriving (Show, Generic)
 
@@ -231,6 +233,7 @@ instance FromJSON SdekPollingStatus where
     SdekPollingStatus
       <$> (o .: "request_uuid" >>= parseUuid)
       <*> o .: "state"
+      <*> o .: "date_time"
       <*> o .:? "errors" .!= []
     where
       errorMsg = ("Invalid UUID format in 'entity.uuid': " <>) . T.unpack
@@ -479,4 +482,6 @@ instance FromJSON ReceiptRegisterResponse where
                 { rrrUuid   = uuid
                 , rrrState  = state firstRequest
                 , rrrErrors = errors firstRequest }
+
+data OrderStatusResponse
       
