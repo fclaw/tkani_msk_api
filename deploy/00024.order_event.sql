@@ -75,13 +75,6 @@ AFTER INSERT OR UPDATE ON orders
 FOR EACH ROW
 EXECUTE FUNCTION notify_price_calculator();
 
--- Now, create the new one
-CREATE TRIGGER orders_weight_set_trigger
--- It MUST listen for both INSERT and UPDATE
-AFTER INSERT OR UPDATE ON orders
-FOR EACH ROW
-EXECUTE FUNCTION notify_price_calculator();
-
 CREATE TABLE manual_order_items (
     id SERIAL PRIMARY KEY,
     
