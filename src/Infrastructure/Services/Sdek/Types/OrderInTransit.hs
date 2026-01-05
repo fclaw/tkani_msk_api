@@ -66,7 +66,9 @@ instance FromJSON SdekShipmentState where
     "ACCEPTED"                                -> StatusAccepted
     "RECEIVED_AT_SHIPMENT_WAREHOUSE"          -> StatusReceivedAtShipmentWarehouse
     "READY_FOR_SHIPMENT_IN_SENDER_CITY"       -> StatusReadyForShipmentInSenderCity
-    "TAKEN_BY_TRANSPORTER_FROM_SENDER_CITY"  -> StatusTakenByTransporterFromSenderCity
+    "TAKEN_BY_TRANSPORTER_FROM_SENDER_CITY"   -> StatusTakenByTransporterFromSenderCity
+    "READY_FOR_SHIPMENT_IN_TRANSIT_CITY"      -> StatusReadyForShipmentInTransitCity
+    "READY_TO_SHIP_AT_SENDING_OFFICE"         -> StatusReadyToShipAtSendingOffice
     
     -- Transit
     "SENT_TO_TRANSIT_CITY"                    -> StatusSentToTransitCity
