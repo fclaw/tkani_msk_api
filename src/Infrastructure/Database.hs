@@ -373,7 +373,7 @@ updateOrderStatusStatement =
     UPDATE orders 
     SET status = CAST($2 :: text AS order_status) 
     WHERE id = $1 :: text 
-    RETURNING internal_notification_message_id :: int8
+    RETURNING COALESCE(internal_notification_message_id, 0) :: int8
   |]
 
 updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> IO (Either Text Int64)
