@@ -4,6 +4,8 @@ BEGIN;
 
 -- XXX Add DDLs here.
 -- migration_create_daily_sales_stats.sql
+
+DROP MATERIALIZED VIEW IF EXISTS daily_sales_stats;
 CREATE MATERIALIZED VIEW daily_sales_stats AS
 SELECT
     -- The date dimension
