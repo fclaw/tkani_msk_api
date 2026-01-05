@@ -127,6 +127,8 @@ mapSdekToInternal (Just sdekState) current = case sdekState of
   StatusReceivedAtShipmentWarehouse       -> OnRoute
   StatusReadyForShipmentInSenderCity      -> OnRoute
   StatusTakenByTransporterFromSenderCity  -> OnRoute
+  StatusReadyToShipAtSendingOffice        -> OnRoute
+  StatusReadyForShipmentInTransitCity     -> OnRoute
   
   -- Between Cities
   StatusSentToTransitCity                 -> OnRoute

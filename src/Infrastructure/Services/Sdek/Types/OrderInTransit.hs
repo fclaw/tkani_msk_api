@@ -31,6 +31,8 @@ data SdekShipmentState
   | StatusReceivedAtShipmentWarehouse       -- "RECEIVED_AT_SHIPMENT_WAREHOUSE"
   | StatusReadyForShipmentInSenderCity      -- "READY_FOR_SHIPMENT_IN_SENDER_CITY"
   | StatusTakenByTransporterFromSenderCity  -- "TAKEN_BY_TRANSPORTER_FROM_SENDER_CITY"
+  | StatusReadyToShipAtSendingOffice        -- "READY_TO_SHIP_AT_SENDING_OFFICE"
+  | StatusReadyForShipmentInTransitCity     -- "READY_FOR_SHIPMENT_IN_TRANSIT_CITY"
   
   -- Transit (The "Black Box" between cities)
   | StatusSentToTransitCity                 -- "SENT_TO_TRANSIT_CITY"
