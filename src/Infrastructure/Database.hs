@@ -1635,14 +1635,20 @@ refreshAndFetchDailyStats :: MonadIO m => Hasql.Pool -> m (Either Text [DailySta
 refreshAndFetchDailyStats pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
-      let refreshStatement :: Hasql.Statement () ()
-          refreshStatement = Hasql.Statement "REFRESH MATERIALIZED VIEW CONCURRENTLY daily_sales_stats" HE.noParams HD.noResult False
-
       -- Execute the dynamic statement
-      Hasql.statement () refreshStatement
+      Hasql.statement () $
+        Hasql.Statement 
+          "REFRESH \ 
+          \ MATERIALIZED \
+          \ VIEW CONCURRENTLY \ 
+          \ daily_sales_stats" 
+          HE.noParams 
+          HD.noResult 
+          False
 
       -- Step 2: Fetch the data for the last 30 days
-      fmap (V.toList) $ Hasql.statement () $
+      fmap (V.toList) $ 
+        Hasql.statement () $
         [Hasql.vectorStatement|
           SELECT
             sale_date :: date,
@@ -1652,5 +1658,4 @@ refreshAndFetchDailyStats pool =
             rolls_sold_count :: int4,
             total_meters_sold :: float8?
           FROM daily_sales_stats
-          ORDER BY sale_date DESC
-          LIMIT 30 |]
+          ORDER BY sale_date DESC LIMIT 30|]

@@ -33,6 +33,8 @@ import Control.Lens ((&), (?~))
 import Data.Text.Encoding (encodeUtf8)
 import Control.Exception (try)
 import Network.HTTP.Client (HttpException, responseBody)
+import Data.Time.Format (formatTime, defaultTimeLocale)
+import Data.Time.LocalTime (getZonedTime)
 
 
 import App (AppM, extractFromEither, sdekAccessToken, _configHttpManager, ChatKey(ORDER))
@@ -87,7 +89,14 @@ processSingleJob (Right ReceiptJob {..}) = do
       Left err -> $(logTM) ErrorS "Failed to download the receipt PDF."
       Right pdfBytes -> do
         -- 1. We have the file. Now, send it to the order (ORDER) channel.
-        let caption = "📄 Новая квитанция СДЭК для заказа `" <> escapeMarkdownV2 orderId <> "`\n" <> customer
+        todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
+        let caption = 
+              "📄 Новая квитанция СДЭК для заказа `" <> 
+              escapeMarkdownV2 orderId <> 
+              "`\n" <> 
+              customer <> 
+              "\n" <> 
+              escapeMarkdownV2 todayHashtag
         let filename = "receipt-" <> orderId <> ".pdf"
         -- 2. Call the new service function
         void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
