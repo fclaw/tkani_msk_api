@@ -77,7 +77,7 @@ WHERE
     (o.status != 'registered'
     OR o.status != 'cancelled')
     AND o.is_removed_from_delivery_provider = FALSE
-    AND now()::date == o.created_at::date + INTERVAL '1 day'
+    AND now()::date = o.created_at::date + INTERVAL '1 day'
 GROUP BY
     sale_date
 ORDER BY
@@ -85,7 +85,5 @@ ORDER BY
 
 -- Don't forget the unique index for concurrent refresh
 CREATE UNIQUE INDEX ON daily_sales_stats (sale_date);
-
-
 
 COMMIT;
