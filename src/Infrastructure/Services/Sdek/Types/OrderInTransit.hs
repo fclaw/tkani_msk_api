@@ -34,6 +34,7 @@ data SdekShipmentState
   | StatusReadyToShipAtSendingOffice        -- "READY_TO_SHIP_AT_SENDING_OFFICE"
   | StatusReadyForShipmentInTransitCity     -- "READY_FOR_SHIPMENT_IN_TRANSIT_CITY"
   | StatusReturnedToSenderCityWarehouse     -- "RETURNED_TO_SENDER_CITY_WAREHOUSE"
+  | StatusReturnedToRecipientCityWarehouse  -- "RETURNED_TO_RECIPIENT_CITY_WAREHOUSE"
   
   -- Transit (The "Black Box" between cities)
   | StatusSentToTransitCity                 -- "SENT_TO_TRANSIT_CITY"
@@ -71,6 +72,7 @@ instance FromJSON SdekShipmentState where
     "READY_FOR_SHIPMENT_IN_TRANSIT_CITY"      -> StatusReadyForShipmentInTransitCity
     "READY_TO_SHIP_AT_SENDING_OFFICE"         -> StatusReadyToShipAtSendingOffice
     "RETURNED_TO_SENDER_CITY_WAREHOUSE"       -> StatusReturnedToSenderCityWarehouse
+    "RETURNED_TO_RECIPIENT_CITY_WAREHOUSE"    -> StatusReturnedToRecipientCityWarehouse
     
     -- Transit
     "SENT_TO_TRANSIT_CITY"                    -> StatusSentToTransitCity
