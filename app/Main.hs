@@ -305,10 +305,10 @@ main = do
         let tasks :: [(Workers, IO ())]
             tasks = 
               [ (WebServer, server)
-              , (SdekOrderStatusPoller, 
-                 runInIO orderStatusPoller 
-                   >>= showErrorInWorker 
-                        SdekOrderStatusPoller)
+              -- , (SdekOrderStatusPoller, 
+              --    runInIO orderStatusPoller 
+              --      >>= showErrorInWorker 
+              --           SdekOrderStatusPoller)
               , (Tinkoff, 
                  runInIO paymentStatusPoller 
                    >>= showErrorInWorker 
@@ -333,14 +333,14 @@ main = do
                  runInIO runSdekStatusPoller 
                    >>= showErrorInWorker 
                         SdekStatusPoller)
-              -- , (SdekPriceCalculator,
-              --     runInIO (runSdekPriceCalculator connInfo runInIO)
-              --      >>= showErrorInWorker
-              --           SdekPriceCalculator)
-              -- , (SdekGenerateReceipt, 
-              --     runInIO (runSdekGenerateReceipt connInfo runInIO)
-              --      >>= showErrorInWorker 
-              --           SdekGenerateReceipt)
+              , (SdekPriceCalculator,
+                  runInIO (runSdekPriceCalculator connInfo runInIO)
+                   >>= showErrorInWorker
+                        SdekPriceCalculator)
+              , (SdekGenerateReceipt, 
+                  runInIO (runSdekGenerateReceipt connInfo runInIO)
+                   >>= showErrorInWorker 
+                        SdekGenerateReceipt)
               ]
 
         putStrLn "Spawning concurrent workers..."
