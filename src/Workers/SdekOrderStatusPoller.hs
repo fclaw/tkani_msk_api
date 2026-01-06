@@ -25,7 +25,7 @@ import API.Types (OrderStatus (..))
 import Infrastructure.Database (getOrdersInTransit, updateOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus)
-import Concurrency (pooledForConcurrentlyN)
+-- import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError (..))
@@ -41,7 +41,7 @@ orderStatusPoller = do
   let requiredStatuses = [Registered, Paid, OnRoute, Delivered, PickedUpByCourier]
   eUuids <- liftIO $ getOrdersInTransit requiredStatuses pool
   for_ eUuids $ \uuids ->
-    void $ pooledForConcurrentlyN 3 uuids $ \(orderId, uuid, status) -> do 
+    for_ uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
       eRes <- Sdek.getOrdersInTransit uuid
       handleWorkerApiResponse $(currentModule) eRes
