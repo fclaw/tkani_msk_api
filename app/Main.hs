@@ -333,14 +333,14 @@ main = do
                  runInIO runSdekStatusPoller 
                    >>= showErrorInWorker 
                         SdekStatusPoller)
-              , (SdekPriceCalculator,
-                  runInIO (runSdekPriceCalculator connInfo runInIO)
-                   >>= showErrorInWorker
-                        SdekPriceCalculator)
-              , (SdekGenerateReceipt, 
-                  runInIO (runSdekGenerateReceipt connInfo runInIO)
-                   >>= showErrorInWorker 
-                        SdekGenerateReceipt)
+              -- , (SdekPriceCalculator,
+              --     runInIO (runSdekPriceCalculator connInfo runInIO)
+              --      >>= showErrorInWorker
+              --           SdekPriceCalculator)
+              -- , (SdekGenerateReceipt, 
+              --     runInIO (runSdekGenerateReceipt connInfo runInIO)
+              --      >>= showErrorInWorker 
+              --           SdekGenerateReceipt)
               ]
 
         putStrLn "Spawning concurrent workers..."
