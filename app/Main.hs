@@ -22,7 +22,7 @@ import Control.Monad.Reader (runReaderT)
 import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
-import Control.Monad (void, when)
+import Control.Monad (void, when, forever)
 import Control.Exception (finally, bracket, SomeException)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
@@ -52,6 +52,7 @@ import Network.HTTP.Types.Method (StdMethod(DELETE, PUT, PATCH), renderStdMethod
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Lazy as BL
+import Control.Concurrent (threadDelay)
 
 
 import Handlers (apiHandlers) -- Import our top-level record of handlers
@@ -305,10 +306,12 @@ main = do
         let tasks :: [(Workers, IO ())]
             tasks = 
               [ (WebServer, server)
-              -- , (SdekOrderStatusPoller, 
-              --    runInIO orderStatusPoller 
-              --      >>= showErrorInWorker 
-              --           SdekOrderStatusPoller)
+              , (SdekOrderStatusPoller, 
+                 forever $ do
+                   runInIO orderStatusPoller
+                     >>= showErrorInWorker 
+                           SdekOrderStatusPoller
+                   threadDelay (5 * 60 * 1000000))
               , (Tinkoff, 
                  runInIO paymentStatusPoller 
                    >>= showErrorInWorker 

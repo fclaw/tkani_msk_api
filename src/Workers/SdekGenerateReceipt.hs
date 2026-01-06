@@ -28,8 +28,8 @@ import Control.Concurrent.Async (async)
 import Control.Concurrent (threadDelay)
 import Data.Maybe (listToMaybe)
 import Control.Monad.Reader.Class (ask)
-import Network.Wreq (defaults, auth, oauth2Bearer, getWith)
-import Control.Lens ((&), (?~))
+import Network.Wreq (defaults, auth, oauth2Bearer, getWith, manager)
+import Control.Lens ((&), (?~), (.~))
 import Data.Text.Encoding (encodeUtf8)
 import Control.Exception (try)
 import Network.HTTP.Client (HttpException, responseBody)
@@ -162,9 +162,12 @@ downloadSdekPdf :: Text -> AppM (Either Text B.ByteString)
 downloadSdekPdf pdfUrl = do
   cfg <- ask
   token <- fmap sdekAccessToken getValidSdekToken
-  let httpManager = _configHttpManager cfg
+  let mgr = _configHttpManager cfg
 --   ... get manager and auth token ...
-  let opts = defaults & auth ?~ oauth2Bearer (encodeUtf8 token)
+  let opts = 
+        defaults 
+        & auth ?~ oauth2Bearer (encodeUtf8 token) 
+        & manager .~ Right mgr
   let handleResp (Left err) = Left (tshow err)
       handleResp (Right response) = Right (BL.toStrict (responseBody response))
   fmap handleResp $ liftIO $ try @HttpException (getWith opts (T.unpack pdfUrl))

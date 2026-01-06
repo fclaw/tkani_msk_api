@@ -6,8 +6,7 @@
 
 module Workers.SdekOrderStatusPoller (orderStatusPoller) where
 
-import Control.Concurrent (threadDelay)
-import Control.Monad (forever, when)
+import Control.Monad (when)
 import Katip
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
@@ -35,7 +34,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
 orderStatusPoller :: AppM ()
-orderStatusPoller = forever $ do
+orderStatusPoller = do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask
@@ -71,7 +70,6 @@ orderStatusPoller = forever $ do
               void $ liftIO $ updateOrderStatus orderId newStatus pool)
 
   when(isLeft eUuids) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eUuids
-  liftIO $ threadDelay (5 * 60 * 1000000)
 
 handleSdekFailure :: Text -> UUID -> HttpError -> AppM ()
 handleSdekFailure _ _ (JsonDecodeError err) = $(logTM) ErrorS $ ls $ "aeson error " <> err
