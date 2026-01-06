@@ -5,7 +5,6 @@ module Workers.SdekPickupRStatusPoller (pickupStatusPoller) where
 
 
 import Katip
-import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
 import Data.UUID (UUID)
@@ -14,7 +13,6 @@ import Data.Foldable (for_)
 import Control.Monad (void, when)
 import Data.Text (Text, pack)
 import qualified Data.Text as T
-import Control.Concurrent (threadDelay)
 import Data.Maybe (fromMaybe, catMaybes)
 import Data.Int (Int64)
 import qualified Data.HashMap.Strict as HM
@@ -46,7 +44,7 @@ formatDayForTag = T.pack . formatTime defaultTimeLocale "%Y_%m_%d"
 
 
 pickupStatusPoller :: AppM ()
-pickupStatusPoller = forever $ do
+pickupStatusPoller = do
   -- Implementation goes here
   $(logTM) InfoS "Polling for SDEK courier statuses..."
   pool <- fmap _appDBPool ask
@@ -85,10 +83,6 @@ pickupStatusPoller = forever $ do
                  orders))]
         message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Shipment") payload
         void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing Nothing
-
-  -- Wait for a long interval before the next run
-  -- (e.g., 15 minutes)
-  liftIO $ threadDelay (5 * 60 * 1000000)
 
 checkSinglePickupStatus :: UUID -> Int64 -> Text -> Text -> AppM (Maybe (Text, Text))
 checkSinglePickupStatus uuid msgId orderId trackingNumber = do

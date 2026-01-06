@@ -32,6 +32,7 @@ import System.Timeout.Lifted (timeout)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Ord (Down (..))
 import Data.List (sortOn)
+import Data.Bifunctor (second)
 
 
 import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither)
@@ -41,6 +42,7 @@ import Infrastructure.Database
        , getYamlOrderDetailsForPricing
        , extractValue
        , getPatchedOrderDetails
+       , getOrderDetailsForPricing
        , PatchedOrderDetails (..)
        , PatchedOrderDetailsItem (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
@@ -58,8 +60,6 @@ data PriceJob = PriceJob { orderId :: Text, isBot :: Bool }
   deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PriceJob)
-
-getOrderDetailsForPricing _ _ = return $ Left "getOrderDetailsForPricing for bot is not implemented yet"
 
 
 runSdekPriceCalculator :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()

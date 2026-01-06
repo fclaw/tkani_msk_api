@@ -320,18 +320,26 @@ main = do
                   runInIO (runCollageJobListener connInfo runInIO)
                     >>= showErrorInWorker 
                          CollageMaker)
-              , (CartsCleaner, 
-                 runInIO runCartsCleaner 
-                   >>= showErrorInWorker 
-                       CartsCleaner)
-              , (SdekPickUpScheduler,
-                 runInIO runSdekPickUpScheduler 
-                   >>= showErrorInWorker 
-                        SdekPickUpScheduler)
+              , (CartsCleaner,
+                 forever $ do 
+                   runInIO runCartsCleaner 
+                     >>= showErrorInWorker 
+                           CartsCleaner
+                   threadDelay (60 * 1000000))
+              , (SdekPickUpScheduler, do
+                 -- Initialize the lock variable
+                 lastRunVar <- newTVarIO Nothing
+                 forever $ do
+                   runInIO (runSdekPickUpScheduler lastRunVar)
+                     >>= showErrorInWorker 
+                           SdekPickUpScheduler
+                   threadDelay (10 * 60 * 1000000))
               , (PickupStatusPoller,
-                 runInIO pickupStatusPoller 
-                   >>= showErrorInWorker 
-                        PickupStatusPoller)
+                 forever $ do
+                   runInIO pickupStatusPoller 
+                     >>= showErrorInWorker 
+                           PickupStatusPoller
+                   threadDelay (5 * 60 * 1000000))
               , (SdekStatusPoller,
                  runInIO runSdekStatusPoller 
                    >>= showErrorInWorker 
@@ -342,7 +350,7 @@ main = do
                         SdekPriceCalculator)
               , (SdekGenerateReceipt, 
                   runInIO (runSdekGenerateReceipt connInfo runInIO)
-                   >>= showErrorInWorker 
+                   >>= showErrorInWorker
                         SdekGenerateReceipt)
               ]
 
