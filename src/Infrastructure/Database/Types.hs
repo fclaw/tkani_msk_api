@@ -20,7 +20,7 @@ import Text (recordLabelModifier, encodeToText)
 import Infrastructure.Services.Types (PaymentProvider)
 import Domain.Warehouse.Types (FabricType, Fabric (..))
 import API.Types (RawIngestRequest (..), MediaType)
-
+import Domain.Logic.Dimensions
 
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -150,12 +150,52 @@ data PriceInfo =
      , piWidth       :: Int
      , piHeight      :: Int
      , piPrice       :: Int
-     }
-  deriving (Show, Eq, Generic)
+     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pi" } ''PriceInfo)
 
 defPriceInfo = PriceInfo 0 mempty 0 0 0 0
+
+data PriceInfoBotItem =
+     PriceInfoBotItem
+     { pibiDensity        :: FabricDensity
+     , pibiWidth          :: Double
+     , pibiLength         :: Double
+     , pibiWeightPerMetre :: Double
+     , pibiPrice          :: Int
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pibi" } ''PriceInfoBotItem)
+
+data PriceInfoBot =
+     PriceInfoBot 
+     { pibTariff :: Int
+     , pibPickUpPoint :: Text
+     , pibItems :: [PriceInfoBotItem] 
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pib" } ''PriceInfoBot)
+
+reducePriceInfoBot :: PriceInfoBot -> PriceInfo
+reducePriceInfoBot PriceInfoBot {..} =
+  let getTotalWeight acc [] = acc
+      getTotalWeight old (PriceInfoBotItem {..} : xs) =
+        let new = estimatePackedWeight old pibiWeightPerMetre pibiLength
+        in getTotalWeight new xs
+      (lengthXs, widthXs, heightXs) = 
+        unzip3 [ estimatePackedDimensions 
+                 pibiDensity 
+                 pibiWidth 
+                 pibiLength 
+               | PriceInfoBotItem {..} <- pibItems ] 
+      piTariff      = pibTariff
+      piPickUpPoint = pibPickUpPoint
+      piWeight      = getTotalWeight packagingWeightGrams pibItems
+      piLength      = maximum lengthXs
+      piWidth       = maximum widthXs
+      piHeight      = sum heightXs
+      piPrice       = sum (map pibiPrice pibItems)
+  in PriceInfo {..}
 
 data  YamlOrder =
       YamlOrder 

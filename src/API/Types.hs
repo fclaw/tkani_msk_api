@@ -7,7 +7,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module API.Types  where
+module API.Types where
 
 import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), Value(..), withObject)
 import Data.Text (Text)
@@ -23,6 +23,7 @@ import Data.Time (Day, parseTimeM, defaultTimeLocale)
 
 import Text (camelToSnake, recordLabelModifier) 
 import Domain.Warehouse.Types (FabricType)
+import Domain.Logic.Dimensions (FabricDensity)
 
 
 
@@ -82,17 +83,28 @@ data MediaType =
 
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''MediaType)
 
+
+data FabricProperties = 
+     FabricProperties 
+     { fpDensity        :: FabricDensity 
+     , fpWeightPerMetre :: Double
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricProperties)
+
+
 -- | 2. The Ingest Payload (Matches your Python Dict keys exactly)
 data RawIngestRequest = 
      RawIngestRequest
-    { rawFabricId     :: Maybe Int64
-    , rawText         :: Text        -- ^ The caption
-    , rawMsgId        :: Int64       -- ^ Warehouse Message ID
-    , rawMediaGroupId :: Maybe Text  -- ^ Album ID (null/None if single)
-    , rawMediaType    :: MediaType   -- ^ Parsed via the Enum above
-    , rawFileId       :: Maybe Text  -- ^ The file ID
-    , rawThumbnailUrl :: Maybe Text
-    , rawGalleryDate  :: Maybe Day
+    { rawFabricId         :: Maybe Int64
+    , rawText             :: Text        -- ^ The caption
+    , rawMsgId            :: Int64       -- ^ Warehouse Message ID
+    , rawMediaGroupId     :: Maybe Text  -- ^ Album ID (null/None if single)
+    , rawMediaType        :: MediaType   -- ^ Parsed via the Enum above
+    , rawFileId           :: Maybe Text  -- ^ The file ID
+    , rawThumbnailUrl     :: Maybe Text
+    , rawGalleryDate      :: Maybe Day
+    , rawFabricProperties :: FabricProperties
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)

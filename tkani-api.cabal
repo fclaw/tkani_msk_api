@@ -36,6 +36,7 @@ library
       Concurrency
       Domain.Error
       Domain.Inventory
+      Domain.Logic.Dimensions
       Domain.Services.Reporting
       Domain.Services.Shipping
       Domain.Telegram.Types

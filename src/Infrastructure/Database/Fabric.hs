@@ -7,7 +7,7 @@ import qualified Hasql.Transaction.Sessions as Hasql
 import qualified Hasql.Statement as Hasql
 import qualified Hasql.TH as Hasql
 import Domain.Warehouse.Types (Fabric(..), FabricType(..))
-import  API.Types (RawIngestRequest (..))
+import  API.Types (RawIngestRequest (..), fpDensity, fpWeightPerMetre)
 import Data.Int (Int32, Int64)
 import Data.Text (Text)
 import Data.Maybe (fromMaybe, isJust)
@@ -50,7 +50,9 @@ ingestFabricDB fabric req = do
       if fType fabric == Roll &&
          isJust (rawGalleryDate req) then 
         rawGalleryDate req
-      else Nothing 
+      else Nothing,
+      encodeToText (fpDensity (rawFabricProperties req)),
+      fpWeightPerMetre (rawFabricProperties req)
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -73,8 +75,7 @@ ingestFabricDB fabric req = do
 -- SQL QUERIES (Hasql TH)
 -- -----------------------------------------------------------------------------
 
-upsertFabricQuery 
-  :: Hasql.Statement 
+type RawFabric = 
      ( Maybe Text
      , Text
      , Maybe Int32
@@ -87,7 +88,11 @@ upsertFabricQuery
      , Maybe Text
      , Int32
      , Bool
-     , Maybe Day) (Int64, Text, Bool)
+     , Maybe Day
+     , Text
+     , Double)
+
+upsertFabricQuery :: Hasql.Statement RawFabric (Int64, Text, Bool)
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -104,7 +109,9 @@ upsertFabricQuery =
       thumbnail_url,
       width,
       is_searchable,
-      daily_digest_id
+      daily_digest_id,
+      density,
+      weight_per_metre
     ) 
     VALUES (
       COALESCE($1 :: text?, next_fabric_article()),
@@ -120,9 +127,11 @@ upsertFabricQuery =
       $10 :: text?,
       $11 :: int4,
       $12 :: bool,
-      (SELECT id 
+      (SELECT id
        FROM daily_digests 
-       WHERE announcement_date = $13 :: date?)
+       WHERE announcement_date = $13 :: date?),
+      CAST($14 :: text AS fabric_density),
+      $15 :: float8  
     )
     ON CONFLICT (article) DO UPDATE
     SET 

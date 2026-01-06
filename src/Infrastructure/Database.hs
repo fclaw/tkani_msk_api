@@ -56,6 +56,7 @@ module Infrastructure.Database
    -- yaml order
   , placeNewYamlOrder
   , getYamlOrderDetailsForPricing
+  , getOrderDetailsForPricing
   , getPatchedOrderDetails
   , setReceiptReady
   , refreshAndFetchDailyStats
@@ -1574,7 +1575,9 @@ getYamlOrderDetailsForPricing orderId pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
       Hasql.statement orderId $
-        rmap (extractADT . convertFromJson @PriceInfo)
+        rmap ( extractADT 
+             . convertFromJson 
+               @PriceInfo)
         [Hasql.singletonStatement|
           SELECT
             jsonb_build_object(
@@ -1589,6 +1592,51 @@ getYamlOrderDetailsForPricing orderId pool =
                 FROM manual_order_items
                 WHERE order_id = $1 :: text)) :: jsonb
           FROM orders WHERE id = $1 :: text|]
+
+
+getOrderDetailsForPricing :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PriceInfo)
+getOrderDetailsForPricing orderId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement orderId $
+        rmap ( reducePriceInfoBot
+             . extractADT
+             . convertFromJson 
+               @PriceInfoBot)
+        [Hasql.singletonStatement|
+          SELECT
+            jsonb_build_object(
+              'pick_up_point', r.pick_up_point,
+              'tariff', r.tariff,
+              'items', r.items) :: jsonb
+          FROM    
+          (SELECT 
+            TRIM(REGEXP_REPLACE(delivery_point_id, 'sdek_', '')) AS pick_up_point,
+            tariff,
+            array_agg(
+             jsonb_build_object(
+              'density', f.density,
+              'width', f.width,
+                'length', COALESCE(ofb.length_m, pc.length_m),
+                'weight_per_metre', f.weight_per_metre,
+                'price',
+                 CASE
+                   WHEN ofb.pre_cut_id IS NULL
+                   THEN CAST(ofb.length_m * f.price_per_meter AS int)
+                   ELSE pc.price_rub
+                 END          
+              )) :: jsonb[] AS items
+          FROM orders AS o
+          INNER JOIN order_fabric_bindings AS ofb
+          ON o.id = ofb.order_id
+          LEFT JOIN fabrics AS f
+          ON f.id = ofb.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON ofb.pre_cut_id = pc.id
+          WHERE o.id = $1 :: text
+          GROUP BY o.delivery_point_id, o.tariff) AS r
+        |]
+        
 
 getPatchedOrderDetails :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PatchedOrderDetails)
 getPatchedOrderDetails orderId pool =
