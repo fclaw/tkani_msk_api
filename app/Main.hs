@@ -213,7 +213,7 @@ main = do
         
       -- 4. Build the configuration using the DSL.
       let poolConfig = Config.settings
-            [ Config.size 50                         -- Pool size of 10
+            [ Config.size 10                         -- Pool size of 10
             , Config.acquisitionTimeout 10           -- Timeout of 10 seconds
             , Config.staticConnectionSettings [connection connString] -- The connection string itself
             ]
