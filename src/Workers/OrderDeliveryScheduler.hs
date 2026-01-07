@@ -83,5 +83,5 @@ runOrderDeliveryScheduler lastRunVar = do
 
 makeBody [] body = body
 makeBody ((idx, OrderDeliveryItem {..}) : rest) oldBody = makeBody rest newBody
-  where newBody | T.empty oldBody = tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack 
+  where newBody | T.null oldBody = tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack 
                 | otherwise = oldBody <> "\n" <> tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack
