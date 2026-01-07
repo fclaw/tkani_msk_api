@@ -10,7 +10,10 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module Infrastructure.Database
-  ( getFabricPreview
+  ( -- re-export
+    module Types
+  , module Utils
+  , getFabricPreview
   , putNewFabric
   , getOrderItems
   , placeNewOrder
@@ -60,8 +63,8 @@ module Infrastructure.Database
   , getPatchedOrderDetails
   , setReceiptReady
   , refreshAndFetchDailyStats
-  , module Types
-  , module Utils
+  , fetchOrderDeliveryItem
+  , insertTelegramOrderDeliveryPost
   ) where
 
 
@@ -1768,3 +1771,39 @@ refreshAndFetchDailyStats pool =
             total_meters_sold :: float8?
           FROM daily_sales_stats
           ORDER BY sale_date DESC LIMIT 30|]
+
+
+fetchOrderDeliveryItem :: MonadIO m => Day -> Hasql.Pool -> m (Either Text (Maybe Int32, [OrderDeliveryItem]))
+fetchOrderDeliveryItem day pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement day $
+        rmap (second (extractADT . sequence . map (convertFromJson @OrderDeliveryItem) . V.toList)) $
+        [Hasql.singletonStatement|
+          WITH post_id AS (
+		        SELECT
+		        message_id :: int
+		        FROM order_delivery_posts AS odp
+		        WHERE odp.created_at :: date + interval '1 day' = $1 :: date
+          )
+          SELECT
+		      (SELECT * FROM post_id) :: int?,
+          jsonb_agg(
+            jsonb_build_object(
+              'id', o.id,
+              'track', o.sdek_tracking_number
+            ) ORDER BY o.created_at ASC) :: jsonb[]
+          FROM orders AS o
+		      WHERE o.status = 'delivered'
+		      LIMIT 20
+        |]
+
+insertTelegramOrderDeliveryPost :: MonadIO m => Int32 -> Hasql.Pool -> m (Either Text ())
+insertTelegramOrderDeliveryPost postId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement postId $
+      [Hasql.resultlessStatement|
+        INSERT INTO order_delivery_posts
+        (message_id) VALUES ($1 :: int)
+      |]

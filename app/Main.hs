@@ -69,6 +69,7 @@ import Workers.SdekPickupRStatusPoller (pickupStatusPoller)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Workers.SdekPriceCalculator (runSdekPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
+import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
@@ -87,6 +88,7 @@ data Workers =
       | SdekStatusPoller
       | SdekPriceCalculator
       | SdekGenerateReceipt
+      | OrderDeliveryScheduler
 
 instance Show Workers where
   show WebServer = "Web Server"
@@ -99,6 +101,7 @@ instance Show Workers where
   show SdekStatusPoller = "SDEK Status Poller"
   show SdekPriceCalculator = "SDEK Price Calculator"
   show SdekGenerateReceipt = "SDEK Generate Receipt"
+  show OrderDeliveryScheduler = "Order Delivery Scheduler"
 
 
 methodsCors :: Middleware
@@ -351,6 +354,13 @@ main = do
                   runInIO (runSdekGenerateReceipt connInfo runInIO)
                    >>= showErrorInWorker
                         SdekGenerateReceipt)
+              , (OrderDeliveryScheduler, do
+                 -- Initialize the lock variable
+                 lastRunVar <- newTVarIO Nothing
+                 runForever 10 $
+                   runInIO (runOrderDeliveryScheduler lastRunVar)
+                     >>= showErrorInWorker 
+                           OrderDeliveryScheduler)
               ]
 
         putStrLn "Spawning concurrent workers..."

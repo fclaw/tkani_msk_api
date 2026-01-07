@@ -26,6 +26,7 @@ library
       Workers.SdekStatusPoller
       Workers.SdekPriceCalculator
       Workers.SdekGenerateReceipt
+      Workers.OrderDeliveryScheduler
       Infrastructure.Services.Overpass
       Application.Listener
       Application.Cart

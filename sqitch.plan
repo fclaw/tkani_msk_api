@@ -31,3 +31,4 @@
 00028.daily_stat 2026-01-05T12:52:15Z System Administrator <root@Sonny.local> # daily stat: update
 00029.fabric_properties 2026-01-05T13:49:18Z System Administrator <root@Sonny.local> # fabric properties
 00030.order_event 2026-01-07T09:40:33Z System Administrator <root@Sonny.local> # order event
+00031.order_delivery_notification 2026-01-07T14:05:40Z System Administrator <root@Sonny.local> # order delivery notification

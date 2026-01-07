@@ -236,3 +236,11 @@ data PatchedOrderDetails =
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pod" } ''PatchedOrderDetails)
+
+data OrderDeliveryItem = 
+     OrderDeliveryItem
+     { odiId :: Text 
+     , odiTrack :: Text
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odi" } ''OrderDeliveryItem)

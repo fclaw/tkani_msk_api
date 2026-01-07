@@ -3,8 +3,7 @@
 
 module Workers.SdekPickUpScheduler (runSdekPickUpScheduler) where
 
-import Control.Monad (forever)
-import Control.Concurrent (threadDelay)
+
 import Katip
 import Data.Time -- for time-of-day checking
 import Data.Text (Text)
