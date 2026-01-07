@@ -16,6 +16,7 @@ import Data.Maybe (fromMaybe)
 import Control.Monad (when, void)
 import Data.Foldable (for_)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Text as T
 
 
 import Text (tshow)
@@ -82,4 +83,5 @@ runOrderDeliveryScheduler lastRunVar = do
 
 makeBody [] body = body
 makeBody ((idx, OrderDeliveryItem {..}) : rest) oldBody = makeBody rest newBody
-  where newBody = oldBody <> "\n" <> tshow idx <> " - " <> "order: " <> odiId <> ", sdek: " <> odiTrack
+  where newBody | T.empty oldBody = tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack 
+                | otherwise = oldBody <> "\n" <> tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack
