@@ -287,10 +287,10 @@ getOrderItems userId pool =
     runTransaction pool Hasql.Write $ 
       userId `Hasql.statement` getOrderItemsStatement
 
-placeNewOrderStatement :: Hasql.Statement Order ()
+placeNewOrderStatement :: Hasql.Statement Order Int64
 placeNewOrderStatement = 
   lmap $(recordToTuple ''Order)
-  [Hasql.resultlessStatement|
+  [Hasql.rowsAffectedStatement|
     WITH inserted_order AS (
       INSERT INTO orders (
        id,
@@ -304,7 +304,9 @@ placeNewOrderStatement =
        tariff,
        created_at,
        updated_at,
-       status
+       status,
+       is_bot,
+       actual_weight_grams
       ) VALUES (
        $1 :: text,
        $2 :: text,
@@ -317,10 +319,26 @@ placeNewOrderStatement =
        $10 :: int4,
        now(),
        now(),
-       'registered'
-      )
-      RETURNING id
-    )
+       'registered',
+       true,
+       COALESCE(
+        (SELECT
+         SUM(ROUND(
+          COALESCE(ci.length_m, pc.length_m) *
+          COALESCE(f.weight_per_metre, pc_parent_fabric.weight_per_metre)
+         ))
+        FROM carts AS c
+        INNER JOIN cart_items AS ci 
+        ON c.id = ci.cart_id
+        LEFT JOIN fabrics AS f 
+        ON ci.fabric_id = f.id
+        LEFT JOIN pre_cuts AS pc 
+        ON ci.pre_cut_id = pc.id
+        LEFT JOIN fabrics AS pc_parent_fabric 
+        ON pc.fabric_id = pc_parent_fabric.id
+        WHERE c.telegram_user_id = $9 :: int8)
+        , 0))
+      RETURNING id)
     INSERT INTO order_fabric_bindings (
         order_id, 
         fabric_id,
@@ -340,7 +358,7 @@ placeNewOrderStatement =
     WHERE c.telegram_user_id = $9 :: int8 
   |]
 
-placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text ())
+placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text Int64)
 placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
 
 setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
@@ -1645,25 +1663,68 @@ getPatchedOrderDetails orderId pool =
       Hasql.statement orderId $
         rmap (extractADT . convertFromJson @PatchedOrderDetails)
         [Hasql.singletonStatement|
-         SELECT 
-           jsonb_build_object(
-            'sdek_uuid', sdek_request_uuid,
-            'parcel_weight', o.actual_weight_grams,
-            'length', o.length,
-            'width', o.width,
-            'height', o.height,
-            'items', array_agg(jsonb_build_object (
-              'name', moi.item_name,
-              'article', moi.article,
-              'weight', moi.weight,
-              'cost', moi.total_price
-            ) ORDER BY moi.article)
-           ) :: jsonb
-         FROM orders AS o
-         INNER JOIN manual_order_items AS moi
-         ON o.id = moi.order_id 
-         WHERE o.id = $1 :: text
-         GROUP BY sdek_request_uuid, o.actual_weight_grams, o.length, o.width, o.height|]
+          SELECT 
+            jsonb_build_object(
+             'sdek_uuid', o.sdek_request_uuid,
+             'items', array_agg(
+               jsonb_build_object(
+                'name', moi.item_name,
+                'article', moi.article,
+                'weight', moi.weight,
+                'cost', moi.total_price
+               ) ORDER BY moi.article)
+            ) :: jsonb
+          FROM orders AS o
+          INNER JOIN manual_order_items AS moi
+          ON o.id = moi.order_id 
+          WHERE o.id = $1 :: text
+          GROUP BY o.sdek_request_uuid
+         
+          UNION
+
+          SELECT 
+            jsonb_build_object(
+             'sdek_uuid', o.sdek_request_uuid,
+             'items', array_agg(
+               jsonb_build_object(
+                'name', 
+                  CASE
+                    WHEN ofb.length_m IS NOT NULL
+                    THEN f.name
+                    ELSE pcf.name 
+                  END,
+                'article', 
+                  CASE
+                    WHEN ofb.length_m IS NOT NULL
+                    THEN f.article
+                    ELSE pcf.article
+                  END,
+                'weight',
+                  CASE
+                    WHEN ofb.length_m IS NOT NULL
+                    THEN ROUND(f.weight_per_metre * ofb.length_m)
+                    ELSE ROUND(f.weight_per_metre * pc.length_m)
+                  END,
+                'cost',
+                  CASE
+                    WHEN ofb.length_m IS NOT NULL
+                    THEN f.price_per_meter * ofb.length_m
+                    ELSE pc.price_rub
+                  END
+               ) ORDER BY COALESCE(f.article, pcf.article))
+            ) :: jsonb
+          FROM orders AS o
+          INNER JOIN order_fabric_bindings AS ofb
+          ON o.id = ofb.order_id 
+          LEFT JOIN fabrics AS f
+          ON f.id = ofb.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON ofb.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS pcf
+          ON pc.fabric_id = pcf.id
+          WHERE o.id = $1 :: text
+          GROUP BY o.sdek_request_uuid
+        |]
 
 setReceiptReady :: MonadIO m => Text -> UUID -> Hasql.Pool -> m (Either Text ())
 setReceiptReady orderId uuid pool =

@@ -113,6 +113,9 @@ whenLeft _        _ = pure ()
 
 showErrorInWorker worker res = whenLeft res $ \e -> error $ show worker <> " failed with a servant error: " <> show e
 
+runForever delay worker = forever $ do worker; threadDelay (delay * 60 * 1000000)
+
+
 -- This is the "natural transformation" that converts our 'AppM' into a 'Handler'
 appToHandler :: forall a . Config -> TVar State -> AppM a -> Handler a
 appToHandler config stateTVar appM = do
@@ -307,11 +310,10 @@ main = do
             tasks = 
               [ (WebServer, server)
               , (SdekOrderStatusPoller, 
-                 forever $ do
+                 runForever 5 $
                    runInIO orderStatusPoller
                      >>= showErrorInWorker 
-                           SdekOrderStatusPoller
-                   threadDelay (5 * 60 * 1000000))
+                           SdekOrderStatusPoller)
               , (Tinkoff, 
                  runInIO paymentStatusPoller 
                    >>= showErrorInWorker 
@@ -321,25 +323,22 @@ main = do
                     >>= showErrorInWorker 
                          CollageMaker)
               , (CartsCleaner,
-                 forever $ do 
+                 runForever 1 $
                    runInIO runCartsCleaner 
                      >>= showErrorInWorker 
-                           CartsCleaner
-                   threadDelay (60 * 1000000))
+                           CartsCleaner)
               , (SdekPickUpScheduler, do
                  -- Initialize the lock variable
                  lastRunVar <- newTVarIO Nothing
-                 forever $ do
+                 runForever 10 $
                    runInIO (runSdekPickUpScheduler lastRunVar)
                      >>= showErrorInWorker 
-                           SdekPickUpScheduler
-                   threadDelay (10 * 60 * 1000000))
+                           SdekPickUpScheduler)
               , (PickupStatusPoller,
-                 forever $ do
+                 runForever 5 $
                    runInIO pickupStatusPoller 
                      >>= showErrorInWorker 
-                           PickupStatusPoller
-                   threadDelay (5 * 60 * 1000000))
+                           PickupStatusPoller)
               , (SdekStatusPoller,
                  runInIO runSdekStatusPoller 
                    >>= showErrorInWorker 

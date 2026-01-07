@@ -7,7 +7,8 @@
 module Concurrency (pooledForConcurrentlyN, runJobWithCleanup) where
 
 import Katip
-import Control.Concurrent.Async.Lifted (forConcurrently)
+import Control.Concurrent.Async.Lifted (mapConcurrently)
+import Control.Monad (forM)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically)
@@ -15,6 +16,14 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Exception.Lifted (finally, try, SomeException)
 
 import App (AppM)
+
+
+-- | Helper to split list into chunks of N
+chunkList :: Int -> [a] -> [[a]]
+chunkList _ [] = []
+chunkList n xs =
+  let (chunk, rest) = splitAt n xs
+  in chunk : chunkList n rest
 
 -- | maps an action over a list using at most N concurrent threads.
 -- Valid types: IO, ReaderT config IO, AppM, etc.
@@ -25,18 +34,14 @@ pooledForConcurrentlyN
   -> (a -> m b)   -- ^ Action to apply
   -> m [b]        -- ^ Ordered list of results
 pooledForConcurrentlyN n _ _ | n <= 0 = error "pooledForConcurrentlyN: thread limit must be > 0"
-pooledForConcurrentlyN n xs action = runJobs xs
-  where
-    -- Helper: Take 'n' items, run them, append results, recurse.
-    runJobs [] = return []
-    runJobs input = do
-      let (chunk, rest) = splitAt n input
-      -- 1. Run this batch (concurrency is limited by chunk size 'n')
-      chunkResults <- forConcurrently chunk action
-      -- 2. Recurse for the rest
-      restResults <- runJobs rest
-      -- 3. Combine (Results are strictly ordered)
-      return (chunkResults ++ restResults)
+pooledForConcurrentlyN n xs action = do
+    -- 1. Split input into batches
+    let batches = chunkList n xs
+    -- 2. Run batches Sequentially (Monadic bind)
+    --    Inside each batch, run Concurrently (Async)
+    resultsOfBatches <- forM batches $ mapConcurrently action
+    -- 3. Flatten the results
+    return (concat resultsOfBatches)
 
 -- | A simple flag to track the outcome of the worker.
 data WorkerStatus = InProgress | Succeeded | Failed

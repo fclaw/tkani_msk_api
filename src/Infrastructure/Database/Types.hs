@@ -231,12 +231,8 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "podi" } 
 
 data PatchedOrderDetails =
      PatchedOrderDetails
-     { podSdekUuid      :: UUID
-     , podParcelWeight  :: Int
-     , podLength        :: Int
-     , podWidth         :: Int
-     , podHeight        :: Int
-     , podItems :: [PatchedOrderDetailsItem]
+     { podSdekUuid :: UUID
+     , podItems    :: [PatchedOrderDetailsItem]
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pod" } ''PatchedOrderDetails)

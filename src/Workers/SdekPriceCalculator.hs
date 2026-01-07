@@ -131,10 +131,10 @@ processSingleJob (Right PriceJob {..}) = do
                             , porpiCost    = podiCost
                             }
                 let package = defPatchedOrderRequestPackage 
-                              { porpWeight = podParcelWeight
-                              , porpLength = podLength
-                              , porpWidth  = podWidth
-                              , porpHeight = podHeight
+                              { porpWeight = piWeight
+                              , porpLength = piLength
+                              , porpWidth  = piWidth
+                              , porpHeight = piHeight
                               , porpItems  = items
                               }
                 let patchedOrderReq = PatchedOrderRequest podSdekUuid [package]
