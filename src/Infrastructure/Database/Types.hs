@@ -15,6 +15,7 @@ import           Data.UUID (UUID) -- For the SDEK tracking UUID
 import           Data.Aeson.TH
 import           Data.Int (Int64, Int32)
 import           Data.Char (toLower)
+import           Data.Time.Calendar.Month (Month)
 
 import Text (recordLabelModifier, encodeToText)
 import Infrastructure.Services.Types (PaymentProvider)
@@ -244,3 +245,13 @@ data OrderDeliveryItem =
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odi" } ''OrderDeliveryItem)
+
+-- Your ADT
+data MonthlyStat = 
+     MonthlyStat
+     { msSaleMonth       :: Month
+     , msTotalOrders     :: Int32
+     , msAvgOrdersPerDay :: Int32
+     , msTotalProfit     :: Double
+     , msAvgProfitPerDay :: Double
+     } deriving (Show)

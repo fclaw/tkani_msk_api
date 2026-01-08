@@ -34,6 +34,8 @@ import qualified Handlers.DeleteFabric as DeleteFabric
 import qualified Handlers.MeasureOrder as MeasureOrder
 import qualified Handlers.PlaceYamlOrder as PlaceYamlOrder
 import qualified Handlers.ReportDailySales as ReportDailySales
+import qualified Handlers.ReportMonthlySales as ReportMonthlySales
+
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
@@ -62,4 +64,5 @@ apiHandlers = Routes
   , _measureOrder = MeasureOrder.handler
   , _placeYamlOrder = PlaceYamlOrder.handler
   , _reportDailySales = ReportDailySales.handler
+  , _reportMonthlySales = ReportMonthlySales.handler
   }

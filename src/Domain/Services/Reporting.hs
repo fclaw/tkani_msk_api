@@ -1,8 +1,12 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Domain.Services.Reporting (generateAndSendDailyReport) where
+module Domain.Services.Reporting 
+       ( generateAndSendDailyReport
+       , generateAndSendMonthlyReport) 
+       where
 
 import Data.Csv (ToNamedRecord(..), DefaultOrdered(..), namedRecord, (.=), encodeDefaultOrderedByName)
 import qualified Data.Vector as V
@@ -19,9 +23,12 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Time.LocalTime (getZonedTime)
 import Control.Monad.Reader.Class (ask)
 import Data.Int (Int32)
+import Data.Time.Calendar.Month (Month(..)) -- Import the constructor
+import Data.Time (Day, fromGregorian, formatTime, defaultTimeLocale)
 
-import App (AppM, ChatKey (ORDER), _appDBPool)
-import Infrastructure.Database (refreshAndFetchDailyStats)
+
+import App (AppM, ChatKey (ORDER), _appDBPool, extractFromEither)
+import Infrastructure.Database (refreshAndFetchDailyStats, refreshAndFetchMonthlyStats, MonthlyStat (..))
 import qualified Infrastructure.Services.Telegram as Telegram
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 
@@ -60,21 +67,19 @@ generateAndSendDailyReport = do
   -- Step 1: Refresh the materialized view and fetch the data
   pool <- fmap _appDBPool ask
   eStats <- refreshAndFetchDailyStats pool
-  case eStats of
-    Left dbErr -> $(logTM) ErrorS $ "Failed to fetch daily stats from DB: " <> ls (show dbErr)
-    Right stats -> do
-      -- Step 2: Convert the stats to CSV format
-     -- We need to convert Day to Text for CSV
-            let reportRows = map toReportRow stats
-            let csvData = encodeDefaultOrderedByName reportRows
-            todayStr <- (T.pack . formatTime defaultTimeLocale "%Y-%m-%d") <$> (liftIO getZonedTime)
-            let filename = "daily_sales_report_" <> todayStr <> ".csv"
-            let caption = "📈 Ежедневный отчет по продажам за " <> escapeMarkdownV2 todayStr
+  extractFromEither eStats $ \stats -> do
+    -- Step 2: Convert the stats to CSV format
+    -- We need to convert Day to Text for CSV
+    let reportRows = map toReportRow stats
+    let csvData = encodeDefaultOrderedByName reportRows
+    todayStr <- (T.pack . formatTime defaultTimeLocale "%Y-%m-%d") <$> (liftIO getZonedTime)
+    let filename = "daily_sales_report_" <> todayStr <> ".csv"
+    let caption = "📈 Daily sales report for " <> escapeMarkdownV2 todayStr
 
-            eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
-            case eRes of
-              Left err -> $(logTM) ErrorS $ "Failed to send daily sales report: " <> ls (show err)
-              Right _ -> $(logTM) InfoS "Successfully generated and sent daily sales report."
+    eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
+    case eRes of
+      Left err -> $(logTM) ErrorS $ "Failed to send daily sales report: " <> ls (show err)
+      Right _ -> $(logTM) InfoS "Successfully generated and sent daily sales report."
 
 -- Helper to convert the DB row type to the CSV row type
 toReportRow :: (Day, Int32, Double, Int32, Int32, Maybe Double) -> DailyReportRow
@@ -87,3 +92,64 @@ toReportRow (date, orders, revenue, precuts, rolls, meters) =
     , rptRollsSold = rolls
     , rptTotalMetersSold = fromMaybe 0.0 meters
     }
+
+
+
+-- | Formats a 'Month' type into a human-readable "MonthName YYYY" string.
+--
+--   Args:
+--     month: The Month value to format.
+--
+--   Returns:
+--     A Text string, e.g., "December 2025" or "Декабрь 2025".
+formatMonth :: Month -> Text
+formatMonth (MkMonth monthInteger) =
+        -- 1. Extract the Year and Month-of-Year from the absolute integer value
+    let
+        year = (monthInteger - 1) `div` 12
+        month = fromIntegral $ (monthInteger - 1) `mod` 12 + 1 -- month is 1-12
+        -- 2. Create a dummy 'Day' object to use with formatTime.
+        --    We just need the year and month; the day (1) is arbitrary.
+        dummyDay :: Day = fromGregorian year month 1
+    
+    -- 3. Use formatTime with the correct format specifiers.
+    --    '%B' gives the full month name (e.g., "December").
+    --    '%Y' gives the 4-digit year.
+    in T.pack $ formatTime defaultTimeLocale "%B %Y" dummyDay
+
+
+
+instance DefaultOrdered MonthlyStat where
+  headerOrder _ = 
+    V.fromList [ 
+        "sale_month"
+      , "total_orders"
+      , "average_orders_per_day"
+      , "total_profit"
+      , "average_profit_per_day"
+    ]
+
+instance ToNamedRecord MonthlyStat where
+  toNamedRecord r = namedRecord
+    [ "sale_month"             .= formatMonth (msSaleMonth r)
+    , "total_orders"           .= msTotalOrders r
+    , "average_orders_per_day" .= msAvgOrdersPerDay r
+    , "total_profit"           .= msTotalProfit r
+    , "average_profit_per_day" .= msAvgProfitPerDay r
+    ]
+
+
+generateAndSendMonthlyReport :: AppM ()
+generateAndSendMonthlyReport = do
+  $(logTM) InfoS "Starting monthly sales report generation..."
+  -- Step 1: Refresh the materialized view and fetch the data
+  pool <- fmap _appDBPool ask
+  eStats <- refreshAndFetchMonthlyStats pool
+  extractFromEither eStats $ \stats -> do
+    let csvData = encodeDefaultOrderedByName stats
+    let filename = "12_months_sales_report_.csv"
+    let caption = "📈 Sales report for the last 12 months"
+    eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
+    case eRes of
+      Left err -> $(logTM) ErrorS $ "Failed to send monthly sales report: " <> ls (show err)
+      Right _ -> $(logTM) InfoS "Successfully generated and sent monthly sales report."

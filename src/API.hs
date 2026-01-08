@@ -167,6 +167,12 @@ data Routes route = Routes
       :> "reports"
       :> "daily-sales"
       :> Post '[JSON] (ApiResponse ())
+  , _reportMonthlySales
+      :: route
+      :- "warehouse"
+      :> "reports"
+      :> "monthly-sales"
+      :> Post '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

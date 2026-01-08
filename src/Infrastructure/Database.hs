@@ -65,6 +65,7 @@ module Infrastructure.Database
   , refreshAndFetchDailyStats
   , fetchOrderDeliveryItem
   , insertTelegramOrderDeliveryPost
+  , refreshAndFetchMonthlyStats
   ) where
 
 
@@ -88,10 +89,12 @@ import qualified Data.Vector as V
 import Data.Either (fromRight, either)
 import Data.Time (Day)
 import Control.Monad.IO.Class (liftIO, MonadIO)
+import Data.Time.Calendar.Month (Month)
+import qualified Data.Text as T
 
 
 import API.Types -- Your data types
-import TH.RecordToTuple (recordToTuple)
+import TH.RecordToTuple (recordToTuple, tupleToRecord)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
 import Infrastructure.Database.Types as Types
@@ -1814,4 +1817,24 @@ insertTelegramOrderDeliveryPost postId pool =
       [Hasql.resultlessStatement|
         INSERT INTO order_delivery_posts
         (message_id) VALUES ($1 :: int)
+      |]
+
+
+type MonthlytatsRow = (Month, Int32, Int32, Double, Double)
+
+refreshAndFetchMonthlyStats :: MonadIO m => Hasql.Pool -> m (Either Text [MonthlyStat])
+refreshAndFetchMonthlyStats pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement () $
+      rmap (map ($(tupleToRecord ''MonthlyStat) . app1 ((read @Month) . T.unpack)) . V.toList) $
+      [Hasql.vectorStatement|
+        SELECT 
+          sale_month :: text,
+          total_monthly_orders :: int,
+          average_orders_per_day :: int,
+          total_estimated_profit :: float8,
+          average_estimated_profit_per_day :: float8
+        FROM monthly_sales_stats
+        ORDER BY sale_month DESC LIMIT 12
       |]

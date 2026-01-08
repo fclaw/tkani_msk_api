@@ -61,6 +61,7 @@ library
       Handlers.PlaceYamlOrder
       Handlers.PutNewFabric
       Handlers.ReportDailySales
+      Handlers.ReportMonthlySales
       Handlers.SearchFabricCard
       Handlers.SearchFabrics
       Handlers.SetTelegramMessage
