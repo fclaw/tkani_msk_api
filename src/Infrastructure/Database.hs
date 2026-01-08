@@ -1778,7 +1778,11 @@ fetchOrderDeliveryItem day pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $
       Hasql.statement day $
-        rmap (second (extractADT . sequence . map (convertFromJson @OrderDeliveryItem) . V.toList)) $
+        rmap (second (
+            extractADT 
+          . sequence 
+          . map (convertFromJson @OrderDeliveryItem) 
+          . V.toList)) $
         [Hasql.singletonStatement|
           WITH post_id AS (
 		        SELECT
@@ -1788,7 +1792,7 @@ fetchOrderDeliveryItem day pool =
           )
           SELECT
 		      (SELECT * FROM post_id) :: int?,
-          jsonb_agg(
+          array_agg(
             jsonb_build_object(
               'id', o.id,
               'track', o.sdek_tracking_number
