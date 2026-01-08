@@ -67,12 +67,13 @@ runOrderDeliveryScheduler lastRunVar = do
     eDbRes <- fetchOrderDeliveryItem today pool
     extractFromEither eDbRes $ \(mYesterdayPostId, items) -> do 
       for_ mYesterdayPostId $ ((`deleteMessage` MAIN) . fromIntegral)
-      let list = makeBody (zip [1..] items) mempty
-      let body = HM.fromList [("items", list)]
-      message <- fmap escapeMarkdownV2 $ render ($currentModule) body
-      eResp <- sendOrEditTelegramMessage mempty message MAIN Nothing Nothing Nothing
-      extractFromEither eResp $ \MessageIdResponse {..} ->
-       void $ insertTelegramOrderDeliveryPost (fromIntegral message_id) pool
+      when(length items > 0) $ do
+        let list = makeBody (zip [1..] items) mempty
+        let body = HM.fromList [("items", list)]
+        message <- fmap escapeMarkdownV2 $ render ($currentModule) body
+        eResp <- sendOrEditTelegramMessage mempty message MAIN Nothing Nothing Nothing
+        extractFromEither eResp $ \MessageIdResponse {..} ->
+          void $ insertTelegramOrderDeliveryPost (fromIntegral message_id) pool
     $(logTM) InfoS "Order delivery scheduler has finished."
 
   -- F. If it is a new day (after midnight), reset the lock.
@@ -83,5 +84,5 @@ runOrderDeliveryScheduler lastRunVar = do
 
 makeBody [] body = body
 makeBody ((idx, OrderDeliveryItem {..}) : rest) oldBody = makeBody rest newBody
-  where newBody | T.null oldBody = tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack 
-                | otherwise = oldBody <> "\n" <> tshow idx <> " - " <> "заказ: " <> odiId <> ", СДЭК: " <> odiTrack
+  where newBody | T.null oldBody = tshow idx <> " - " <> "заказ: `" <> odiId <> "`, СДЭК: " <> odiTrack 
+                | otherwise = oldBody <> "\n" <> tshow idx <> " - " <> "заказ: `" <> odiId <> "`, СДЭК: " <> odiTrack

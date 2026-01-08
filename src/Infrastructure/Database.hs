@@ -1799,6 +1799,10 @@ fetchOrderDeliveryItem day pool =
             ) ORDER BY o.created_at ASC) :: jsonb[]
           FROM orders AS o
 		      WHERE o.status = 'delivered'
+          AND NOT EXISTS (
+	          SELECT 1
+	          FROM order_delivery_posts
+	          WHERE created_at :: date = now()::date)
 		      LIMIT 20
         |]
 
