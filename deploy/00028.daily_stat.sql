@@ -74,8 +74,8 @@ JOIN
     ) AS oi ON o.id = oi.order_id
     
 WHERE
-    (o.status != 'registered'
-    OR o.status != 'cancelled')
+     o.status != 'registered'
+    AND o.status != 'cancelled'
     AND o.is_removed_from_delivery_provider = FALSE
     AND now()::date = o.created_at::date + INTERVAL '1 day'
 GROUP BY
