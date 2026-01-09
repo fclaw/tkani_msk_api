@@ -1758,7 +1758,7 @@ refreshAndFetchDailyStats pool =
           \ VIEW CONCURRENTLY \ 
           \ daily_sales_stats" 
           HE.noParams 
-          HD.noResult 
+          HD.noResult
           False
 
       -- Step 2: Fetch the data for the last 30 days
