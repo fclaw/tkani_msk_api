@@ -240,8 +240,9 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pod" } '
 
 data OrderDeliveryItem = 
      OrderDeliveryItem
-     { odiId :: Text 
-     , odiTrack :: Text
+     { odiId            :: Text 
+     , odiTrack         :: Text
+     , odiKeepFreeUntil :: Maybe UTCTime 
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odi" } ''OrderDeliveryItem)

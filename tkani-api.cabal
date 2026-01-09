@@ -98,6 +98,7 @@ library
       TH.RecordToTuple
       Utils.CollageMaker
       Utils.Telegram.Markdown
+      Utils.Time
       Paths_tkani_api
   hs-source-dirs:
       src

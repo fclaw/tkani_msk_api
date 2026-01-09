@@ -16,6 +16,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
+import Data.Time (UTCTime)
 
 -- ===============================================================
 -- 1. Shipment Status
@@ -182,11 +183,15 @@ instance FromJSON SdekRequest where
 --    The type returned by your getOrdersInTransit function
 -- ===============================================================
 data SdekOrderInTransitResponse = SdekOrderInTransitResponse
-  { respEntity   :: Maybe SdekEntity -- 'entity' might be null if UUID is wrong
-  , respRequests :: [SdekRequest]
+  { respEntity        :: Maybe SdekEntity -- 'entity' might be null if UUID is wrong
+  , respKeepFreeUntil :: Maybe UTCTime
+  , respRequests      :: [SdekRequest]
   } deriving (Show, Eq, Generic)
 
 instance FromJSON SdekOrderInTransitResponse where
-  parseJSON = withObject "SdekOrderInTransitResponse" $ \v -> SdekOrderInTransitResponse
-    <$> v .:? "entity"
-    <*> v .:? "requests" .!= []
+  parseJSON = 
+    withObject "SdekOrderInTransitResponse" $ \v -> 
+      SdekOrderInTransitResponse
+      <$> v .:? "entity"
+      <*> v .:? "keep_free_until"
+      <*> v .:? "requests" .!= []

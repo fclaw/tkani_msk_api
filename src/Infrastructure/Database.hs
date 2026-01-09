@@ -91,8 +91,10 @@ import Data.Time (Day)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
+import Data.Time (UTCTime)
 
 
+import App (AppM)
 import API.Types -- Your data types
 import TH.RecordToTuple (recordToTuple, tupleToRecord)
 import API.WithField (WithField)
@@ -126,6 +128,15 @@ runTransactionM pool mode = liftIO . Hasql.use pool . Hasql.transaction Hasql.Se
 
 extractADT = either error id
 
+updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int64
+updateOrderStatusStatement = 
+  dimap (second statusToSQL) fromIntegral
+  [Hasql.singletonStatement| 
+    UPDATE orders 
+    SET status = CAST($2 :: text AS order_status) 
+    WHERE id = $1 :: text 
+    RETURNING COALESCE(internal_notification_message_id, 0) :: int8
+  |]
 
 -- | Statement to fetch a single fabric row by its ID.
 --   TH.singletonStatement reads the SQL, infers the parameter and result types.
@@ -391,18 +402,20 @@ getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe (Int64, Int64)))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
 
-updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int64
-updateOrderStatusStatement = 
-  dimap (second statusToSQL) fromIntegral
-  [Hasql.singletonStatement| 
-    UPDATE orders 
-    SET status = CAST($2 :: text AS order_status) 
-    WHERE id = $1 :: text 
-    RETURNING COALESCE(internal_notification_message_id, 0) :: int8
-  |]
-
-updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> IO (Either Text Int64)
-updateOrderStatus orderId status pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ (orderId, status) `Hasql.statement` updateOrderStatusStatement
+updateOrderStatus :: Text -> OrderStatus -> Maybe UTCTime -> Hasql.Pool -> AppM (Either Text Int64)
+updateOrderStatus orderId status keepFreeUntil pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ 
+      Hasql.statement 
+      (orderId, status, keepFreeUntil) $
+        dimap (app2 statusToSQL) fromIntegral
+        [Hasql.singletonStatement|
+          UPDATE orders 
+          SET status = CAST($2 :: text AS order_status),
+          keep_free_until = $3 :: timestamptz?   
+          WHERE id = $1 :: text
+          RETURNING COALESCE(internal_notification_message_id, 0) :: int8
+        |]
 
 -- | Updates inventory logic.
 -- Logic details:
@@ -757,8 +770,14 @@ updatePaymentStatus orderId paymentStatus orderStatus pool =
   fmap (first (pack . show)) $ 
     runTransaction pool Hasql.Write $ do
       void $ (orderId, paymentStatus, PENDING) `Hasql.statement` updatePaymentStatusStatement
-      (orderId, orderStatus) `Hasql.statement` updateOrderStatusStatement
-
+      Hasql.statement (orderId, orderStatus) $
+        dimap (second statusToSQL) fromIntegral
+        [Hasql.singletonStatement|
+          UPDATE orders 
+          SET status = CAST($2 :: text AS order_status)  
+          WHERE id = $1 :: text
+          RETURNING COALESCE(internal_notification_message_id, 0) :: int8
+        |]
 
 searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Maybe CatalogSummaryItem)
 searchFabricCardStatement = 
@@ -1798,7 +1817,8 @@ fetchOrderDeliveryItem day pool =
           array_agg(
             jsonb_build_object(
               'id', o.id,
-              'track', o.sdek_tracking_number
+              'track', o.sdek_tracking_number,
+              'keep_free_until', o.keep_free_until
             ) ORDER BY o.created_at ASC) :: jsonb[]
           FROM orders AS o
 		      WHERE o.status = 'delivered'

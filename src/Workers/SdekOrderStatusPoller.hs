@@ -24,7 +24,7 @@ import App (AppM, _appDBPool, render, ChatKey (..))
 import API.Types (OrderStatus (..))
 import Infrastructure.Database (getOrdersInTransit, updateOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
-import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus)
+import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus, respKeepFreeUntil)
 import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
@@ -66,7 +66,9 @@ orderStatusPoller = do
                   " has changed status from " <> 
                   pack (show status) <> " to " <> 
                   pack (show newStatus)
-              void $ liftIO $ updateOrderStatus orderId newStatus pool)
+              let keepUntil | newStatus == Delivered = respKeepFreeUntil res
+                            | otherwise = Nothing
+              void $ updateOrderStatus orderId newStatus keepUntil pool)
 
   when(isLeft eUuids) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eUuids
 

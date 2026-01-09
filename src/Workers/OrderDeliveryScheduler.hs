@@ -20,6 +20,7 @@ import qualified Data.Text as T
 
 
 import Text (tshow)
+import Utils.Time (utcToMoscowZonedTime)
 import TH.Location (currentModule)
 import App (AppM, _appDBPool, extractFromEither, ChatKey (MAIN), render)
 import Infrastructure.Database (fetchOrderDeliveryItem, insertTelegramOrderDeliveryPost, OrderDeliveryItem (..))
@@ -65,11 +66,11 @@ runOrderDeliveryScheduler lastRunVar = do
     $(logTM) InfoS "Order delivery time has come..."
     pool <- fmap _appDBPool ask
     eDbRes <- fetchOrderDeliveryItem today pool
-    extractFromEither eDbRes $ \(mYesterdayPostId, items) -> do 
+    extractFromEither eDbRes $ \(mYesterdayPostId, xs) -> do 
       for_ mYesterdayPostId $ ((`deleteMessage` MAIN) . fromIntegral)
-      when(length items > 0) $ do
-        let list = makeBody (zip [1..] items) mempty
-        let body = HM.fromList [("items", list)]
+      when(length xs > 0) $ do
+        let items = generateArrivalNotification xs
+        let body = HM.fromList [("items", items)]
         message <- fmap escapeMarkdownV2 $ render ($currentModule) body
         eResp <- sendOrEditTelegramMessage mempty message MAIN Nothing Nothing Nothing
         extractFromEither eResp $ \MessageIdResponse {..} ->
@@ -82,7 +83,33 @@ runOrderDeliveryScheduler lastRunVar = do
     when (lastRun /= Just today) $
       writeTVar lastRunVar Nothing
 
-makeBody [] body = body
-makeBody ((idx, OrderDeliveryItem {..}) : rest) oldBody = makeBody rest newBody
-  where newBody | T.null oldBody = tshow idx <> " - " <> "заказ: `" <> odiId <> "`, СДЭК: " <> odiTrack 
-                | otherwise = oldBody <> "\n" <> tshow idx <> " - " <> "заказ: `" <> odiId <> "`, СДЭК: " <> odiTrack
+
+generateArrivalNotification :: [OrderDeliveryItem] -> T.Text
+generateArrivalNotification orders =
+  let
+      header = "Уважаемые клиенты!\n\n" <>
+               "Следующие заказы доставлены в пункт выдачи и готовы к получению:\n"
+        
+      -- Map each order to a multi-line formatted block
+      orderBlocks = zipWith formatBlock [1..] orders
+        
+      -- Combine everything
+      body = T.intercalate "\n" orderBlocks
+
+      footer = "\nПожалуйста, не забудьте забрать ваши заказы вовремя."
+
+    in header <> body <> footer
+
+-- | Helper to format a single order block with all its details.
+formatBlock :: Int -> OrderDeliveryItem -> Text
+formatBlock index OrderDeliveryItem {..} =
+  T.unlines
+  [ "" -- Adds a blank line for spacing
+  , T.pack (show index) <> " - заказ: `" <> odiId <> "`"
+  , ", СДЭК: `" <> odiTrack <> "`" -- Indented with spaces
+  , fromMaybe mempty $
+      flip fmap odiKeepFreeUntil $ \time -> 
+        ", Хранение до: *" <> 
+        T.pack (formatTime defaultTimeLocale "%d %B %Y" time) <> 
+        "*"
+  ]
