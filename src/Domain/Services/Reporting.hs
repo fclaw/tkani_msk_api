@@ -73,7 +73,7 @@ instance ToNamedRecord DailyReportRow where
     , "rolls_sold"        .= rptRollsSold r
     , "total_meters_sold" .= rptTotalMetersSold r
     , "expenses"          .= rptExpenses r
-    , "net income"        .= rptNetIncome r
+    , "net_income"        .= rptNetIncome r
     ]
 
 
