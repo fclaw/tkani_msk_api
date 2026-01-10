@@ -28,25 +28,30 @@ import Data.Time (Day, fromGregorian, formatTime, defaultTimeLocale)
 
 
 import App (AppM, ChatKey (ORDER), _appDBPool, extractFromEither)
-import Infrastructure.Database (refreshAndFetchDailyStats, refreshAndFetchMonthlyStats, MonthlyStat (..))
+import Infrastructure.Database 
+       ( refreshAndFetchDailyStats
+       , refreshAndFetchMonthlyStats
+       , MonthlyStat (..)
+       , DailyExpensesStat (..))
 import qualified Infrastructure.Services.Telegram as Telegram
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 -- 1. ADT for a single row of the CSV report
 data DailyReportRow = DailyReportRow
-  { rptSaleDate       :: Text
-  , rptTotalOrders    :: Int32
-  , rptTotalRevenue   :: Double
-  , rptPreCutsSold    :: Int32
-  , rptRollsSold      :: Int32
+  { rptSaleDate        :: Text
+  , rptTotalOrders     :: Int32
+  , rptTotalRevenue    :: Double
+  , rptPreCutsSold     :: Int32
+  , rptRollsSold       :: Int32
   , rptTotalMetersSold :: Double
+  , rptExpenses        :: Text
   } deriving (Generic)
 
 -- 2. CSV Header and encoding instances
 instance DefaultOrdered DailyReportRow where
   headerOrder _ = V.fromList
     [ "sale_date", "total_orders", "total_revenue"
-    , "pre_cuts_sold", "rolls_sold", "total_meters_sold"
+    , "pre_cuts_sold", "rolls_sold", "total_meters_sold", "expenses"
     ]
 
 instance ToNamedRecord DailyReportRow where
@@ -57,6 +62,7 @@ instance ToNamedRecord DailyReportRow where
     , "pre_cuts_sold"     .= rptPreCutsSold r
     , "rolls_sold"        .= rptRollsSold r
     , "total_meters_sold" .= rptTotalMetersSold r
+    , "expenses"          .= rptExpenses r 
     ]
 
 
@@ -70,30 +76,37 @@ generateAndSendDailyReport = do
   extractFromEither eStats $ \stats -> do
     -- Step 2: Convert the stats to CSV format
     -- We need to convert Day to Text for CSV
-    let reportRows = map toReportRow stats
-    let csvData = encodeDefaultOrderedByName reportRows
-    todayStr <- (T.pack . formatTime defaultTimeLocale "%Y-%m-%d") <$> (liftIO getZonedTime)
-    let filename = "daily_sales_report_" <> todayStr <> ".csv"
-    let caption = "📈 Daily sales report for " <> escapeMarkdownV2 todayStr
+    let eReportRows = sequence $ map toReportRow stats
+    extractFromEither eReportRows $ \reportRows -> do
 
-    eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
-    case eRes of
-      Left err -> $(logTM) ErrorS $ "Failed to send daily sales report: " <> ls (show err)
-      Right _ -> $(logTM) InfoS "Successfully generated and sent daily sales report."
+      let csvData = encodeDefaultOrderedByName reportRows
+      todayStr <- (T.pack . formatTime defaultTimeLocale "%Y-%m-%d") <$> (liftIO getZonedTime)
+      let filename = "daily_sales_expenses_report_" <> todayStr <> ".csv"
+      let caption = "📈 Daily sales and expenses report for " <> escapeMarkdownV2 todayStr
+
+      eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
+      case eRes of
+        Left err -> $(logTM) ErrorS $ "Failed to send daily sales and expenses report: " <> ls (show err)
+        Right _ -> $(logTM) InfoS "Successfully generated and sent daily sales and expenses report."
 
 -- Helper to convert the DB row type to the CSV row type
-toReportRow :: (Day, Int32, Double, Int32, Int32, Maybe Double) -> DailyReportRow
-toReportRow (date, orders, revenue, precuts, rolls, meters) =
-  DailyReportRow
-    { rptSaleDate = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" date
-    , rptTotalOrders = orders
-    , rptTotalRevenue = revenue
-    , rptPreCutsSold = precuts
-    , rptRollsSold = rolls
-    , rptTotalMetersSold = fromMaybe 0.0 meters
-    }
-
-
+toReportRow :: (Day, Int32, Double, Int32, Int32, Maybe Double, Either Text [DailyExpensesStat]) -> Either Text DailyReportRow
+toReportRow (date, orders, revenue, precuts, rolls, meters, eExpenses) =
+  flip fmap eExpenses $ \expenses ->
+    let
+        -- This is the key logic: convert the list of expenses into a single string
+        expensesString = T.intercalate "; " (map formatExpense expenses)
+        formatExpense :: DailyExpensesStat -> Text
+        formatExpense exp = desPayer exp <> ": " <> (T.pack $ show $ desAmount exp) <> " RUB"
+    in DailyReportRow
+       { rptSaleDate = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" date
+       , rptTotalOrders = orders
+       , rptTotalRevenue = revenue
+       , rptPreCutsSold = precuts
+       , rptRollsSold = rolls
+       , rptTotalMetersSold = fromMaybe 0.0 meters
+       , rptExpenses = expensesString
+       }
 
 -- | Formats a 'Month' type into a human-readable "MonthName YYYY" string.
 --

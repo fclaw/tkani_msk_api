@@ -116,6 +116,7 @@ library
     , crypton
     , directory
     , exceptions
+    , file-embed
     , filepath
     , hasql
     , hasql-pool

@@ -93,6 +93,7 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
 import Data.Time (UTCTime)
+import Data.FileEmbed (embedFile)
 
 
 import App (AppM)
@@ -126,8 +127,10 @@ runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable
 runTransactionM :: MonadIO m => Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> m (Either Hasql.UsageError a)
 runTransactionM pool mode = liftIO . Hasql.use pool . Hasql.transaction Hasql.Serializable mode
 
-
 extractADT = either error id
+
+
+---- Statements ------
 
 updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int64
 updateOrderStatusStatement = 
@@ -1770,36 +1773,46 @@ setReceiptReady orderId uuid pool =
         WHERE id = $1 :: text|]
 
 
-type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double)
+type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double, Either Text [DailyExpensesStat])
 
 refreshAndFetchDailyStats :: Hasql.Pool -> AppM (Either Text [DailyStatsRow])
 refreshAndFetchDailyStats pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
       -- Execute the dynamic statement
-      Hasql.statement () $
-        Hasql.Statement 
-          "REFRESH \ 
-          \ MATERIALIZED \
-          \ VIEW CONCURRENTLY \ 
-          \ daily_sales_stats" 
-          HE.noParams 
-          HD.noResult
-          False
+      Hasql.statement () $ Hasql.Statement $(embedFile "sql/refresh_daily_stats.sql") HE.noParams HD.noResult False
 
       -- Step 2: Fetch the data for the last 30 days
-      fmap (V.toList) $ 
+      fmap (map (app7 (first T.pack . sequence . map (convertFromJson @DailyExpensesStat) . V.toList)) . V.toList) $ 
         Hasql.statement () $
         [Hasql.vectorStatement|
+          WITH daily_expenses_agg AS (
+            SELECT
+            expense_day,
+            array_agg(
+              jsonb_build_object(
+                'payer', payer_name,
+                'amount', total_amount,
+                'transactions', transaction_count
+            )) AS expenses_array
+            FROM daily_expenses_summary
+            GROUP BY expense_day
+          )
           SELECT
-            sale_date :: date,
-            total_orders :: int4,
-            total_revenue :: float8,
-            pre_cuts_sold_count :: int4,
-            rolls_sold_count :: int4,
-            total_meters_sold :: float8?
-          FROM daily_sales_stats
-          ORDER BY sale_date DESC LIMIT 30|]
+          dss.sale_date :: date AS report_date,
+
+          dss.total_orders :: int4,
+          dss.total_revenue :: float8,
+          dss.pre_cuts_sold_count :: int4,
+          dss.rolls_sold_count :: int4,
+          dss.total_meters_sold :: float8?,
+
+          COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
+
+          FROM daily_sales_stats AS dss
+          LEFT JOIN daily_expenses_agg AS dea 
+          ON dss.sale_date = dea.expense_day
+          ORDER BY report_date DESC LIMIT 30|]
 
 
 fetchOrderDeliveryItem :: Day -> Hasql.Pool -> AppM (Either Text (Maybe Int32, [OrderDeliveryItem]))

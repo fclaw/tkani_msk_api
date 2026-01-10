@@ -256,3 +256,12 @@ data MonthlyStat =
      , msTotalProfit     :: Double
      , msAvgProfitPerDay :: Double
      } deriving (Show)
+
+data DailyExpensesStat =
+     DailyExpensesStat
+     { desPayer        :: Text
+     , desAmount       :: Double
+     , desTransactions :: Int
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "des" } ''DailyExpensesStat)

@@ -82,6 +82,7 @@ library:
     - unliftio
     - yaml
     - cassava
+    - file-embed
 
 executables:
   tkani-api-exe:
