@@ -13,6 +13,8 @@ module Infrastructure.Database
   ( -- re-export
     module Types
   , module Utils
+    -- utils
+  , extractADT  
   , getFabricPreview
   , putNewFabric
   , getOrderItems
