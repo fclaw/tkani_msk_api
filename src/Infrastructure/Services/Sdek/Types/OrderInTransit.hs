@@ -100,9 +100,10 @@ instance FromJSON SdekShipmentState where
 --    Located in JSON: root.entity
 -- ===============================================================
 data SdekEntity = SdekEntity
-  { entityUuid       :: UUID
-  , entityCdekNumber :: Maybe Text          -- The official Tracking Number (cdek_number)
-  , entityCdekStatus :: Maybe SdekShipmentState   -- The Physical Status
+  { entityUuid          :: UUID
+  , entityCdekNumber    :: Maybe Text          -- The official Tracking Number (cdek_number)
+  , entityCdekStatus    :: Maybe SdekShipmentState   -- The Physical Status
+  , entityKeepFreeUntil :: Maybe UTCTime
   } deriving (Show, Eq, Generic)
 
 
@@ -110,6 +111,7 @@ instance FromJSON SdekEntity where
   parseJSON = withObject "SdekEntity" $ \v -> do
     u   <- v .: "uuid"
     num <- v .:? "cdek_number"
+    keep <- v .:? "keep_free_until"
     
     -- 1. Extract the list of status objects (default to empty list if missing)
     statusList <- v .:? "statuses" .!= []
@@ -124,7 +126,7 @@ instance FromJSON SdekEntity where
                             --    and parse it into SdekShipmentState
                             parseMaybe (\o -> o .: "code") newestObj
 
-    return $ SdekEntity u num currentStatus
+    return $ SdekEntity u num currentStatus keep
 
 
 -- ===============================================================
@@ -184,14 +186,12 @@ instance FromJSON SdekRequest where
 -- ===============================================================
 data SdekOrderInTransitResponse = SdekOrderInTransitResponse
   { respEntity        :: Maybe SdekEntity -- 'entity' might be null if UUID is wrong
-  , respKeepFreeUntil :: Maybe UTCTime
   , respRequests      :: [SdekRequest]
   } deriving (Show, Eq, Generic)
 
 instance FromJSON SdekOrderInTransitResponse where
   parseJSON = 
-    withObject "SdekOrderInTransitResponse" $ \v -> 
+    withObject "SdekOrderInTransitResponse" $ \v ->
       SdekOrderInTransitResponse
       <$> v .:? "entity"
-      <*> v .:? "keep_free_until"
       <*> v .:? "requests" .!= []

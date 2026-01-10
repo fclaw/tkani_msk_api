@@ -84,21 +84,9 @@ runOrderDeliveryScheduler lastRunVar = do
       writeTVar lastRunVar Nothing
 
 
+-- Map each order to a multi-line formatted block
 generateArrivalNotification :: [OrderDeliveryItem] -> T.Text
-generateArrivalNotification orders =
-  let
-      header = "Уважаемые клиенты!\n\n" <>
-               "Следующие заказы доставлены в пункт выдачи и готовы к получению:\n"
-        
-      -- Map each order to a multi-line formatted block
-      orderBlocks = zipWith formatBlock [1..] orders
-        
-      -- Combine everything
-      body = T.intercalate "\n" orderBlocks
-
-      footer = "\nПожалуйста, не забудьте забрать ваши заказы вовремя."
-
-    in header <> body <> footer
+generateArrivalNotification orders = T.intercalate "\n" $ zipWith formatBlock [1..] orders
 
 -- | Helper to format a single order block with all its details.
 formatBlock :: Int -> OrderDeliveryItem -> Text
@@ -109,7 +97,7 @@ formatBlock index OrderDeliveryItem {..} =
   , ", СДЭК: `" <> odiTrack <> "`" -- Indented with spaces
   , fromMaybe mempty $
       flip fmap odiKeepFreeUntil $ \time -> 
-        ", Хранение до: *" <> 
+        ", Хранение до: *" <>
         T.pack (formatTime defaultTimeLocale "%d %B %Y" time) <> 
         "*"
   ]
