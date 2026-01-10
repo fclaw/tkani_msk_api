@@ -21,6 +21,7 @@ RUN nix-shell shell.nix --run "stack build --only-dependencies --system-ghc --no
 # 2. BUILD BINARY
 COPY src ./src
 COPY app ./app
+COPY sql ./sql
 # COPY test ./test 
 
 RUN nix-shell shell.nix --run "stack build --copy-bins --system-ghc --no-nix"
