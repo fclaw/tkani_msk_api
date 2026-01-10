@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.GetProviders(handler) where
+module API.Handlers.GetProviders(handler) where
 
 import API.Types (ProviderInfo (..))
 import App (AppM, _providers)

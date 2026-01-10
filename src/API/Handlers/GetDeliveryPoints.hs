@@ -2,7 +2,7 @@
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE DataKinds         #-}
 
-module Handlers.GetDeliveryPoints(handler) where
+module API.Handlers.GetDeliveryPoints(handler) where
 
 import Data.Text (Text)
 import Control.Monad.IO.Class (liftIO)

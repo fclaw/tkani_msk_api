@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.ReportDailySales (handler) where
+module API.Handlers.ReportDailySales (handler) where
 
 import App (AppM)
 import API.Types (ApiResponse)

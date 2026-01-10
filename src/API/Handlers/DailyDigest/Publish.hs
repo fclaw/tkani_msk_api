@@ -1,4 +1,4 @@
-module Handlers.DailyDigest.Publish (handler) where
+module API.Handlers.DailyDigest.Publish (handler) where
 
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.IO.Class (liftIO)
@@ -13,4 +13,4 @@ import Infrastructure.Database.Types (DailyDigestStatus (Ready))
 handler :: DailyDigest -> AppM (ApiResponse ())
 handler dailyDigest = do
   pool <- fmap _appDBPool ask
-  fmap (first mkError) $ liftIO $ setDailyDigestStatus dailyDigest Ready pool
+  fmap (first mkError) $ setDailyDigestStatus dailyDigest Ready pool

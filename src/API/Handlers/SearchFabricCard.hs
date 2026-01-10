@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.SearchFabricCard(handler) where
+module API.Handlers.SearchFabricCard(handler) where
 
 import Katip
 import Data.Int (Int64)
@@ -23,4 +23,4 @@ handler fabricType fabricId = do
   cfg <- ask
   let pool = _appDBPool cfg
   let threshold = _thresholdMetres cfg
-  fmap (first mkError) $ liftIO $ searchFabricCard fabricType fabricId threshold pool
+  fmap (first mkError) $ searchFabricCard fabricType fabricId threshold pool

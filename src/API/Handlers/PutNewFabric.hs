@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Handlers.PutNewFabric(handler) where
+module API.Handlers.PutNewFabric(handler) where
 
 import Data.Text (Text, unpack)
 import Katip (logTM, Severity(..), ls)
@@ -51,7 +51,7 @@ handler rawIngestReq = do
       $(logTM) DebugS $ ls @Text $ 
         "Checking compatibility for cut-to-order fabric with article: " <> 
         fromString (unpack article)
-      eHasPreCuts <- liftIO $ checkFabricPreCuts article pool
+      eHasPreCuts <- checkFabricPreCuts article pool
       case eHasPreCuts of 
         Left errDb -> do
           $(logTM) ErrorS $ ls  @Text $ 
@@ -73,12 +73,12 @@ handler rawIngestReq = do
                 " is already sold in Pre-Cuts. Cannot add as Cut-to-Order.") 
               { errorCode = "400" }
           else do
-            dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
+            dbRes <- putNewFabric fabric rawIngestReq pool
             when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
             let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
             return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes
       else do
-        dbRes <- liftIO $ putNewFabric fabric rawIngestReq pool
+        dbRes <- putNewFabric fabric rawIngestReq pool
         when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
         let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
         return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes 

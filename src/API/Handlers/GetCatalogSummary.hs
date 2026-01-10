@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.GetCatalogSummary(handler) where
+module API.Handlers.GetCatalogSummary(handler) where
 
 
 import Katip
@@ -30,7 +30,7 @@ handler (Just cday) = do
   let pool = _appDBPool cfg
   let threshold = _thresholdMetres cfg
   let Just (_, chatId) = M.lookup WAREHOUSE $ _bots cfg
-  eRes <- liftIO $ fetchCatalogSummaryItem day threshold pool
+  eRes <- fetchCatalogSummaryItem day threshold pool
   let catalogSummary =
         flip fmap eRes $ \items ->
           let newItems = 

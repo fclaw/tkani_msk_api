@@ -3,7 +3,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.CancelOrder (handler) where
+module API.Handlers.CancelOrder (handler) where
 
 import Katip
 import Data.Text (Text)
@@ -27,7 +27,7 @@ handler :: CancelOrder -> AppM (ApiResponse ())
 handler cancel = do
   cfg <- ask
   let pool = _appDBPool cfg
-  eRes <- fmap (first mkError) $ liftIO $ fetchPaymentId (coOrderId cancel) pool
+  eRes <- fmap (first mkError) $ fetchPaymentId (coOrderId cancel) pool
   for eRes $ \maybePaymentId ->
     for_ maybePaymentId $ \paymentId -> do
       let tinkoffCred = _tinkoffCred cfg

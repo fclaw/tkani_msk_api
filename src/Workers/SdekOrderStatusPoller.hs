@@ -24,7 +24,7 @@ import App (AppM, _appDBPool, render, ChatKey (..))
 import API.Types (OrderStatus (..))
 import Infrastructure.Database (getOrdersInTransit, updateOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
-import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus, respKeepFreeUntil)
+import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus, entityKeepFreeUntil)
 import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
@@ -39,7 +39,7 @@ orderStatusPoller = do
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask
   let requiredStatuses = [Registered, Paid, OnRoute, Delivered, PickedUpByCourier]
-  eUuids <- liftIO $ getOrdersInTransit requiredStatuses pool
+  eUuids <- getOrdersInTransit requiredStatuses pool
   for_ eUuids $ \uuids ->
     void $ pooledForConcurrentlyN 5 uuids $ \(orderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
@@ -66,7 +66,8 @@ orderStatusPoller = do
                   " has changed status from " <> 
                   pack (show status) <> " to " <> 
                   pack (show newStatus)
-              let keepUntil | newStatus == Delivered = respKeepFreeUntil res
+              let keepUntil | newStatus == Delivered = 
+                              entityKeepFreeUntil entity
                             | otherwise = Nothing
               void $ updateOrderStatus orderId newStatus keepUntil pool)
 
@@ -84,7 +85,7 @@ handleSdekFailure orderId uuid (NetworkError ex) =
          code == 404 then do
          $(logTM) ErrorS $ ls $ "SDEK UUID " <> pack (show uuid) <> " is invalid or deleted. Stopping tracking."
          pool <- fmap _appDBPool ask
-         ePair <- liftIO $ markOrderAsInvalid orderId uuid pool
+         ePair <- markOrderAsInvalid orderId uuid pool
          for_ ePair $ \(msgId, trackN) -> do
           let msgData = HM.fromList [("orderNumber", orderId), ("trackingNumber", trackN)]
           message <- fmap escapeMarkdownV2 $ render $currentModule msgData

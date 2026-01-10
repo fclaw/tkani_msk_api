@@ -45,7 +45,7 @@ prepareAndSchedulePickup = do
     let pool = _appDBPool cfg
     let minCourierPickup = pickupMinimum . _sdekConfig $ cfg
     let fromTime = fromIntegral . fromMaybe (error "cannot parse hour") . parseHour . from . pickupWindow . _sdekConfig $ cfg
-    eOrdersToSchedule <- liftIO $ pickupOrdersForShipment (fromTime - 1) pool
+    eOrdersToSchedule <- pickupOrdersForShipment (fromTime - 1) pool
     case eOrdersToSchedule of
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->
@@ -86,7 +86,7 @@ prepareAndSchedulePickup = do
                         <> ". Errors: " <> errorMsg
                       
                       -- DB ACTION: Log this failure
-                      eDbRes <- liftIO $ recordCourierPickupFailure entityUuid errorMsg pool
+                      eDbRes <- recordCourierPickupFailure entityUuid errorMsg pool
                       when(isLeft eDbRes) $
                         $(logTM) ErrorS $ ls $ 
                           "Failed to record courier pickup failure for SDEK pickup " <>
@@ -102,5 +102,5 @@ prepareAndSchedulePickup = do
                         <> ". order ID: " <> orderId
                       return $ Just (orderId, entityUuid, convertStateToSql state)
                 
-                eDbRes <- liftIO $ createCourierPickup (catMaybes records) today pool
+                eDbRes <- createCourierPickup (catMaybes records) today pool
                 when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Failed to records courier pickup for SDEK pickup " <> tshow (fromLeft undefined eDbRes)

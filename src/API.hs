@@ -173,6 +173,13 @@ data Routes route = Routes
       :> "reports"
       :> "monthly-sales"
       :> Post '[JSON] (ApiResponse ())
+  , _tallyUpExpenses
+      :: route
+      :- "warehouse"
+      :> "expenses"
+      :> "tally-up"
+      :> ReqBody '[JSON] Expenses
+      :> Put '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

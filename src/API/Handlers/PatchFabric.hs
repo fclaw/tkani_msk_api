@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.PatchFabric(handler) where
+module API.Handlers.PatchFabric(handler) where
 
 import Data.Int (Int64)
 import Katip (logTM, Severity(..), ls)
@@ -41,9 +41,10 @@ handler fabricId rawIngestReq = do
     let resp = NewFabric fabricId (fType fabric) (fromMaybe undefined (fArticle fabric)) 
     let patchedFabric = mkPatchedFabric fabricId fabric rawIngestReq
     $(logTM) DebugS $ ls $ "patched fabric: " <> show patchedFabric
-    eDbRes <- if fType fabric == Roll then
-      liftIO $ patchRoll patchedFabric pool
-     else liftIO $ patchPrecut patchedFabric pool
+    eDbRes <- 
+      if fType fabric == Roll then
+        patchRoll patchedFabric pool
+      else patchPrecut patchedFabric pool
     return $ first (ApiError "server error") $ (second resp) eDbRes
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res    

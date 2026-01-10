@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.ViewCart (handler) where
+module API.Handlers.ViewCart (handler) where
 
 
 import Katip
@@ -22,7 +22,7 @@ handler :: Maybe Int64 -> AppM (ApiResponse ViewCart)
 handler (Just userId) = do
   eRes <- fmap (first mkError) $
     fmap _appDBPool ask >>= 
-      (liftIO . fetchCartItems userId)
+      (fetchCartItems userId)
   for eRes $ \items -> do 
     let count = length items
     let price = GHC.List.sum [ vciPrice item | item <- items]    

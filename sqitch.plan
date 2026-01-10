@@ -34,3 +34,4 @@
 00031.order_delivery_notification 2026-01-07T14:05:40Z System Administrator <root@Sonny.local> # order delivery notification
 00032.monthly_sales_stats 2026-01-08T08:51:55Z System Administrator <root@Sonny.local> # monthly_sales_stats
 00033.order_keep_free_until 2026-01-09T09:35:27Z System Administrator <root@Sonny.local> # order: keep the parcel in a warehouse time
+00034.expenses 2026-01-09T10:56:41Z System Administrator <root@Sonny.local> # expenses

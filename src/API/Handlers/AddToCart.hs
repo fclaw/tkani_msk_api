@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.AddToCart (handler) where
+module API.Handlers.AddToCart (handler) where
 
 
 import Katip
@@ -26,7 +26,7 @@ handler item = do
   cfg <- ask
   let pool = _appDBPool cfg
   let cutTolerance = fromIntegral (_cutTolerance cfg) / 100.0
-  eRes <- liftIO $ addToCart item cutTolerance pool
+  eRes <- addToCart item cutTolerance pool
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "db error: " <> show eRes
   return $ first handleCartDbError eRes
 

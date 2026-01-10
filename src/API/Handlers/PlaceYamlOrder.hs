@@ -3,7 +3,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Handlers.PlaceYamlOrder (handler) where
+module API.Handlers.PlaceYamlOrder (handler) where
 
 import Katip (logTM, Severity(..), ls)
 import Control.Monad.Reader.Class (ask)
@@ -88,7 +88,7 @@ handler yamlOrderReq = do
                 { yorOrderId = orderId }
               mkResponse (Left dbErr) = 
                 Left $ mkError $ "Failed to store order in DB: " <> dbErr  
-          eDbRes <- liftIO $ placeNewYamlOrder yamlDbOrder (yorItems yamlOrderReq) pool
+          eDbRes <- placeNewYamlOrder yamlDbOrder (yorItems yamlOrderReq) pool
           when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "YamlOrderRequest: db failure " <> show eDbRes
           for_ eDbRes $ const $ do 
             tm <- currentTime

@@ -85,7 +85,7 @@ paymentStatusPoller = do
     
   -- fetch pending payments and enqueue them
   pool <- fmap _appDBPool ask
-  ePendingPayments <- liftIO $ fetchPendingPayments pool
+  ePendingPayments <- fetchPendingPayments pool
   for_ ePendingPayments $ \xs -> do
     tinkoffCred <- fmap _tinkoffCred ask
     for_ xs $ \(orderId, paymentId) -> do
@@ -176,7 +176,7 @@ processJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Red" template
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId REJECTED Cancelled pool
+          eRes <- updatePaymentStatus orderId REJECTED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -191,7 +191,7 @@ processJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Yellow/Timeout" template
           currentTime >>= finalizeTelegram orderId "Timeout"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
+          eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -206,7 +206,7 @@ processJob (orderId, getStateReq) = do
           -- Reuse Timeout or Failed template, or make a specific "Gray" one
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
+          eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -228,7 +228,7 @@ processJob (orderId, getStateReq) = do
     $(logTM) WarningS $ ls $ "Order " <> orderId <> " TIMED OUT."
     currentTime >>= finalizeTelegram orderId "Timeout"
     pool <- fmap _appDBPool ask
-    eRes <- liftIO $ updatePaymentStatus orderId CANCELLED Cancelled pool
+    eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
     when(isLeft eRes) $ 
       $(logTM) ErrorS $ ls $
         "error while updating payment status for Order " <> 
@@ -255,7 +255,7 @@ finalizeTelegram orderId suffix tm = do
 
   cfg <- ask
   let pool = _appDBPool cfg
-  eDBRes <- liftIO $ getChatDetails orderId pool
+  eDBRes <- getChatDetails orderId pool
   for_ eDBRes $ \mDetails ->
     for_ mDetails $ \(chatId, messageId) -> do
       eRes <- sendOrEditTelegramMessage ("tinkoff poller: " <> orderId) message CONCIERGE (Just messageId) Nothing Nothing

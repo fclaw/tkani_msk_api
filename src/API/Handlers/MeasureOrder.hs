@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.MeasureOrder (handler) where
+module API.Handlers.MeasureOrder (handler) where
 
 import Data.Bifunctor (bimap)
 import Control.Monad.IO.Class (liftIO)
@@ -13,4 +13,4 @@ import Infrastructure.Database (markedOrderAsMeasured)
 
 
 handler :: MeasureRequest -> AppM (ApiResponse MeasureResponse)
-handler req = fmap (bimap mkError MeasureResponse) $ fmap _appDBPool ask >>= (liftIO . markedOrderAsMeasured (mrTrackingNumber req))
+handler req = fmap (bimap mkError MeasureResponse) $ fmap _appDBPool ask >>= (markedOrderAsMeasured (mrTrackingNumber req))

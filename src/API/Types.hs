@@ -552,3 +552,13 @@ data YamlOrderResponse =
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yor" } ''YamlOrderResponse)
+
+data Expenses =
+     Expenses
+     { expAmount      :: Double
+     , expPayer       :: Maybe Text -- nothing stands for company flag
+     , expDescription :: Maybe Text
+     , expDay         :: Maybe Day -- defaults to now
+     } deriving (Show, Eq)
+     
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "exp" } ''Expenses)

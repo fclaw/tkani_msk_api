@@ -18,5 +18,5 @@ runCartsCleaner = do
   $(logTM) InfoS "Carts Cleaner starts..."
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   pool <- fmap _appDBPool ask
-  eRes <- liftIO $ clearOldCarts pool
+  eRes <- clearOldCarts pool
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "runCartsCleaner error: " <> show eRes

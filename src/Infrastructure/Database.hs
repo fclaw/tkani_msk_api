@@ -66,6 +66,7 @@ module Infrastructure.Database
   , fetchOrderDeliveryItem
   , insertTelegramOrderDeliveryPost
   , refreshAndFetchMonthlyStats
+  , tallyUpExpenses
   ) where
 
 
@@ -238,16 +239,16 @@ getFabricPreviewStatement =
 
 
 -- | Fetches a fabric and all its associated, in-stock pre-cuts from the database.
-getFabricPreview :: Int64 -> FabricType -> Double -> Hasql.Pool -> IO (Either Text FabricPreview)
+getFabricPreview :: Int64 -> FabricType -> Double -> Hasql.Pool -> AppM (Either Text FabricPreview)
 getFabricPreview fabricId fabricType threshold pool = 
   fmap (first (pack . show)) $
-    runTransaction pool Hasql.Read $
+    runTransactionM pool Hasql.Read $
       (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
-putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> IO (Either Text (Int64, Text, Bool))
+putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> AppM (Either Text (Int64, Text, Bool))
 putNewFabric fabric req pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $
+    runTransactionM pool Hasql.Write $
       ingestFabricDB fabric req
 
 
@@ -298,10 +299,10 @@ getOrderItemsStatement =
 -- | Fetches the final, calculated price for a fabric order item.
 --   The entire calculation (per-meter vs. fixed price) is handled by the SQL query.
 --   Returns 'Nothing' if the fabric or pre-cut is not found.
-getOrderItems :: Int64 -> Hasql.Pool -> IO (Either Text [OrderItem])
+getOrderItems :: Int64 -> Hasql.Pool -> AppM (Either Text [OrderItem])
 getOrderItems userId pool = 
   fmap (first (pack . show)) $
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       userId `Hasql.statement` getOrderItemsStatement
 
 placeNewOrderStatement :: Hasql.Statement Order Int64
@@ -375,8 +376,8 @@ placeNewOrderStatement =
     WHERE c.telegram_user_id = $9 :: int8 
   |]
 
-placeNewOrder :: Order -> Hasql.Pool -> IO (Either Text Int64)
-placeNewOrder order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
+placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
+placeNewOrder order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
 
 setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
 setTelegramMessageStatement =
@@ -386,8 +387,8 @@ setTelegramMessageStatement =
      (order_id, chat_id, message_id) 
      VALUES ($1 :: text, $2 :: int8, $3 :: int8) |]
 
-setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> IO (Either Text Int64)
-setTelegramMessage message pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
+setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> AppM (Either Text Int64)
+setTelegramMessage message pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
 
 getChatDetailsStatement :: Hasql.Statement Text (Maybe (Int64, Int64))
 getChatDetailsStatement = 
@@ -398,8 +399,8 @@ getChatDetailsStatement =
     FROM order_telegram_bindings 
     WHERE order_id = $1 :: text |]
 
-getChatDetails :: Text -> Hasql.Pool -> IO (Either Text (Maybe (Int64, Int64)))
-getChatDetails orderId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
+getChatDetails :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, Int64)))
+getChatDetails orderId pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
 
 updateOrderStatus :: Text -> OrderStatus -> Maybe UTCTime -> Hasql.Pool -> AppM (Either Text Int64)
@@ -474,8 +475,8 @@ adjustFabric =
         ) :: jsonb
   |]
 
-fetchOrderStatus :: Text -> Hasql.Pool -> IO (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
-fetchOrderStatus query pool = fmap (join . first (pack . show)) $ runTransaction pool Hasql.Read $ query `Hasql.statement` fetchOrderStatusStatement
+fetchOrderStatus :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
+fetchOrderStatus query pool = fmap (join . first (pack . show)) $ runTransactionM pool Hasql.Read $ query `Hasql.statement` fetchOrderStatusStatement
 
 
 fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
@@ -498,8 +499,8 @@ fetchOrderStatusStatement =
       provider <- convertFromJson @Providers jsonProvider
       return (status, orderId, trackingN, provider)
 
-getOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> IO (Either Text [(Text, UUID, OrderStatus)])
-getOrdersInTransit statuses pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ statuses `Hasql.statement` getOrdersInTransitStatement
+getOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> AppM (Either Text [(Text, UUID, OrderStatus)])
+getOrdersInTransit statuses pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ statuses `Hasql.statement` getOrdersInTransitStatement
 
 getOrdersInTransitStatement :: Hasql.Statement [OrderStatus] [(Text, UUID, OrderStatus)]
 getOrdersInTransitStatement =
@@ -520,10 +521,10 @@ getOrdersInTransitStatement =
   where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
         mkError = error "aeson decode failed on order status"
 
-markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> IO (Either Text (Int64, Text))
+markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> AppM (Either Text (Int64, Text))
 markOrderAsInvalid orderId uuid pool = 
   fmap (first (pack . show)) $ 
-  runTransaction pool Hasql.Write $
+  runTransactionM pool Hasql.Write $
     (orderId, uuid) `Hasql.statement` markOrderAsInvalidStatement
 
 markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int64, Text)
@@ -563,10 +564,10 @@ searchFabricsStatement =
     FROM search_fabrics_paginated($1 :: text, $2 :: int4, $3 :: int4, $4 :: float8) AS sfp
   |]
 
-searchFabrics :: Text -> Int -> Int -> Double -> Hasql.Pool -> IO (Either Text (Int, [SearchTeaser]))
+searchFabrics :: Text -> Int -> Int -> Double -> Hasql.Pool -> AppM (Either Text (Int, [SearchTeaser]))
 searchFabrics query limit offset metreThreshold pool = 
   fmap (join . first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $ 
       Hasql.statement 
       ( query, 
         fromIntegral limit, 
@@ -685,10 +686,10 @@ fetchCatalogSummaryItemStatement =
     ORDER BY updated_at DESC
   |]
 
-fetchCatalogSummaryItem :: Day -> Double -> Hasql.Pool -> IO (Either Text [CatalogSummaryItem])
+fetchCatalogSummaryItem :: Day -> Double -> Hasql.Pool -> AppM (Either Text [CatalogSummaryItem])
 fetchCatalogSummaryItem day threshold pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       (day, threshold) `Hasql.statement` fetchCatalogSummaryItemStatement
 
 
@@ -704,8 +705,11 @@ checkFabricPreCutsStatement =
     ) :: bool
   |]
 
-checkFabricPreCuts :: Text -> Hasql.Pool -> IO (Either Text Bool)
-checkFabricPreCuts articleId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ articleId `Hasql.statement` checkFabricPreCutsStatement
+checkFabricPreCuts :: Text -> Hasql.Pool -> AppM (Either Text Bool)
+checkFabricPreCuts articleId pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      articleId `Hasql.statement` checkFabricPreCutsStatement
 
 insertNewPaymentRecordStatement :: Hasql.Statement NewPaymentRecord Int64
 insertNewPaymentRecordStatement =
@@ -731,10 +735,10 @@ insertNewPaymentRecordStatement =
     RETURNING id :: int8
   |]
 
-insertNewPaymentRecord :: NewPaymentRecord -> Hasql.Pool -> IO (Either Text Int64)
+insertNewPaymentRecord :: NewPaymentRecord -> Hasql.Pool -> AppM (Either Text Int64)
 insertNewPaymentRecord paymentRecord pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $
+    runTransactionM pool Hasql.Write $
       paymentRecord `Hasql.statement` 
       insertNewPaymentRecordStatement
 
@@ -750,8 +754,11 @@ fetchPendingPaymentsStatement =
     WHERE status = CAST(LOWER($1 :: text) as payment_status)
   |]
 
-fetchPendingPayments :: Hasql.Pool -> IO (Either Text [(Text, Text)])
-fetchPendingPayments pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ PENDING `Hasql.statement` fetchPendingPaymentsStatement
+fetchPendingPayments :: Hasql.Pool -> AppM (Either Text [(Text, Text)])
+fetchPendingPayments pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      PENDING `Hasql.statement` fetchPendingPaymentsStatement
 
 updatePaymentStatusStatement :: Hasql.Statement (Text, Status, Status) Int
 updatePaymentStatusStatement = 
@@ -765,10 +772,10 @@ updatePaymentStatusStatement =
       order_id = $1 :: text
   |]
 
-updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> IO (Either Text Int64)
+updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> AppM (Either Text Int64)
 updatePaymentStatus orderId paymentStatus orderStatus pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ do
+    runTransactionM pool Hasql.Write $ do
       void $ (orderId, paymentStatus, PENDING) `Hasql.statement` updatePaymentStatusStatement
       Hasql.statement (orderId, orderStatus) $
         dimap (second statusToSQL) fromIntegral
@@ -871,10 +878,10 @@ searchFabricCardStatement =
     SELECT item_json :: jsonb FROM item
   |]
 
-searchFabricCard :: DWT.FabricType -> Int64 -> Double -> Hasql.Pool -> IO (Either Text (Maybe CatalogSummaryItem))
+searchFabricCard :: DWT.FabricType -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text (Maybe CatalogSummaryItem))
 searchFabricCard fabricType fabricId threshold pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $ 
       (fabricType, fabricId, threshold) `Hasql.statement` 
         searchFabricCardStatement
 
@@ -882,10 +889,10 @@ searchFabricCard fabricType fabricId threshold pool =
 checkDailyDigestStatement :: Hasql.Statement Day Bool
 checkDailyDigestStatement = [Hasql.singletonStatement|SELECT EXISTS(SELECT 1 FROM daily_digests WHERE announcement_date = $1 :: date) :: bool|]
 
-checkDailyDigestDraft :: Day -> Hasql.Pool -> IO (Either Text Bool)
+checkDailyDigestDraft :: Day -> Hasql.Pool -> AppM (Either Text Bool)
 checkDailyDigestDraft day pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $ 
       day `Hasql.statement` checkDailyDigestStatement
 
 saveDailyDigestStatement :: Hasql.Statement (Day, Int64, Int64) ()
@@ -901,10 +908,10 @@ saveDailyDigestStatement =
     DO NOTHING
   |]
 
-saveDailyDigestDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> IO (Either Text ())
+saveDailyDigestDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> AppM (Either Text ())
 saveDailyDigestDraft day chatId messageId pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       (day, chatId, messageId) `Hasql.statement` 
       saveDailyDigestStatement
 
@@ -919,10 +926,10 @@ updateDailyDigestStatement =
   |]
 
 
-updateDailyDigestDraft :: DailyDigestDraft -> Hasql.Pool -> IO (Either Text ())
+updateDailyDigestDraft :: DailyDigestDraft -> Hasql.Pool -> AppM (Either Text ())
 updateDailyDigestDraft draft pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       draft `Hasql.statement` 
       updateDailyDigestStatement
 
@@ -936,10 +943,10 @@ setDailyDigestStatusStatement status =
     AND warehouse_message_id = $2 :: int8
   |]
 
-setDailyDigestStatus :: DailyDigest -> DailyDigestStatus -> Hasql.Pool -> IO (Either Text ())
+setDailyDigestStatus :: DailyDigest -> DailyDigestStatus -> Hasql.Pool -> AppM (Either Text ())
 setDailyDigestStatus publish status pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       publish `Hasql.statement` (setDailyDigestStatusStatement status)
 
 
@@ -951,8 +958,8 @@ fetchPaymentIdStatement =
     WHERE order_id = $1 :: text
   |]
 
-fetchPaymentId :: Text -> Hasql.Pool -> IO (Either Text (Maybe Text))
-fetchPaymentId order pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ order `Hasql.statement` fetchPaymentIdStatement
+fetchPaymentId :: Text -> Hasql.Pool -> AppM (Either Text (Maybe Text))
+fetchPaymentId order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ order `Hasql.statement` fetchPaymentIdStatement
 
 
 isItemInCartStatement :: Hasql.Statement (Int64, FabricType, Int64) CartCheckStatus
@@ -985,10 +992,10 @@ isItemInCartStatement =
       carts AS c ON c.telegram_user_id = $1 :: int8
   |]
 
-isItemInCart :: Int64 -> FabricType -> Int64 ->  Hasql.Pool -> IO (Either Text CartCheckStatus)
+isItemInCart :: Int64 -> FabricType -> Int64 ->  Hasql.Pool -> AppM (Either Text CartCheckStatus)
 isItemInCart userId fabricType fabricId pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $ 
       (userId, fabricType, fabricId) `Hasql.statement` isItemInCartStatement
 
 addToCartStatement :: Hasql.Statement CartNewFabric ()
@@ -1108,9 +1115,9 @@ isPreCutAvailableStatement =
      FOR UPDATE
   |]
 
-addToCart :: CartNewFabric -> Double -> Hasql.Pool -> IO (Either Hasql.UsageError CartCheckStatus)
+addToCart :: CartNewFabric -> Double -> Hasql.Pool -> AppM (Either Hasql.UsageError CartCheckStatus)
 addToCart item@CartNewFabric{..} cutTolerance pool = 
-  runTransaction pool Hasql.Write $ do
+  runTransactionM pool Hasql.Write $ do
 
     -- 1.  Run the appropriate availability check inside the transaction
     isAvailable <-
@@ -1160,16 +1167,16 @@ clearCartStatement =
     )
   |]
 
-clearCart :: Int64 -> Hasql.Pool -> IO (Either Text ())
+clearCart :: Int64 -> Hasql.Pool -> AppM (Either Text ())
 clearCart userId pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $
+    runTransactionM pool Hasql.Write $
       Hasql.statement userId clearCartStatement
 
-clearOldCarts :: Hasql.Pool -> IO (Either Text ())
+clearOldCarts :: Hasql.Pool -> AppM (Either Text ())
 clearOldCarts pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement () 
       [Hasql.resultlessStatement|
          WITH released_percuts AS (
@@ -1235,8 +1242,8 @@ fetchCartItemsStatement =
      WHERE c.telegram_user_id = $1 :: int8
   |]
 
-fetchCartItems :: Int64 -> Hasql.Pool -> IO (Either Text [ViewCartItem])
-fetchCartItems userId pool = fmap (first (pack . show)) $ runTransaction pool Hasql.Read $ Hasql.statement userId fetchCartItemsStatement
+fetchCartItems :: Int64 -> Hasql.Pool -> AppM (Either Text [ViewCartItem])
+fetchCartItems userId pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ Hasql.statement userId fetchCartItemsStatement
 
 getOrderItemsForAdjustStatement ::  Hasql.Statement Text [(Int64, Maybe Int64, Maybe Double)]
 getOrderItemsForAdjustStatement =
@@ -1251,10 +1258,10 @@ getOrderItemsForAdjustStatement =
   |]
 
 
-patchRoll :: PatchedFabric -> Hasql.Pool -> IO (Either Text Bool)
+patchRoll :: PatchedFabric -> Hasql.Pool -> AppM (Either Text Bool)
 patchRoll fabric pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
         [Hasql.singletonStatement|
@@ -1285,10 +1292,10 @@ patchRoll fabric pool =
           ) :: bool
         |]
 
-patchPrecut :: PatchedFabric -> Hasql.Pool -> IO (Either Text Bool)
+patchPrecut :: PatchedFabric -> Hasql.Pool -> AppM (Either Text Bool)
 patchPrecut fabric pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
         [Hasql.singletonStatement|
@@ -1323,10 +1330,10 @@ patchPrecut fabric pool =
           ) :: bool
         |]
 
-deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> IO (Either Text ())
+deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> AppM (Either Text ())
 deleteFabric fabricId fabricType pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $
+    runTransactionM pool Hasql.Write $
       Hasql.statement fabricId $
         rmap (const ()) statement
   where 
@@ -1372,10 +1379,10 @@ deleteFabric fabricId fabricType pool =
 -- This statement selects all orders that are in 'paid' status and are ready to be picked up by the courier.
 -- time gate is applied based on the current hour in 'Europe/Moscow' timezone at least one hour earlier than the time of courier arrival.
 -- It uses a CTE (Common Table Expression) to first select the eligible orders and locks them for update 
-pickupOrdersForShipment :: Int32 -> Hasql.Pool -> IO (Either Text [(Text, UUID)])
+pickupOrdersForShipment :: Int32 -> Hasql.Pool -> AppM (Either Text [(Text, UUID)])
 pickupOrdersForShipment hourToStart pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement hourToStart $
        rmap V.toList $
        [Hasql.vectorStatement|
@@ -1423,10 +1430,10 @@ updateOrdersWithPickupUuidStatement =
   |]
 
 
-createCourierPickup :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> IO (Either Text ())
+createCourierPickup :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> AppM (Either Text ())
 createCourierPickup records date pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ do 
+    runTransactionM pool Hasql.Write $ do 
       -- Prepare the data for the vector statements
       let pickupData = V.fromList [(uuid, status, date) | (_, uuid, status) <- records]
       let orderIds = V.fromList [orderId | (orderId, _, _) <- records]
@@ -1440,10 +1447,10 @@ createCourierPickup records date pool =
       Hasql.statement (pickupUuid, orderIds) updateOrdersWithPickupUuidStatement
 
 
-recordCourierPickupFailure :: UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+recordCourierPickupFailure :: UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
 recordCourierPickupFailure uuid errorMsg pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ do
+    runTransactionM pool Hasql.Write $ do
       Hasql.statement (uuid, errorMsg)
         [Hasql.resultlessStatement|
           INSERT INTO courier_pickups 
@@ -1456,10 +1463,10 @@ recordCourierPickupFailure uuid errorMsg pool =
         |]
 
 
-recordCourierPickupFailureExt :: Text -> UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+recordCourierPickupFailureExt :: Text -> UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
 recordCourierPickupFailureExt orderId uuid errorMsg pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ do
+    runTransactionM pool Hasql.Write $ do
       Hasql.statement (orderId, uuid, errorMsg)
         [Hasql.resultlessStatement|
           WITH updated_order AS (
@@ -1481,10 +1488,10 @@ recordCourierPickupFailureExt orderId uuid errorMsg pool =
         |]
 
 -- Statement takes () and returns a list of UUIDs to be checked.
-getPendingPickupRequests :: Hasql.Pool -> IO (Either Text [(UUID, Int64, Text, Text)])
+getPendingPickupRequests :: Hasql.Pool -> AppM (Either Text [(UUID, Int64, Text, Text)])
 getPendingPickupRequests pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $ 
       Hasql.statement () $
         rmap V.toList $
         [Hasql.vectorStatement|
@@ -1500,10 +1507,10 @@ getPendingPickupRequests pool =
           AND cp.created_at > NOW() - INTERVAL '3 days'
         |]
 
-updatePickupStatus :: UUID -> Text -> Hasql.Pool -> IO (Either Text ())
+updatePickupStatus :: UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
 updatePickupStatus uuid status pool = 
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement (uuid, status)
         [Hasql.resultlessStatement|
           UPDATE courier_pickups
@@ -1511,10 +1518,10 @@ updatePickupStatus uuid status pool =
           WHERE request_uuid = $1 :: uuid
         |]
 
-markedOrderAsMeasured :: Text -> Hasql.Pool -> IO (Either Text Bool)
+markedOrderAsMeasured :: Text -> Hasql.Pool -> AppM (Either Text Bool)
 markedOrderAsMeasured trackingN pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ 
+    runTransactionM pool Hasql.Write $ 
       Hasql.statement trackingN $
         rmap (> 0) $
         [Hasql.rowsAffectedStatement|
@@ -1524,10 +1531,10 @@ markedOrderAsMeasured trackingN pool =
           WHERE sdek_tracking_number = $1 :: text|]
 
 
-placeNewYamlOrder :: YamlOrder -> [YamlOrderItem] -> Hasql.Pool -> IO (Either Text Text)
+placeNewYamlOrder :: YamlOrder -> [YamlOrderItem] -> Hasql.Pool -> AppM (Either Text Text)
 placeNewYamlOrder order items pool =
   fmap (first (pack . show)) $ 
-    runTransaction pool Hasql.Write $ do
+    runTransactionM pool Hasql.Write $ do
       orderId <- Hasql.statement order $
         lmap ($(recordToTuple ''YamlOrder))
         [Hasql.singletonStatement|
@@ -1613,7 +1620,7 @@ placeNewYamlOrder order items pool =
 
       return orderId  
 
-getYamlOrderDetailsForPricing :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PriceInfo)
+getYamlOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text PriceInfo)
 getYamlOrderDetailsForPricing orderId pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
@@ -1637,7 +1644,7 @@ getYamlOrderDetailsForPricing orderId pool =
           FROM orders WHERE id = $1 :: text|]
 
 
-getOrderDetailsForPricing :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PriceInfo)
+getOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text PriceInfo)
 getOrderDetailsForPricing orderId pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
@@ -1681,7 +1688,7 @@ getOrderDetailsForPricing orderId pool =
         |]
         
 
-getPatchedOrderDetails :: MonadIO m => Text -> Hasql.Pool -> m (Either Text PatchedOrderDetails)
+getPatchedOrderDetails :: Text -> Hasql.Pool -> AppM (Either Text PatchedOrderDetails)
 getPatchedOrderDetails orderId pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
@@ -1751,7 +1758,7 @@ getPatchedOrderDetails orderId pool =
           GROUP BY o.sdek_request_uuid
         |]
 
-setReceiptReady :: MonadIO m => Text -> UUID -> Hasql.Pool -> m (Either Text ())
+setReceiptReady :: Text -> UUID -> Hasql.Pool -> AppM (Either Text ())
 setReceiptReady orderId uuid pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ 
@@ -1765,7 +1772,7 @@ setReceiptReady orderId uuid pool =
 
 type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double)
 
-refreshAndFetchDailyStats :: MonadIO m => Hasql.Pool -> m (Either Text [DailyStatsRow])
+refreshAndFetchDailyStats :: Hasql.Pool -> AppM (Either Text [DailyStatsRow])
 refreshAndFetchDailyStats pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
@@ -1795,7 +1802,7 @@ refreshAndFetchDailyStats pool =
           ORDER BY sale_date DESC LIMIT 30|]
 
 
-fetchOrderDeliveryItem :: MonadIO m => Day -> Hasql.Pool -> m (Either Text (Maybe Int32, [OrderDeliveryItem]))
+fetchOrderDeliveryItem :: Day -> Hasql.Pool -> AppM (Either Text (Maybe Int32, [OrderDeliveryItem]))
 fetchOrderDeliveryItem day pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $
@@ -1829,7 +1836,7 @@ fetchOrderDeliveryItem day pool =
 		      LIMIT 20
         |]
 
-insertTelegramOrderDeliveryPost :: MonadIO m => Int32 -> Hasql.Pool -> m (Either Text ())
+insertTelegramOrderDeliveryPost :: Int32 -> Hasql.Pool -> AppM (Either Text ())
 insertTelegramOrderDeliveryPost postId pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $
@@ -1842,7 +1849,7 @@ insertTelegramOrderDeliveryPost postId pool =
 
 type MonthlytatsRow = (Month, Int32, Int32, Double, Double)
 
-refreshAndFetchMonthlyStats :: MonadIO m => Hasql.Pool -> m (Either Text [MonthlyStat])
+refreshAndFetchMonthlyStats :: Hasql.Pool -> AppM (Either Text [MonthlyStat])
 refreshAndFetchMonthlyStats pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $
@@ -1857,4 +1864,15 @@ refreshAndFetchMonthlyStats pool =
           average_estimated_profit_per_day :: float8
         FROM monthly_sales_stats
         ORDER BY sale_month DESC LIMIT 12
+      |]
+
+
+tallyUpExpenses :: Expenses -> Hasql.Pool -> AppM (Either Text Bool)
+tallyUpExpenses expenses pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement expenses $
+      lmap $(recordToTuple ''Expenses)
+      [Hasql.singletonStatement|
+        SELECT create_expense($1 :: float8, $2 :: text?, $3 :: text?, $4 :: date?) :: bool
       |]

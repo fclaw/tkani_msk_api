@@ -1,4 +1,4 @@
-module Handlers.DailyDigest.Draft (handler) where
+module API.Handlers.DailyDigest.Draft (handler) where
 
 
 import Control.Monad.Reader.Class (ask)
@@ -11,4 +11,4 @@ import Infrastructure.Database (updateDailyDigestDraft)
 
 
 handler :: DailyDigestDraft -> AppM (ApiResponse ())
-handler draft = fmap (first mkError) $ fmap _appDBPool ask >>= (liftIO . updateDailyDigestDraft draft)
+handler draft = fmap (first mkError) $ fmap _appDBPool ask >>= (updateDailyDigestDraft draft)

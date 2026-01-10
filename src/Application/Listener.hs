@@ -142,7 +142,7 @@ generateAndAttachCollageAndOPublish_worker runInIO CollageJobs {..}
           removeFile collagePath
           void $ runInIO $ deleteMessage (fromIntegral cjMessageId) WAREHOUSE
           -- publish status
-          void $ runInIO $ fmap _appDBPool ask >>= (liftIO . setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
+          void $ runInIO $ fmap _appDBPool ask >>= (setDailyDigestStatus (DailyDigest cjChatId cjMessageId) Published)
 
 -- | Removes known digest tags and surrounding whitespace from the input text.
 --   It handles multiple possible tags like #digest

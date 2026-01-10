@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.ClearCart (handler) where
+module API.Handlers.ClearCart (handler) where
 
 
 import Katip
@@ -20,7 +20,7 @@ handler :: Maybe Int64 -> AppM (ApiResponse ())
 handler (Just userId) = 
   fmap (first mkError) $ 
     fmap _appDBPool ask >>= 
-      (liftIO . clearCart userId)
+      (clearCart userId)
 handler userParam = do
   $(logTM) ErrorS $ ls $ "invalid params in Handlers.ClearCart: " <> show userParam
   return $ Left $ ApiError wrongParamsErrorCode mempty

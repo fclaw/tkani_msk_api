@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.DeleteFabric (handler) where
+module API.Handlers.DeleteFabric (handler) where
 
 import Data.Int (Int64)
 import Data.Bifunctor (first)
@@ -15,4 +15,4 @@ import Infrastructure.Database (deleteFabric)
 
 
 handler :: Int64 -> FabricType -> AppM (ApiResponse ())
-handler fabricId fabricType = fmap (first mkError) $ fmap _appDBPool ask >>= (liftIO . deleteFabric fabricId fabricType)
+handler fabricId fabricType = fmap (first mkError) $ fmap _appDBPool ask >>= (deleteFabric fabricId fabricType)

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TupleSections  #-}
 
-module Handlers.PlaceNewOrder(handler) where
+module API.Handlers.PlaceNewOrder(handler) where
 
 import Katip
 import Control.Monad.IO.Class (liftIO)
@@ -106,7 +106,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
                          | otherwise = Nothing                  
 
   -- fetch total price for a given fabric
-  items <- wrap (liftIO (getOrderItems orTelegramUserId pool)) DatabaseFailed
+  items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
 
@@ -171,7 +171,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
 
   -- STEP E. Save the order in database
   let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
-  void $ wrap (liftIO (placeNewOrder dbOrder pool)) $ DatabaseFailed
+  void $ wrap (placeNewOrder dbOrder pool) $ DatabaseFailed
 
   let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
   let newPaymentRecord = NewPaymentRecord
@@ -183,7 +183,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , nprError = Nothing
         , nprToken = Tinkoff.irToken initReq
         }
-  void $ wrap (liftIO (insertNewPaymentRecord newPaymentRecord pool)) DatabaseFailed
+  void $ wrap (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed
 
   -- STEP F. forward paymentId to the poller
   let getStateRequest = 
@@ -201,7 +201,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (orderId, getStateRequest)) . _tinkoffPaymentChan)
 
   -- clear out the cart
-  void $ wrap (liftIO (clearCart orTelegramUserId pool)) DatabaseFailed
+  void $ wrap (clearCart orTelegramUserId pool) DatabaseFailed
 
   return OrderConfirmationDetails {..}
 

@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
 
-module Handlers.GetFabricPreview(handler) where
+module API.Handlers.GetFabricPreview(handler) where
 
 import Data.Text (Text, unpack)
 import Katip (logTM, Severity(..), ls)
@@ -32,7 +32,7 @@ handler (Just fabricId) (Just fabricType) = do
   let thresholdMetres =  _thresholdMetres cfg
   -- 3. Run the database query inside our AppM monad using liftIO
   $(logTM) DebugS $ ls $ "Querying database for fabric ID: " <> show fabricId <> ", fabric type: " <> show fabricType
-  eResp <- liftIO $ getFabricPreview fabricId fabricType thresholdMetres pool
+  eResp <- getFabricPreview fabricId fabricType thresholdMetres pool
   case eResp of 
     Right fabricInfo -> pure $ Right fabricInfo
     Left err -> do

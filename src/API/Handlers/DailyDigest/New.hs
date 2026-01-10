@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Handlers.DailyDigest.New (handler) where
+module API.Handlers.DailyDigest.New (handler) where
 
 import Katip
 import qualified Data.Text as T
@@ -40,7 +40,7 @@ handler = do
   -- Construct the Deep Link URL
   pool <- fmap _appDBPool ask
   
-  eRes <- liftIO $ checkDailyDigestDraft today pool
+  eRes <- checkDailyDigestDraft today pool
   for_ eRes $ \isAlready -> do
     when isAlready $ $(logTM) InfoS $ ls @String $ "announcement has already been registered"
     unless isAlready $ do
@@ -74,6 +74,6 @@ handler = do
         eResp <- sendPhotoToTelegram $currentModule message WAREHOUSE (Just keyboard) img
         liftIO $ removeDirectoryRecursive tmpDir
         for_ eResp $ \(MessageIdResponse messageId) -> do
-          eRes <- liftIO $ saveDailyDigestDraft today (fromIntegral chatId) (fromIntegral messageId) pool
+          eRes <- saveDailyDigestDraft today (fromIntegral chatId) (fromIntegral messageId) pool
           when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "drafting announcement has failed. " <> show eRes
   when(isLeft eRes) $ $(logTM) ErrorS $ ls $ "drafting announcement has failed. " <> show eRes

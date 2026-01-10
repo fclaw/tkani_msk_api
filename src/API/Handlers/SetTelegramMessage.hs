@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.SetTelegramMessage(handler) where
+module API.Handlers.SetTelegramMessage(handler) where
 
 import Katip (logTM, Severity(..), ls)
 import GHC.Exts (fromString)
@@ -26,6 +26,6 @@ handler message = do
   dbPool <- fmap _appDBPool ask
   -- 3. Run the database query inside our AppM monad using liftIO
   $(logTM) DebugS $ "(SetTelegramMessageRequest): Querying database for making a new entry"
-  resp <- liftIO $ setTelegramMessage message dbPool
+  resp <- setTelegramMessage message dbPool
   $(logTM) DebugS $ ls $ "(SetTelegramMessageRequest): Querying database for making a new entry resp: " <> pack (show resp)
   return $ bimap mkError (const ()) resp

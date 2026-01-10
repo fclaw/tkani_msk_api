@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Handlers.TrackOrder(handler) where
+module API.Handlers.TrackOrder(handler) where
 
 import Katip (logTM, Severity(..), ls)
 import Control.Monad.Reader.Class (ask)
@@ -28,7 +28,7 @@ handler mQuery =
     $(logTM) DebugS "Request received for getting the status"
     -- 2. Get the database connection pool from our AppState environment
     pool <- fmap _appDBPool ask
-    res <- liftIO $ fetchOrderStatus query pool
+    res <- fetchOrderStatus query pool
     when(isLeft res) $ $(logTM) ErrorS $ ls $ "aeson error " <> pack (show res)
     let convert (st, orderId, trackingN, provider) = 
           TrackOrder (formatStatus st) orderId trackingN provider

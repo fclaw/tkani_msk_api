@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Handlers.SearchFabrics (handler) where
+module API.Handlers.SearchFabrics (handler) where
 
 import Katip
 import Data.Text (Text)
@@ -52,7 +52,7 @@ handler (Just query) maybePage maybeLimit = do
   let pool = _appDBPool cfg
   let threshold = _thresholdMetres cfg
   fmap (first mkError) $ do
-    eItems <- liftIO $ searchFabrics prepQuery limit offset threshold pool
+    eItems <- searchFabrics prepQuery limit offset threshold pool
     $(logTM) InfoS $ ls $ "found " <> tshow (length eItems) <> " for query: " <> prepQuery
     return $ flip fmap eItems $ \(total, teasers) ->
       -- 3. Construct the final response object

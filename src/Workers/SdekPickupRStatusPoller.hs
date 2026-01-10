@@ -50,7 +50,7 @@ pickupStatusPoller = do
   pool <- fmap _appDBPool ask
   -- Your logic to poll SDEK courier statuses and update the database
   -- STEP 1: FETCH ALL PENDING RECORDS
-  eRequestUuids <- liftIO $ getPendingPickupRequests pool
+  eRequestUuids <- getPendingPickupRequests pool
   case eRequestUuids of
     Left dbErr -> $(logTM) ErrorS $ ls $ "DB error fetching pending pickups: " <> tshow dbErr
     Right uuids -> do
@@ -100,7 +100,7 @@ checkSinglePickupStatus uuid msgId orderId trackingNumber = do
           -- THE HAPPY PATH
           $(logTM) InfoS $ ls $ "SDEK courier pickup " <> tshow uuid <> " is confirmed."
           -- Update the pickup status to 'successful'
-          eDbRes <- liftIO $ updatePickupStatus uuid "successful" pool
+          eDbRes <- updatePickupStatus uuid "successful" pool
           when (isLeft eDbRes) $
             $(logTM) ErrorS $ ls $ 
               "Failed to update DB status for pickup " <> 
@@ -120,7 +120,7 @@ checkSinglePickupStatus uuid msgId orderId trackingNumber = do
           fmap (const Nothing) $ $(logTM) ErrorS $ ls $ "SDEK courier pickup " <> tshow uuid <> " FAILED with status INVALID. Reason: " <> errorMsg
 
           -- Run the Revert Transaction
-          eDbRes <- liftIO $ recordCourierPickupFailureExt orderId uuid errorMsg pool
+          eDbRes <- recordCourierPickupFailureExt orderId uuid errorMsg pool
           when (isLeft eDbRes) $
             $(logTM) ErrorS $ ls $ 
               "Failed to update DB status (recordCourierPickupFailure) for pickup " <> 

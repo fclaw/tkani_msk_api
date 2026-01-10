@@ -33,6 +33,31 @@ library
       Infrastructure.Services.Sdek.Types
       Infrastructure.Services.Sdek.Types.Config
   other-modules:
+      API.Handlers.AddToCart
+      API.Handlers.CancelOrder
+      API.Handlers.CheckCartItem
+      API.Handlers.ClearCart
+      API.Handlers.DailyDigest.Draft
+      API.Handlers.DailyDigest.New
+      API.Handlers.DailyDigest.Publish
+      API.Handlers.DeleteFabric
+      API.Handlers.GetCatalogSummary
+      API.Handlers.GetDeliveryPoints
+      API.Handlers.GetFabricPreview
+      API.Handlers.GetProviders
+      API.Handlers.MeasureOrder
+      API.Handlers.PatchFabric
+      API.Handlers.PlaceNewOrder
+      API.Handlers.PlaceYamlOrder
+      API.Handlers.PutNewFabric
+      API.Handlers.ReportDailySales
+      API.Handlers.ReportMonthlySales
+      API.Handlers.SearchFabricCard
+      API.Handlers.SearchFabrics
+      API.Handlers.SetTelegramMessage
+      API.Handlers.TallyUpExpenses
+      API.Handlers.TrackOrder
+      API.Handlers.ViewCart
       API.WithField
       Concurrency
       Domain.Error
@@ -43,30 +68,6 @@ library
       Domain.Telegram.Types
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
-      Handlers.AddToCart
-      Handlers.CancelOrder
-      Handlers.CheckCartItem
-      Handlers.ClearCart
-      Handlers.DailyDigest.Draft
-      Handlers.DailyDigest.New
-      Handlers.DailyDigest.Publish
-      Handlers.DeleteFabric
-      Handlers.GetCatalogSummary
-      Handlers.GetDeliveryPoints
-      Handlers.GetFabricPreview
-      Handlers.GetProviders
-      Handlers.MeasureOrder
-      Handlers.PatchFabric
-      Handlers.PlaceNewOrder
-      Handlers.PlaceYamlOrder
-      Handlers.PutNewFabric
-      Handlers.ReportDailySales
-      Handlers.ReportMonthlySales
-      Handlers.SearchFabricCard
-      Handlers.SearchFabrics
-      Handlers.SetTelegramMessage
-      Handlers.TrackOrder
-      Handlers.ViewCart
       Infrastructure.Database
       Infrastructure.Database.Fabric
       Infrastructure.Database.Types
