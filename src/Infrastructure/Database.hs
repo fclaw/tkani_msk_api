@@ -81,7 +81,7 @@ import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
-import Control.Monad (join, void)
+import Control.Monad (join, void, forM_)
 import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
@@ -94,9 +94,12 @@ import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
 import Data.Time (UTCTime)
 import Data.FileEmbed (embedFile)
+import qualified Data.Text.Encoding as TE
+
 
 
 import App (AppM)
+import Utils.Sql (splitSql)
 import API.Types -- Your data types
 import TH.RecordToTuple (recordToTuple, tupleToRecord)
 import API.WithField (WithField)
@@ -123,12 +126,17 @@ convertFromJson value =
 
 runTransaction :: Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> IO (Either Hasql.UsageError a)
 runTransaction pool mode = Hasql.use pool . Hasql.transaction Hasql.Serializable mode
+{-# INLINE runTransaction #-}
 
 runTransactionM :: MonadIO m => Hasql.Pool -> Hasql.Mode -> Hasql.Transaction a -> m (Either Hasql.UsageError a)
 runTransactionM pool mode = liftIO . Hasql.use pool . Hasql.transaction Hasql.Serializable mode
+{-# INLINE runTransactionM #-}
 
 extractADT = either error id
+{-# INLINE extractADT #-}
 
+execCmd cmd = Hasql.statement () $ Hasql.Statement (TE.encodeUtf8 cmd) HE.noParams HD.noResult False
+{-# INLINE execCmd #-}
 
 ---- Statements ------
 
@@ -1780,7 +1788,14 @@ refreshAndFetchDailyStats pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
       -- Execute the dynamic statement
-      Hasql.statement () $ Hasql.Statement $(embedFile "sql/refresh_daily_stats.sql") HE.noParams HD.noResult False
+      -- 1. Load the multi-command SQL file at compile time
+      let multiCommandSql = TE.decodeUtf8 $(embedFile "sql/refresh_daily_stats.sql")
+    
+      -- 2. Split the text into a list of individual commands
+      let commands = splitSql multiCommandSql
+
+      -- 3. Execute each command as a separate, dynamic statement
+      forM_ commands execCmd
 
       -- Step 2: Fetch the data for the last 30 days
       fmap (map (app7 (first T.pack . sequence . map (convertFromJson @DailyExpensesStat) . V.toList)) . V.toList) $ 
@@ -1865,19 +1880,41 @@ type MonthlytatsRow = (Month, Int32, Int32, Double, Double)
 refreshAndFetchMonthlyStats :: Hasql.Pool -> AppM (Either Text [MonthlyStat])
 refreshAndFetchMonthlyStats pool = 
   fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Read $
-      Hasql.statement () $
-      rmap (map ($(tupleToRecord ''MonthlyStat) . app1 ((read @Month) . T.unpack)) . V.toList) $
-      [Hasql.vectorStatement|
-        SELECT 
+    runTransactionM pool Hasql.Write $ do
+      -- Execute the dynamic statement
+      -- 1. Load the multi-command SQL file at compile time
+      let multiCommandSql = TE.decodeUtf8 $(embedFile "sql/refresh_monthly_stats.sql")
+    
+      -- 2. Split the text into a list of individual commands
+      let commands = splitSql multiCommandSql
+
+      -- 3. Execute each command as a separate, dynamic statement
+      forM_ commands execCmd
+
+      fmap (map ($(tupleToRecord ''MonthlyStat) 
+                 . app7 ( first T.pack 
+                        . sequence 
+                        . map (convertFromJson @DailyExpensesStat) 
+                        . V.toList) 
+                 . app1 ((read @Month) . T.unpack))
+          . V.toList) $
+        Hasql.statement () $
+        [Hasql.vectorStatement|
+          SELECT 
           sale_month :: text,
           total_monthly_orders :: int,
           average_orders_per_day :: int,
           total_estimated_profit :: float8,
-          average_estimated_profit_per_day :: float8
-        FROM monthly_sales_stats
-        ORDER BY sale_month DESC LIMIT 12
-      |]
+          average_estimated_profit_per_day :: float8,
+
+          total_monthly_expenses :: float8,
+          expenses_by_payer :: jsonb[]
+
+          FROM monthly_sales_stats AS mss
+          JOIN monthly_expenses_summary AS mes
+          ON mss.sale_month = mes.expense_month
+          ORDER BY sale_month DESC LIMIT 12
+        |]
 
 
 tallyUpExpenses :: Expenses -> Hasql.Pool -> AppM (Either Text Bool)

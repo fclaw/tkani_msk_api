@@ -247,16 +247,6 @@ data OrderDeliveryItem =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odi" } ''OrderDeliveryItem)
 
--- Your ADT
-data MonthlyStat = 
-     MonthlyStat
-     { msSaleMonth       :: Month
-     , msTotalOrders     :: Int32
-     , msAvgOrdersPerDay :: Int32
-     , msTotalProfit     :: Double
-     , msAvgProfitPerDay :: Double
-     } deriving (Show)
-
 data DailyExpensesStat =
      DailyExpensesStat
      { desPayer        :: Text
@@ -265,3 +255,15 @@ data DailyExpensesStat =
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "des" } ''DailyExpensesStat)
+
+-- Your ADT
+data MonthlyStat = 
+     MonthlyStat
+     { msSaleMonth       :: Month
+     , msTotalOrders     :: Int32
+     , msAvgOrdersPerDay :: Int32
+     , msTotalProfit     :: Double
+     , msAvgProfitPerDay :: Double
+     , msTotalExpenses   :: Double
+     , msPayersExpenses  :: Either Text [DailyExpensesStat]
+     } deriving (Show)
