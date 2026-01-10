@@ -203,16 +203,16 @@ instance ToNamedRecord MonthlyStat where
 
 generateAndSendMonthlyReport :: AppM ()
 generateAndSendMonthlyReport = do
-  $(logTM) InfoS "Starting monthly sales report generation..."
+  $(logTM) InfoS "Starting monthly sales and expenses report generation..."
   -- Step 1: Refresh the materialized view and fetch the data
   pool <- fmap _appDBPool ask
   eStats <- refreshAndFetchMonthlyStats pool
   extractFromEither eStats $ \dbStats -> do
     let domainStats = map mkMonthlyStat dbStats
     let csvData = encodeDefaultOrderedByName domainStats
-    let filename = "12_months_sales_report_.csv"
-    let caption = "📈 Sales report for the last 12 months"
+    let filename = "12_months_sales_and_expenses_report_.csv"
+    let caption = "📈 Sales and expenses report for the last 12 months"
     eRes <- Telegram.sendDocument ORDER caption filename (BL.toStrict csvData) "text/csv"
     case eRes of
-      Left err -> $(logTM) ErrorS $ "Failed to send monthly sales report: " <> ls (show err)
-      Right _ -> $(logTM) InfoS "Successfully generated and sent monthly sales report."
+      Left err -> $(logTM) ErrorS $ "Failed to send monthly sales and expenses report: " <> ls (show err)
+      Right _ -> $(logTM) InfoS "Successfully generated and sent monthly sales and expenses report."
