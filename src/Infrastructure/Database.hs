@@ -1816,19 +1816,22 @@ refreshAndFetchDailyStats pool =
             GROUP BY expense_day
           )
           SELECT
-          dss.sale_date :: date AS report_date,
 
-          dss.total_orders :: int4,
-          dss.total_revenue :: float8,
-          dss.pre_cuts_sold_count :: int4,
-          dss.rolls_sold_count :: int4,
-          dss.total_meters_sold :: float8?,
+          COALESCE(dss.sale_date, dea.expense_day) :: date AS report_date,
+
+          COALESCE(dss.total_orders, 0) :: int4 AS total_orders,
+          COALESCE(dss.total_revenue, 0.0) :: float8 AS total_revenue,
+          COALESCE(dss.pre_cuts_sold_count, 0) :: int4 AS pre_cuts_sold_count,
+          COALESCE(dss.rolls_sold_count, 0) :: int4 AS rolls_sold_count,
+          COALESCE(dss.total_meters_sold, 0.0) :: float8? AS total_meters_sold,
 
           COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
 
           FROM daily_sales_stats AS dss
-          LEFT JOIN daily_expenses_agg AS dea 
+          FULL OUTER JOIN daily_expenses_agg AS dea 
           ON dss.sale_date = dea.expense_day
+          WHERE dss.sale_date IS NOT NULL 
+          OR dea.expense_day IS NOT NULL
           ORDER BY report_date DESC LIMIT 30|]
 
 
