@@ -1785,8 +1785,8 @@ setReceiptReady orderId uuid pool =
 
 type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double, Either Text [DailyExpensesStat])
 
-refreshAndFetchDailyStats :: Hasql.Pool -> AppM (Either Text [DailyStatsRow])
-refreshAndFetchDailyStats pool =
+refreshAndFetchDailyStats :: Day -> Hasql.Pool -> AppM (Either Text [DailyStatsRow])
+refreshAndFetchDailyStats day pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
       -- Execute the dynamic statement
@@ -1800,8 +1800,12 @@ refreshAndFetchDailyStats pool =
       forM_ commands execCmd
 
       -- Step 2: Fetch the data for the last 30 days
-      fmap (map (app7 (first T.pack . sequence . map (convertFromJson @DailyExpensesStat) . V.toList)) . V.toList) $ 
-        Hasql.statement () $
+      fmap (map (app7 ( first T.pack 
+                      . sequence 
+                      . map (convertFromJson @DailyExpensesStat)
+                      . V.toList))
+          . V.toList) $
+        Hasql.statement day $
         [Hasql.vectorStatement|
           WITH daily_expenses_agg AS (
             SELECT
@@ -1814,24 +1818,35 @@ refreshAndFetchDailyStats pool =
             )) AS expenses_array
             FROM daily_expenses_summary
             GROUP BY expense_day
-          )
+          ),
+          combined_daily_stats AS (
+            SELECT
+
+            COALESCE(dss.sale_date, dea.expense_day) :: date AS report_date,
+
+            COALESCE(dss.total_orders, 0) :: int4 AS total_orders,
+            COALESCE(dss.total_revenue, 0.0) :: float8 AS total_revenue,
+            COALESCE(dss.pre_cuts_sold_count, 0) :: int4 AS pre_cuts_sold_count,
+            COALESCE(dss.rolls_sold_count, 0) :: int4 AS rolls_sold_count,
+            COALESCE(dss.total_meters_sold, 0.0) :: float8? AS total_meters_sold,
+
+            COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
+
+            FROM daily_sales_stats AS dss
+            FULL OUTER JOIN daily_expenses_agg AS dea 
+            ON dss.sale_date = dea.expense_day
+            WHERE dss.sale_date IS NOT NULL 
+            OR dea.expense_day IS NOT NULL)
           SELECT
-
-          COALESCE(dss.sale_date, dea.expense_day) :: date AS report_date,
-
-          COALESCE(dss.total_orders, 0) :: int4 AS total_orders,
-          COALESCE(dss.total_revenue, 0.0) :: float8 AS total_revenue,
-          COALESCE(dss.pre_cuts_sold_count, 0) :: int4 AS pre_cuts_sold_count,
-          COALESCE(dss.rolls_sold_count, 0) :: int4 AS rolls_sold_count,
-          COALESCE(dss.total_meters_sold, 0.0) :: float8? AS total_meters_sold,
-
-          COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
-
-          FROM daily_sales_stats AS dss
-          FULL OUTER JOIN daily_expenses_agg AS dea 
-          ON dss.sale_date = dea.expense_day
-          WHERE dss.sale_date IS NOT NULL 
-          OR dea.expense_day IS NOT NULL
+            report_date :: date,
+            total_orders :: int4,
+            total_revenue :: float8,
+            pre_cuts_sold_count :: int4,
+            rolls_sold_count :: int4,
+            total_meters_sold :: float8?,
+            expenses :: jsonb[]
+          FROM combined_daily_stats
+          WHERE report_date >= $1 :: date
           ORDER BY report_date DESC LIMIT 30|]
 
 

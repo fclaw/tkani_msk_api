@@ -27,6 +27,7 @@ import Data.Int (Int32)
 import Data.Time.Calendar.Month (Month(..)) -- Import the constructor
 import Data.Time (Day, fromGregorian, formatTime, defaultTimeLocale)
 import Data.Bifunctor (first)
+import Data.Time.Calendar.OrdinalDate (fromOrdinalDate)
 
 
 import App (AppM, ChatKey (ORDER), _appDBPool, extractFromEither)
@@ -83,7 +84,8 @@ generateAndSendDailyReport = do
   $(logTM) InfoS "Starting daily sales report generation..."
   -- Step 1: Refresh the materialized view and fetch the data
   pool <- fmap _appDBPool ask
-  eStats <- refreshAndFetchDailyStats pool
+  let day = fromOrdinalDate 2026 1
+  eStats <- refreshAndFetchDailyStats day pool
   extractFromEither eStats $ \stats -> do
     -- Step 2: Convert the stats to CSV format
     -- We need to convert Day to Text for CSV
