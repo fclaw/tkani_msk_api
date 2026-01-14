@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Workers.SdekPickupRStatusPoller (pickupStatusPoller) where
+module Workers.SdekPickupRStatusPoller (runSdekPickupStatusPoller) where
 
 
 import Katip
@@ -43,8 +43,8 @@ formatDayForTag :: Day -> Text
 formatDayForTag = T.pack . formatTime defaultTimeLocale "%Y_%m_%d"
 
 
-pickupStatusPoller :: AppM ()
-pickupStatusPoller = do
+runSdekPickupStatusPoller :: AppM ()
+runSdekPickupStatusPoller = do
   -- Implementation goes here
   $(logTM) InfoS "Polling for SDEK courier statuses..."
   pool <- fmap _appDBPool ask

@@ -27,11 +27,14 @@ library
       Workers.SdekPriceCalculator
       Workers.SdekGenerateReceipt
       Workers.OrderDeliveryScheduler
+      Workers.DailyWeightTracker
+      Workers.DostavistaOrderStatusPoller
       Infrastructure.Services.Overpass
       Application.Listener
       Application.Cart
       Infrastructure.Services.Sdek.Types
       Infrastructure.Services.Sdek.Types.Config
+      Infrastructure.Services.Dostavista.Types.Config
   other-modules:
       API.Handlers.AddToCart
       API.Handlers.CancelOrder
@@ -72,6 +75,10 @@ library
       Infrastructure.Database.Fabric
       Infrastructure.Database.Types
       Infrastructure.Database.Utils
+      Infrastructure.Services.Dostavista
+      Infrastructure.Services.Dostavista.Types
+      Infrastructure.Services.Dostavista.Types.Enums
+      Infrastructure.Services.Dostavista.Types.Error
       Infrastructure.Services.Overpass.Geo
       Infrastructure.Services.Overpass.Types
       Infrastructure.Services.Sdek

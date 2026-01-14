@@ -62,18 +62,21 @@ import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCit
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
-import Workers.SdekOrderStatusPoller (orderStatusPoller)
-import Workers.TinkoffPaymentStatusPoller (paymentStatusPoller)
+import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
+import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
-import Workers.SdekPickupRStatusPoller (pickupStatusPoller)
+import Workers.SdekPickupRStatusPoller (runSdekPickupStatusPoller)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Workers.SdekPriceCalculator (runSdekPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
 import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
+import Workers.DailyWeightTracker (runDailyWeightTracker)
+import Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
+import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig (..))
 
 
 
@@ -89,19 +92,23 @@ data Workers =
       | SdekPriceCalculator
       | SdekGenerateReceipt
       | OrderDeliveryScheduler
+      | DailyWeightTracker
+      | DostavistaOrderStatusPoller
 
 instance Show Workers where
-  show WebServer = "Web Server"
-  show SdekOrderStatusPoller = "SDEK Order Status Poller"
-  show Tinkoff = "Tinkoff Poller"
-  show CollageMaker = "Collage Maker"
-  show CartsCleaner = "Carts Cleaner"
-  show SdekPickUpScheduler = "SDEK Pickup Scheduler"
-  show PickupStatusPoller = "SDEK Pickup Status Poller"
-  show SdekStatusPoller = "SDEK Status Poller"
-  show SdekPriceCalculator = "SDEK Price Calculator"
-  show SdekGenerateReceipt = "SDEK Generate Receipt"
-  show OrderDeliveryScheduler = "Order Delivery Scheduler"
+  show WebServer                   = "Web Server"
+  show SdekOrderStatusPoller       = "SDEK Order Status Poller"
+  show Tinkoff                     = "Tinkoff Poller"
+  show CollageMaker                = "Collage Maker"
+  show CartsCleaner                = "Carts Cleaner"
+  show SdekPickUpScheduler         = "SDEK Pickup Scheduler"
+  show PickupStatusPoller          = "SDEK Pickup Status Poller"
+  show SdekStatusPoller            = "SDEK Status Poller"
+  show SdekPriceCalculator         = "SDEK Price Calculator"
+  show SdekGenerateReceipt         = "SDEK Generate Receipt"
+  show OrderDeliveryScheduler      = "Order Delivery Scheduler"
+  show DailyWeightTracker          = "Daily Weight Tracker"
+  show DostavistaOrderStatusPoller = "Dostavista Order Status Poller"
 
 
 methodsCors :: Middleware
@@ -205,8 +212,9 @@ main = do
     eProviders <- decodeFileEither @[ProviderInfo] "providers.yaml"
     eMetroCities <- decodeFileEither @[MetroCity] "data/metro_cities.yaml"
     eSdekConfig <- decodeFileEither @SdekConfig "config/sdek.yaml"
-    let res = (,,) <$> eProviders <*> eMetroCities <*> eSdekConfig
-    handleYamlResult res $ \(providers, cities, sdekConfig) -> do
+    eDostavistaConfig <- decodeFileEither @DostavistaConfig "config/dostavista.yaml"
+    let res = (,,,) <$> eProviders <*> eMetroCities <*> eSdekConfig <*> eDostavistaConfig
+    handleYamlResult res $ \(providers, cities, sdekConfig, dostavistaConfig) -> do
       tplMap <- loadTemplatesFromDirectory "templates"
 
       -- 2. Load configuration from environment variables
@@ -265,6 +273,8 @@ main = do
             , _collageStubPath = configCollageStubPath
             , _messageCannotBeDeleted = configMessageCannotBeDeleted
             , _messageNotFound = configMessageNotFound
+            , _courierWeightThreshold = configCourierWeightThreshold
+            , _dostavistaConfig = dostavistaConfig { token = configDostavistaToken }
             }
 
       tinkoffPaymentChan <- newTChanIO
@@ -272,6 +282,8 @@ main = do
 
       cityCacheVar <- newTVarIO M.empty
       pvzCacheVar <- newTVarIO M.empty
+
+      dostavistaChan <- newTChanIO
 
       let state =
            State 
@@ -282,6 +294,7 @@ main = do
            , _appSdekChan = appSdekChan
            , _metroStations = []
            , _cityCodeByPVZCache = CityCodeByPVZCache {..}
+           , _dostavistaChan = dostavistaChan
            }
       initialState <- newTVarIO state
   
@@ -314,11 +327,11 @@ main = do
               [ (WebServer, server)
               , (SdekOrderStatusPoller, 
                  runForever 5 $
-                   runInIO orderStatusPoller
+                   runInIO runSdekOrderStatusPoller
                      >>= showErrorInWorker 
                            SdekOrderStatusPoller)
               , (Tinkoff, 
-                 runInIO paymentStatusPoller 
+                 runInIO runTinkoffPaymentStatusPoller 
                    >>= showErrorInWorker 
                         Tinkoff)
               , (CollageMaker,
@@ -339,7 +352,7 @@ main = do
                            SdekPickUpScheduler)
               , (PickupStatusPoller,
                  runForever 5 $
-                   runInIO pickupStatusPoller 
+                   runInIO runSdekPickupStatusPoller 
                      >>= showErrorInWorker 
                            PickupStatusPoller)
               , (SdekStatusPoller,
@@ -361,10 +374,24 @@ main = do
                    runInIO (runOrderDeliveryScheduler lastRunVar)
                      >>= showErrorInWorker 
                            OrderDeliveryScheduler)
+              , (DostavistaOrderStatusPoller,
+                 runInIO runDostavistaOrderStatusPoller 
+                   >>= showErrorInWorker 
+                        DostavistaOrderStatusPoller)
               ]
 
+        let extTasks 
+              | configIsCourierNeeded =
+                let weightTrackerWorker =
+                     (DailyWeightTracker,
+                      runInIO (runDailyWeightTracker connInfo runInIO)
+                        >>= showErrorInWorker
+                             DailyWeightTracker)
+                in weightTrackerWorker : tasks
+              | otherwise = tasks
+
         putStrLn "Spawning concurrent workers..."
-        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) tasks
+        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) extTasks
         putStrLn "All workers started. Waiting for any worker to exit."
 
         -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
@@ -372,5 +399,4 @@ main = do
         putStrLn $ "Worker '" <> taskName <> "' finished unexpectedly. Shutting down."
 
         -- Gracefully cancel all other workers on exit.
-        mapM_ (cancel . snd) asyncs
-        putStrLn "Shutdown complete."
+        mapM_ (cancel . snd) asyncs >> putStrLn "Shutdown complete."

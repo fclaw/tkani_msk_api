@@ -12,7 +12,6 @@ module Infrastructure.Services.Sdek.Types where
 
 import Data.Aeson
 import Data.Aeson.TH
-import Text (recordLabelModifier)
 import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Data.Text (Text)
@@ -21,7 +20,7 @@ import qualified Data.Vector as V
 import Data.Maybe (listToMaybe)
 import Data.Time (UTCTime)
 
-import Text (camelToSnake)
+import Text (camelToSnake, recordLabelModifier)
 import Infrastructure.Services.Sdek.Types.State
 import Infrastructure.Services.Sdek.Types.Error
 

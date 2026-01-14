@@ -267,3 +267,21 @@ data MonthlyStat =
      , msTotalExpenses   :: Double
      , msPayersExpenses  :: Either Text [DailyExpensesStat]
      } deriving (Show)
+
+
+data CourierService = DOSTAVISTA | NONE deriving Show
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''CourierService)
+
+
+data CourierPickupData = 
+     CourierPickupData
+     { cpdDay         :: Day
+     , cpdProvider    :: CourierService
+     , cpdOrders      :: [Text]
+     , cpdOrderId     :: Int64
+     , cpdOrderStatus :: Text
+     , cpdCost        :: Double
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpd" } ''CourierPickupData)

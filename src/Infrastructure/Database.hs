@@ -69,6 +69,10 @@ module Infrastructure.Database
   , insertTelegramOrderDeliveryPost
   , refreshAndFetchMonthlyStats
   , tallyUpExpenses
+  , recordAndLinkPickup
+  , fetchWeightTrackerStateInfo
+  , getTodaysDostavistaOrder
+  , setDostavistaOrderStatus
   ) where
 
 
@@ -91,6 +95,7 @@ import Data.UUID (UUID)
 import qualified Data.Vector as V
 import Data.Either (fromRight, either)
 import Data.Time (Day)
+import Data.Foldable (for_)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
@@ -114,6 +119,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database.Utils as Utils
+import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
 
 --------------------------------------------------------------------------------
 -- Template Haskell Magic: Generate our statement functions automatically
@@ -1945,4 +1951,91 @@ tallyUpExpenses expenses pool =
       lmap $(recordToTuple ''Expenses)
       [Hasql.singletonStatement|
         SELECT create_expense($1 :: float8, $2 :: text?, $3 :: text?, $4 :: date?) :: bool
+      |]
+
+recordAndLinkPickup :: CourierPickupData -> Hasql.Pool -> AppM (Either Text ())
+recordAndLinkPickup CourierPickupData {..} pool = 
+ fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      
+      -- STEP 1: Insert the new courier pickup record and get its primary key (id).
+      maybeCourierPickupId <-
+        Hasql.statement 
+         ( cpdDay
+         , encodeToText cpdProvider
+         , cpdOrderId
+         , cpdCost
+         , cpdOrderStatus) $ 
+         [Hasql.maybeStatement|
+          INSERT INTO external_courier_pickups
+          (pickup_date, provider, order_id, cost, status)
+          VALUES (
+           $1 :: date,
+           CAST($2 :: text AS pickup_provider), 
+           $3 :: int8, 
+           CAST($4 :: float8 AS numeric), 
+           $5 :: text)
+          ON CONFLICT (pickup_date) DO NOTHING 
+          RETURNING id :: int8
+         |]
+
+      for_ maybeCourierPickupId $ 
+        \courierPickupId ->
+          -- STEP 2: Execute the bulk update
+          Hasql.statement
+           ( courierPickupId
+           , V.fromList cpdOrders) $
+           [Hasql.resultlessStatement|
+            UPDATE orders
+            SET courier_pickup_id = $1 :: int8
+            WHERE id = ANY($2 :: text[])
+           |]
+
+fetchWeightTrackerStateInfo :: Day -> CourierService -> Hasql.Pool -> AppM (Either Text (Int, Bool, [Text]))
+fetchWeightTrackerStateInfo day service pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (day, encodeToText service) $
+      rmap (fromMaybe (0, False, []) . fmap (app1 fromIntegral . app3 V.toList))
+      [Hasql.maybeStatement|
+       SELECT
+         COALESCE(SUM(o.actual_weight_grams), 0) :: int4,
+         EXISTS (SELECT 1 FROM external_courier_pickups 
+         WHERE provider = CAST($2 :: text AS pickup_provider) 
+         AND pickup_date = $1 :: date) :: bool,
+         COALESCE(array_agg(o.id), '{}'::text[]) :: text[]
+       FROM orders AS o
+       INNER JOIN external_courier_pickups AS ecp
+       ON o.courier_pickup_id = ecp.id
+       AND ecp.provider = CAST($2 :: text AS pickup_provider)
+       AND ecp.pickup_date = $1 :: date
+      |]
+
+getTodaysDostavistaOrder :: Day -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, DostavistaOrderStatus, UTCTime)))
+getTodaysDostavistaOrder today pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+       Hasql.statement (today, V.fromList (map encodeToText [New, Available, Active])) $
+       rmap (fmap (app2 (extractADT . convertFromJson @DostavistaOrderStatus)))
+       [Hasql.maybeStatement|
+         SELECT
+         order_id :: int8, 
+         to_jsonb(status) :: jsonb,
+         created_at :: timestamptz
+         FROM external_courier_pickups
+         WHERE provider = 'dostavista'
+         AND pickup_date = $1 :: date
+         AND status = ANY($2 :: text[])
+         AND now() - created_at < INTERVAL '2 hours'
+       |]
+
+setDostavistaOrderStatus :: Int64 -> DostavistaOrderStatus -> Hasql.Pool -> AppM (Either Text ())
+setDostavistaOrderStatus orderId status pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (orderId, encodeToText status)
+      [Hasql.resultlessStatement|
+        UPDATE external_courier_pickups
+        SET status = $2 :: text
+        WHERE order_id = $1 :: int8 
       |]

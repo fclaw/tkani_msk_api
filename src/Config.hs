@@ -35,31 +35,34 @@ instance ToJSON ConnectInfo
 
 -- | A data type to hold all our application's configuration.
 data Config = Config
-  { configDBConnString       :: Text
-  , configApiPort            :: Int
-  , configConnInfo           :: ConnectInfo
-  , configSdekClientId       :: Text
-  , configSdekClientSecret   :: Text
-  , configOrderBotToken      :: Text
-  , configConciergeBotToken  :: Text
-  , configWarehouseBotToken  :: Text
-  , configConciergeChatId    :: Int64
-  , configWarehouseChatId    :: Int64
-  , configMainChatId         :: Int64
-  , configOrderChatId        :: Int64
-  , configYamlOrderChatId    :: Int64
-  , configThresholdMetres    :: Double
-  , configTinkoffTerminalKey :: Text
-  , configTinkoffSecret      :: Text
-  , configTinkoffUrl         :: Text
-  , configDailyDigestImgStub :: Text
-  , configCollageServiceUrl  :: Text
-  , configCutTolerance       :: Int
-  , configGalleryLink        :: Text
-  , configIsCollageServiceOn :: Bool
-  , configCollageStubPath    :: Text
+  { configDBConnString           :: Text
+  , configApiPort                :: Int
+  , configConnInfo               :: ConnectInfo
+  , configSdekClientId           :: Text
+  , configSdekClientSecret       :: Text
+  , configOrderBotToken          :: Text
+  , configConciergeBotToken      :: Text
+  , configWarehouseBotToken      :: Text
+  , configConciergeChatId        :: Int64
+  , configWarehouseChatId        :: Int64
+  , configMainChatId             :: Int64
+  , configOrderChatId            :: Int64
+  , configYamlOrderChatId        :: Int64
+  , configThresholdMetres        :: Double
+  , configTinkoffTerminalKey     :: Text
+  , configTinkoffSecret          :: Text
+  , configTinkoffUrl             :: Text
+  , configDailyDigestImgStub     :: Text
+  , configCollageServiceUrl      :: Text
+  , configCutTolerance           :: Int
+  , configGalleryLink            :: Text
+  , configIsCollageServiceOn     :: Bool
+  , configCollageStubPath        :: Text
   , configMessageCannotBeDeleted :: Text
-  , configMessageNotFound    :: Text
+  , configMessageNotFound        :: Text
+  , configIsCourierNeeded        :: Bool
+  , configCourierWeightThreshold :: Int
+  , configDostavistaToken        :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -132,10 +135,17 @@ loadConfig = do
   let configIsCollageServiceOn = textToBool $ (Map.!) env "IS_COLLAGE_SERVICE_ON"
   let configCollageStubPath = (Map.!) env "COLLAGE_STUB_PATH"
 
-
   -- telegram error messages 
   let configMessageCannotBeDeleted = (Map.!) env "MESSAGE_CANNOT_BE_DELETED"
   let configMessageNotFound = (Map.!) env "MESSAGE_NOT_FOUND"
+
+   -- courier
+  let configIsCourierNeeded = textToBool $ (Map.!) env "IS_COURIER_NEEDED"
+  let configCourierWeightThreshold = fromIntegral $ extractNumber "COURIER_WEIGHT_THRESHOLD" $ textToInt $ (Map.!) env "COURIER_WEIGHT_THRESHOLD"
+
+  
+  let configDostavistaToken = (Map.!) env "DOSTAVISTA_TOKEN"
+
 
   -- 3. Parse the port number
   let configApiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)

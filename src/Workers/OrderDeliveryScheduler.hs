@@ -17,6 +17,9 @@ import Control.Monad (when, void)
 import Data.Foldable (for_)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
+import Data.Time.Clock (getCurrentTime)
+import Data.Time (Day, diffDays, utctDay)
+import System.IO.Unsafe (unsafePerformIO) -- For getting 'today' in a pure context (see note)
 
 
 import Text (tshow)
@@ -31,6 +34,13 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 -- | The main loop for the scheduled SDEK pickup job.
 -- | A state for the scheduler to remember the date of its last successful run.
 type LastRunDay = TVar (Maybe Day)
+
+-- A simple helper to get today's date.
+-- Using unsafePerformIO here is a common, pragmatic approach for a 'today'
+-- value in a function that is conceptually pure for a given run.
+today :: Day
+today = utctDay (unsafePerformIO getCurrentTime)
+{-# NOINLINE today #-}
 
 -- | The main scheduler function. It takes the TVar as an argument.
 runOrderDeliveryScheduler :: TVar (Maybe Day) -> AppM ()
@@ -88,16 +98,34 @@ runOrderDeliveryScheduler lastRunVar = do
 generateArrivalNotification :: [OrderDeliveryItem] -> T.Text
 generateArrivalNotification orders = T.intercalate "\n" $ zipWith formatBlock [1..] orders
 
--- | Helper to format a single order block with all its details.
+-- Helper to format a single order block with all its details.
 formatBlock :: Int -> OrderDeliveryItem -> Text
 formatBlock index OrderDeliveryItem {..} =
-  T.unlines
-  [ "" -- Adds a blank line for spacing
-  , T.pack (show index) <> " - заказ: `" <> odiId <> "`"
-  , ", СДЭК: `" <> odiTrack <> "`" -- Indented with spaces
-  , fromMaybe mempty $
-      flip fmap odiKeepFreeUntil $ \time -> 
-        ", Хранение до: *" <>
-        T.pack (formatTime defaultTimeLocale "%d %B %Y" time) <> 
-        "*"
-  ]
+  let
+    -- Base components of the message
+    line1 = T.pack (show index) <> " - заказ: `" <> odiId <> "`"
+    line2 = ", СДЭК: `" <> odiTrack <> "`"
+    -- --- EXPIRY LOGIC (Simplified) ---
+    expiryLine = 
+      case odiKeepFreeUntil of
+        -- If there's no 'keep until' date, return an empty string for this line.
+        Nothing -> mempty
+        
+        -- If there is a date...
+        Just keepUntilDate ->
+          let
+             -- Calculate days remaining (can be negative if overdue).
+             daysLeft = diffDays (utctDay keepUntilDate) today
+
+             -- Determine the prefix: a warning emoji if 1 day or less is left.
+             prefix = if daysLeft <= 1 then "⚠️ " else mempty
+                
+             -- Format the date into a human-readable string.
+             dateString = T.pack (formatTime defaultTimeLocale "%d %B %Y" keepUntilDate)
+          in
+            -- Assemble the final line.
+            prefix <> ", Хранение до: *" <> dateString <> "*"
+
+  -- Combine the lines into the final multi-line block.
+  -- The filter removes the expiry line completely if it's empty.
+  in T.unlines $ filter (not . T.null) [line1, line2, expiryLine]

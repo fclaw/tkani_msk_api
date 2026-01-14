@@ -25,6 +25,7 @@ CREATE TABLE payments (
     -- Foreign key linking back to the main order.
     order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
 
+
     -- Information about the payment provider.
     provider payment_provider NOT NULL,
     

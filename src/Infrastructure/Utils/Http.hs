@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 module Infrastructure.Utils.Http
   ( 
@@ -25,7 +26,9 @@ module Infrastructure.Utils.Http
     withRetry,
     HttpError(..),
     QueryParams,
-    FormParams
+    FormParams,
+    Token (..),
+    mkDefToken
   )
 where
 
@@ -45,6 +48,7 @@ import           Network.HTTP.Client             (HttpException (..),
                                                   responseStatus, Manager, managerResponseTimeout, responseTimeoutMicro) -- ADDED Manager
 import qualified Network.HTTP.Client          as HTTP
 import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Types.Header (HeaderName)
 import           Network.HTTP.Types.Status       (statusCode)
 import           Control.Exception               (SomeException, fromException, try, Exception)
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
@@ -75,8 +79,17 @@ perseResp eResp =
     Left ex -> Left $ NetworkError ex
     Right response -> perseReq (response ^. responseBody)
 
+
+data Token = 
+     Token 
+     { tokenHeader :: HeaderName
+     , tokenValue  :: Text
+     }
+
+mkDefToken token = Token "Authorization"  ("Bearer " <> token)
+
 addToken Nothing opt = opt
-addToken (Just token) opts = opts & header "Authorization" .~ [TE.encodeUtf8 ("Bearer " <> token)]
+addToken (Just Token {..}) opts = opts & header tokenHeader .~ [TE.encodeUtf8 tokenValue]
 
 data HttpExceptionInfo
   = RetryableNetworkError HttpExceptionContent
@@ -155,7 +168,7 @@ initialDelay = 1000000
 -- == 1. PRIMITIVE REQUESTS (UPDATED to accept Manager)
 -- ===================================================================
 
-_getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
+_getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
 _getReq' mgr url queryParams maybeToken = do
   -- FIX: Use global manager
   let baseOpts = 
@@ -168,7 +181,7 @@ _getReq' mgr url queryParams maybeToken = do
   let opts = addToken maybeToken (baseOpts & params .~ queryParams)
   liftIO $ try (getWith opts url)
 
-_postReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
+_postReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
 _postReq' mgr url body maybeToken = do
   -- FIX: Use global manager and set Content-Type
   let baseOpts = defaults 
@@ -184,7 +197,7 @@ _postReq' mgr url body maybeToken = do
   let encoded_body = encode body
   liftIO $ try (postWith opts url encoded_body)
 
-_patchReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either SomeException (Response LBS.ByteString))
+_patchReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
 _patchReq' mgr url body maybeToken = do
   -- FIX: Use global manager and set Content-Type
   let baseOpts = defaults 
@@ -217,11 +230,11 @@ _postFormReq' mgr url payload = do
 -- == 2. PUBLIC API (UPDATED to accept Manager)
 -- ===================================================================
 
-getReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> QueryParams -> Maybe Text -> m (Either HttpError a)
+getReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> QueryParams -> Maybe Token -> m (Either HttpError a)
 getReq mgr url queryParams maybeToken = makeRequestWithRetries Nothing (_getReq' mgr url queryParams maybeToken)
 {-# INLINE getReq #-}
 
-postReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either HttpError a)
+postReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either HttpError a)
 postReq mgr url body maybeToken = makeRequestWithRetries Nothing (_postReq' mgr url body maybeToken)
 {-# INLINE postReq #-}
 
@@ -229,7 +242,7 @@ postFormReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJ
 postFormReq mgr url payload = makeRequestWithRetries Nothing (_postFormReq' mgr url payload)
 {-# INLINE postFormReq #-}
 
-patchReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m,  FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Text -> m (Either HttpError a)
+patchReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m,  FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either HttpError a)
 patchReq mgr url body maybeToken = makeRequestWithRetries Nothing (_patchReq' mgr url body maybeToken)
 {-# INLINE patchReq #-}
 

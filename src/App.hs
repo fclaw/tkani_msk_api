@@ -26,11 +26,16 @@ module App
   CityCodeByPVZCache (..),
   SdekPvzInfo (..),
   SdekCity (..),
+  DostavistaJob (..),
   currentTime,
   render,
   runAppM,
-  -- helper
+  -- helper (TVAR, TChan)
   readTVarIO,
+  modifyTVarIO,
+  readTChanIO,
+  writeTChanIO,
+  -- lenses
   -- extractors
   extractFromMaybe,
   extractFromEither
@@ -41,7 +46,7 @@ import Servant (Handler, ServerError)
 import Control.Monad.Except (MonadError, ExceptT)
 import Hasql.Pool (Pool)
 import Data.Text (Text, pack)
-import Control.Concurrent.STM (TVar, TChan, readTVar, atomically)
+import Control.Concurrent.STM (TVar, TChan, readTVar, modifyTVar', atomically, readTChan, writeTChan)
 import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
 import Control.Lens
 import GHC.Generics (Generic)
@@ -78,6 +83,8 @@ import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
+import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
+import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
 
 
 
@@ -144,8 +151,8 @@ data SdekJob = SdekJob
 
 -- Minimal info needed for a PVZ
 data SdekPvzInfo = SdekPvzInfo
-  { spvzCode    :: Text
-  , spvzCityName  :: Text -- The key to look up in the City Cache
+  { spvzCode     :: Text
+  , spvzCityName :: Text -- The key to look up in the City Cache
   }
 
 -- Info for a City
@@ -158,19 +165,27 @@ data SdekCity = SdekCity
 data CityCodeByPVZCache = 
      CityCodeByPVZCache 
      { cityCacheVar :: TVar (M.Map Text SdekCity)
-     , pvzCacheVar :: TVar (M.Map Text SdekPvzInfo) 
+     , pvzCacheVar  :: TVar (M.Map Text SdekPvzInfo) 
+     }
+
+data DostavistaJob = 
+     DostavistaJob 
+     { doJobOrderId     :: Int64
+     , doJobOrderStatus :: DostavistaOrderStatus
+     , doJobAStart      :: UTCTime
      }
 
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
-  { _sdekToken :: Maybe SdekToken -- Stored in a TVar for thread safety
-  , _pointCache :: PointCache
+  { _sdekToken          :: Maybe SdekToken -- Stored in a TVar for thread safety
+  , _pointCache         :: PointCache
   , _cityCodeByPVZCache :: CityCodeByPVZCache
-  , _sdekPromises :: SdekPromiseMap
+  , _sdekPromises       :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (Text, GetStateRequest)
-  , _appSdekChan :: TChan SdekJob
-  , _metroStations :: [MetroStation]
+  , _appSdekChan        :: TChan SdekJob
+  , _metroStations      :: [MetroStation]
+  , _dostavistaChan     :: TChan DostavistaJob
   }
 
 
@@ -204,6 +219,8 @@ data Config = Config
   , _collageStubPath        :: Text
   , _messageCannotBeDeleted :: Text
   , _messageNotFound        :: Text
+  , _courierWeightThreshold :: Int
+  , _dostavistaConfig       :: DostavistaConfig
   }
 
 -- A helper type for parsing the YAML
@@ -292,7 +309,16 @@ runAppM config stateTVar appM =
   runExceptT . fmap (\(a, _, _) -> a) $ runRWST (unAppM appM) config stateTVar
 
 readTVarIO = (liftIO @AppM) . atomically . readTVar
+{-# INLINE readTVarIO #-}
 
+modifyTVarIO var = (liftIO @AppM) . atomically . modifyTVar' var
+{-# INLINE modifyTVarIO #-}
+
+readTChanIO = (liftIO @AppM) . atomically . readTChan
+{-# INLINE readTChanIO #-}
+
+writeTChanIO chan = (liftIO @AppM) . atomically . writeTChan chan
+{-# INLINE writeTChanIO #-}
 
 extractFromMaybe :: Maybe a -> (a -> AppM ()) -> AppM ()
 extractFromMaybe (Just v) app = app v 

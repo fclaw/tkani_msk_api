@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Workers.SdekOrderStatusPoller (orderStatusPoller) where
+module Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller) where
 
 import Control.Monad (when)
 import Katip
@@ -33,8 +33,8 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 
 
-orderStatusPoller :: AppM ()
-orderStatusPoller = do
+runSdekOrderStatusPoller :: AppM ()
+runSdekOrderStatusPoller = do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask

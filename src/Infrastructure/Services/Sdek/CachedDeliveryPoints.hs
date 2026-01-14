@@ -107,7 +107,7 @@ storeDeliveryPoints cityCode = do
   let httpManager = _configHttpManager cfg
   let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
   let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl pointsParams . Just . sdekAccessToken)
+  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl pointsParams . Just . mkDefToken . sdekAccessToken)
   ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
     -- Transform the result (only runs on success of the second call)

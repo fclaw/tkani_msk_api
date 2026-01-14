@@ -1,0 +1,20 @@
+
+
+courier_call_cutoff_hour: 21
+token: "TOKEN"
+url: "robotapitest.dostavista.ru/api/business/1.5"
+
+source:
+  latitude: "55.760074"
+  longitude: "37.763677"
+  address: "г. Москва, шоссе Энтузиастов, 56с32, этаж 3, офис 361"
+
+destination:
+  latitude: "55.761474"
+  longitude: "37.777960"
+  address: "г. Москва, 2-я Владимирская ул., 6, корп. 1, CDEK"
+
+contact:
+  name: "Sergey"
+  surname: "Yakovlev"
+  phone: "+79361645867"

@@ -84,8 +84,8 @@ try' = try
 --   >   Left err -> $(logTM) ErrorS ...
 --   >   Right _  -> $(logTM) InfoS ...
 sendOrEditTelegramMessage
-  :: Text                         -- ^ The message text, pre-formatted with MarkdownV2
-  -> Text
+  :: Text                        
+  -> Text                         -- ^ The message text, pre-formatted with MarkdownV2
   -> ChatKey                      -- ^ The target chat
   -> Maybe Int64                  -- ^ The target message_id
   -> Maybe Int64

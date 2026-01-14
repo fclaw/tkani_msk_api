@@ -4,7 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Workers.TinkoffPaymentStatusPoller (paymentStatusPoller) where
+module Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller) where
 
 import Katip
 import Control.Concurrent (threadDelay)
@@ -73,8 +73,8 @@ delaySlow   = 45 * 1000000 -- 45 seconds
 readTVar = liftIO . STM.atomically . STM.readTVar
 readTChan = liftIO . STM.atomically . STM.readTChan
 
-paymentStatusPoller :: AppM ()
-paymentStatusPoller = do
+runTinkoffPaymentStatusPoller :: AppM ()
+runTinkoffPaymentStatusPoller = do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for Tinkoff payment statuses..."
   stvar <- get

@@ -1,7 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Text (camelToSnake, recordLabelModifier, encodeToText, pascalCase, recordLabelModifierG, tshow, textToInt, textToDouble, textToBool) where
+module Text 
+       ( camelToSnake
+       , recordLabelModifier
+       , encodeToText
+       , pascalCase
+       , recordLabelModifierG
+       , tshow
+       , textToInt
+       , textToDouble
+       , textToBool
+       , textMoneyToDouble) 
+       where
 
 import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
@@ -12,6 +23,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as TE
 import Data.Text.Read (signed, decimal, double)
+import Text.Read (readMaybe)
 
 
 camelToSnake :: String -> String
@@ -70,3 +82,12 @@ textToDouble t =
 
 textToBool :: Text -> Bool
 textToBool = read @Bool . T.unpack
+
+-- | Safely parses a currency string (like "390.00") into a Double.
+--   Returns 'Just Double' on success, and 'Nothing' if parsing fails.
+--   It also handles decimal commas by replacing them with periods.
+textMoneyToDouble :: Text -> Maybe Double
+textMoneyToDouble moneyText =
+    -- Replace comma with period for robustness, then unpack to String
+    let preparedString = T.unpack $ T.replace "," "." moneyText
+    in readMaybe preparedString
