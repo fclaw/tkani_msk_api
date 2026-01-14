@@ -90,7 +90,7 @@ runDailyWeightTracker connInfo runAppM = do
         forever $ do
           runAppM $ $(logTM) InfoS "runDailyWeightTracker: state sweeper started."
           resetWeight tm stateVar
-          threadDelay (5 * 1000000)
+          threadDelay (5 * 60 * 1000000)
 
       --  Connect and Listen
       liftIO $ PG.withConnect connInfo $ \conn -> do

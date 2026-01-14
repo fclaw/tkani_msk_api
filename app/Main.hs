@@ -14,6 +14,7 @@ import Network.Wai.Handler.Warp (run)
 import Servant (Handler)
 import Servant.Server
 import Servant.Server.Generic
+import Data.Maybe (fromMaybe)
 import Servant.API.Generic (toServant)
 -- Database and logging imports
 import qualified Hasql.Pool as Pool
@@ -77,6 +78,7 @@ import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig (..))
+import qualified Infrastructure.Services.Dostavista.Types.Config as Dostativsta
 
 
 
@@ -274,7 +276,16 @@ main = do
             , _messageCannotBeDeleted = configMessageCannotBeDeleted
             , _messageNotFound = configMessageNotFound
             , _courierWeightThreshold = configCourierWeightThreshold
-            , _dostavistaConfig = dostavistaConfig { token = configDostavistaToken }
+            , _dostavistaConfig = 
+               dostavistaConfig 
+               { token = configDostavistaToken
+              , courierCallCutoffHour = 
+                fromMaybe 
+                (courierCallCutoffHour dostavistaConfig)
+                configCourierCallCutoffHour
+              , url = fromMaybe (Dostativsta.url dostavistaConfig) configDostavistaUrl
+               }
+            
             }
 
       tinkoffPaymentChan <- newTChanIO

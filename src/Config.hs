@@ -63,6 +63,8 @@ data Config = Config
   , configIsCourierNeeded        :: Bool
   , configCourierWeightThreshold :: Int
   , configDostavistaToken        :: Text
+  , configCourierCallCutoffHour  :: Maybe Int
+  , configDostavistaUrl          :: Maybe Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -142,8 +144,9 @@ loadConfig = do
    -- courier
   let configIsCourierNeeded = textToBool $ (Map.!) env "IS_COURIER_NEEDED"
   let configCourierWeightThreshold = fromIntegral $ extractNumber "COURIER_WEIGHT_THRESHOLD" $ textToInt $ (Map.!) env "COURIER_WEIGHT_THRESHOLD"
-
   
+  let configCourierCallCutoffHour = fmap (fromIntegral . extractNumber "COURIER_CALL_CUTOFF_HOUR" . textToInt) $ (Map.!?) env "COURIER_CALL_CUTOFF_HOUR"
+  let configDostavistaUrl = (Map.!?) env "DOSTAVISTA_URL"
   let configDostavistaToken = (Map.!) env "DOSTAVISTA_TOKEN"
 
 

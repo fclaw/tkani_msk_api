@@ -53,6 +53,9 @@ runDostavistaOrderStatusPoller = do
       void $ async $ runJobWithCleanup $ pollerLogic statusVar (doJobOrderId job)
 
 
+timeout :: Int
+timeout = 30 * 1000000
+
 pollerLogic :: TVar (DostavistaOrderStatus, UTCTime) -> Int64 -> AppM ()
 pollerLogic statusVar orderId = do
   (currentStatus, start) <- readTVarIO statusVar
@@ -116,11 +119,11 @@ pollerLogic statusVar orderId = do
                              ]
                         msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
                         void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
-                        liftIO $ threadDelay (60 * 1000000)
+                        liftIO $ threadDelay timeout
                         pollerLogic statusVar orderId
                       _ -> do
                         $(logTM) WarningS "Order is Active, but courier details were not found in the response."
-                        liftIO $ threadDelay (60 * 1000000)
+                        liftIO $ threadDelay timeout
                         pollerLogic statusVar orderId
                   Completed -> do
                   -- Order is delivered. Update main order table.
@@ -135,7 +138,7 @@ pollerLogic statusVar orderId = do
                       ". starts searching for an available courier. retry in 1 min .."
                     let msg = escapeMarkdownV2 $ "the order has become visible to the courier."
                     void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
-                    liftIO $ threadDelay (60 * 1000000)
+                    liftIO $ threadDelay timeout
                     pollerLogic statusVar orderId
                   -- Order was canceled. Revert and alert.
                   -- For 'new', 'available', etc., just log it. The next poll will check again.
@@ -147,7 +150,7 @@ pollerLogic statusVar orderId = do
                 " has not changed. status " <> 
                 ls (show status) <> 
                 ". retry in 1 min .." 
-              liftIO $ threadDelay (60 * 1000000)
+              liftIO $ threadDelay timeout
               pollerLogic statusVar orderId
 
           -- CASE 3: Unexpected Response
