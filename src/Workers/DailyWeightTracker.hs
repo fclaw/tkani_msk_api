@@ -20,10 +20,13 @@ import Control.Monad.IO.Class (liftIO)
 import Servant.Server (ServerError)
 import qualified Data.Text as T
 import Data.Foldable (for_)
+import Data.Either (isLeft, fromLeft)
+import Control.Exception (SomeException, try)
 import Data.Maybe (fromMaybe)
+import Data.List (delete)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text.Encoding as TE
-import Control.Concurrent.Async (async)
+import Control.Concurrent.Async (async, waitAnyCatchCancel)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.HashMap.Strict as HM
 import Control.Monad.Reader.Class (ask)
@@ -33,7 +36,7 @@ import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically,
 import Data.Time (Day, UTCTime, getCurrentTime, utctDay)
 import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Notification as PG
-import Data.Time.LocalTime (TimeZone (..), getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..))
+import Data.Time.LocalTime (TimeZone (..), getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..), localDay)
 
 import App
 import Text (camelToSnake, tshow, textMoneyToDouble, encodeToText)
@@ -65,7 +68,6 @@ data WeightTrackerState = WeightTrackerState
   } deriving (Show)
 
 
-
 runDailyWeightTracker :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
 runDailyWeightTracker connInfo runAppM = do
   $(logTM) InfoS "Daily Weight Tracker worker started."
@@ -85,40 +87,89 @@ runDailyWeightTracker connInfo runAppM = do
             }    
       stateVar <- liftIO $ newTVarIO initialState
 
-      tm <- fmap (courierCallCutoffHour . _dostavistaConfig) ask
-      void $ liftIO $ async $ 
-        forever $ do
-          runAppM $ $(logTM) InfoS "runDailyWeightTracker: state sweeper started."
-          resetWeight tm stateVar
-          threadDelay (5 * 60 * 1000000)
+      -- Worker A: Resets the 'courier called' flag at midnight
+      let midnightResetter = runAppM (resetCourierCalledFlag stateVar)
 
-      --  Connect and Listen
-      liftIO $ PG.withConnect connInfo $ \conn -> do
-        runAppM $ $(logTM) DebugS "order weighed listener connected ..."
-        let cmd = fromString $ T.unpack $ TE.decodeUtf8 $ $(embedFile "sql/order_weighed_events")
-        void $ PG.execute_ conn cmd
-        forever $ do
-          notification <- PG.getNotification conn
-          let payload = PG.notificationData notification
-          let ePayload = eitherDecode @WeighedOrderEvent $ BL.fromStrict payload
-          -- 3. Fork a thread to process the event
-          void $ async $ void $ runAppM $ runJobWithCleanup (processWeightEvent stateVar ePayload)
+      -- Worker B: Listens for NEW weighed orders and adds weight
+      let weightAccumulator = runAppM $ runWeightAccumulator stateVar connInfo runAppM
+
+      -- Worker C: Listens for status CHANGES and subtracts weight
+      let statusChangeListener = runAppM $ runStatusChangeListener stateVar connInfo runAppM
+
+      let workers = [midnightResetter, weightAccumulator, statusChangeListener]
+
+      -- 3. Run all three in parallel and wait for any of them to crash
+      $(logTM) InfoS "Spawning all Daily Weight Tracker threads..."
+      eResult <- liftIO $ try @SomeException $ waitAnyCatchCancel =<< mapM async workers
+
+      -- If we are here, one of the threads has died.
+      when (isLeft eResult) $ $(logTM) CriticalS $ "A Weight Tracker thread died with an exception: " <> ls (show (fromLeft undefined eResult))
 
 
-resetWeight :: Int -> TVar WeightTrackerState -> IO ()
-resetWeight courierCallCutoffHour stateVar = do 
-  -- Get current Moscow hour
+-- | A worker that runs periodically to reset the 'courier called' flag after midnight.
+resetCourierCalledFlag :: TVar WeightTrackerState -> AppM ()
+resetCourierCalledFlag stateVar = forever $ do
+  -- Sleep first, e.g., for 15 minutes
+  liftIO $ threadDelay (15 * 60 * 1000000)
+
+  -- Get current Moscow time and date
   let msk = TimeZone (3 * 60) False "MSK"
   now <- liftIO getZonedTime
-  let mskTime = utcToLocalTime msk (zonedTimeToUTC now)
-  let (TimeOfDay currentHour _ _) = localTimeOfDay mskTime
-  currentState <- atomically $ readTVar stateVar
-  when (currentHour > courierCallCutoffHour &&
-        wtsTotalWeightGrams currentState > 0) $
-    atomically $ modifyTVar' stateVar $
-      \s -> s { wtsTotalWeightGrams = 0
-                -- Clear the list for the next batch
-              , wtsOrders = [] }
+  let today = localDay (utcToLocalTime msk (zonedTimeToUTC now))
+
+  -- Check and potentially update the state atomically
+  liftIO $ atomically $ do
+    currentState <- readTVar stateVar
+        
+    -- If the day stored in our state is NOT today, it means a new day has begun.
+    when (wtsCurrentDay currentState /= today) $ do
+      -- Reset the flag, but CARRY OVER the weight and orders
+      -- This handles items weighed after the last pickup of the previous day.
+      writeTVar stateVar $ WeightTrackerState
+        { wtsCurrentDay = today
+        , wtsTotalWeightGrams = wtsTotalWeightGrams currentState
+        , wtsCourierCalled = False -- <-- THE RESET
+        , wtsOrders = wtsOrders currentState
+        }
+
+  $(logTM) DebugS "Ran daily state reset check."
+
+
+runStatusChangeListener :: TVar WeightTrackerState -> PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
+runStatusChangeListener stateVar connInfo runAppM = do
+  $(logTM) InfoS "Order Status Change Listener started."
+  liftIO $ PG.withConnect connInfo $ \conn -> do
+    void $ PG.execute_ conn "LISTEN order_weight_subtraction_events"    
+    forever $ do
+      notification <- PG.getNotification conn
+      let payload = PG.notificationData notification
+            
+      case eitherDecode (BL.fromStrict payload) of
+        Left err -> void $ runAppM $ $(logTM) ErrorS $ ls $ "Failed to parse payload (WeighedOrderEvent), error: " <> err -- Log error
+        Right (WeighedOrderEvent{..}) -> do
+          runAppM $ $(logTM) InfoS $ "Order " <> ls (show orderId) <> " changed status away from 'paid'. Subtracting weight." 
+          liftIO $ atomically $ do
+            -- Atomically subtract the weight and remove the order from the list
+            modifyTVar' stateVar $ \s ->
+              s { wtsTotalWeightGrams = 
+                    wtsTotalWeightGrams s - weightGrams
+                , wtsOrders = 
+                    delete orderId (wtsOrders s)
+                }
+
+runWeightAccumulator :: TVar WeightTrackerState -> PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
+runWeightAccumulator stateVar connInfo runAppM = 
+  liftIO $ PG.withConnect connInfo $ \conn -> do
+    runAppM $ $(logTM) DebugS "order weighed listener connected ..."
+    let cmd = fromString $ T.unpack $ TE.decodeUtf8 $ $(embedFile "sql/order_weighed_events")
+    void $ PG.execute_ conn cmd
+    forever $ do
+      notification <- PG.getNotification conn
+      let payload = PG.notificationData notification
+      let ePayload = eitherDecode @WeighedOrderEvent $ BL.fromStrict payload
+      -- 3. Fork a thread to process the event
+      void $ async $ void $ runAppM $ runJobWithCleanup (processWeightEvent stateVar ePayload)
+
 
 -- The logic for processing a single event
 processWeightEvent :: TVar WeightTrackerState -> Either String WeighedOrderEvent -> AppM ()
@@ -189,7 +240,9 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
                 , cpdOrders      = ordersInBatch
                 , cpdOrderId     = orderId
                 , cpdOrderStatus = encodeToText status
-                , cpdCost        = fromMaybe (error "cannot extract paymentAmount") $ textMoneyToDouble paymentAmount
+                , cpdCost        = 
+                  fromMaybe (error "cannot extract paymentAmount") $ 
+                    textMoneyToDouble paymentAmount
                 }
           eDbResult <- recordAndLinkPickup courierPickupData pool
           for_ eDbResult $ const $ do

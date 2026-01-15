@@ -2005,10 +2005,8 @@ fetchWeightTrackerStateInfo day service pool =
          AND pickup_date = $1 :: date) :: bool,
          COALESCE(array_agg(o.id), '{}'::text[]) :: text[]
        FROM orders AS o
-       INNER JOIN external_courier_pickups AS ecp
-       ON o.courier_pickup_id = ecp.id
-       AND ecp.provider = CAST($2 :: text AS pickup_provider)
-       AND ecp.pickup_date = $1 :: date
+       WHERE o.status = 'paid'
+       AND o.courier_pickup_id IS NULL
       |]
 
 getTodaysDostavistaOrder :: Day -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, DostavistaOrderStatus, UTCTime)))

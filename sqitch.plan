@@ -39,3 +39,4 @@
 00036.mat_view_for_expenses 2026-01-10T12:24:36Z System Administrator <root@Sonny.local> # materialised view for a monthly expenses
 00037.notify_weight_set 2026-01-11T11:51:33Z System Administrator <root@Sonny.local> # notify_weight_set
 00038.courier_call 2026-01-12T06:47:32Z System Administrator <root@Sonny.local> # courier call
+00039.weight_substracting 2026-01-15T06:32:59Z System Administrator <root@Sonny.local> # weight accumulator: substract weight if order status changes from paid
