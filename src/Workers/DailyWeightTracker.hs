@@ -39,6 +39,7 @@ import qualified Database.PostgreSQL.Simple.Notification as PG
 import Data.Time.LocalTime (TimeZone (..), getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..), localDay)
 
 import App
+import API.Types (OrderStatus (ScheduledForPickup))
 import Text (camelToSnake, tshow, textMoneyToDouble, encodeToText)
 import Concurrency (runJobWithCleanup)
 import TH.Location (currentModule)
@@ -90,7 +91,9 @@ runDailyWeightTracker connInfo runAppM = do
 
       let template_orders = T.unlines (map ((<>) "• `" . (`T.append` "`")) orders)
       let templateData = HM.fromList [ ("orders", template_orders), ("total_weight", tshow initialWeight)]
-      msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Init") templateData
+      let loadedTmpl | courierCalledToday = ".Init"
+                     | otherwise = ".Pickup"
+      msg <- fmap escapeMarkdownV2 $ render ($currentModule <> loadedTmpl) templateData
       void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
       -- Worker A: Resets the 'courier called' flag at midnight
@@ -262,14 +265,15 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
 
           let courierPickupData = 
                CourierPickupData 
-                { cpdDay         = today 
-                , cpdProvider    = DOSTAVISTA
-                , cpdOrders      = ordersInBatch
-                , cpdOrderId     = orderId
-                , cpdOrderStatus = encodeToText status
-                , cpdCost        = 
-                  fromMaybe (error "cannot extract paymentAmount") $ 
+                { cpdDay                   = today 
+                , cpdProvider              = DOSTAVISTA
+                , cpdOrders                = ordersInBatch
+                , cpdDostavistaOrderId     = orderId
+                , cpdDostavistaOrderStatus = encodeToText status
+                , cpdCost                  = 
+                  fromMaybe (error "cannot extract paymentAmount") $
                     textMoneyToDouble paymentAmount
+                , cpdOrderStatus           = encodeToText ScheduledForPickup   
                 }
           eDbResult <- recordAndLinkPickup courierPickupData pool
           for_ eDbResult $ const $ do

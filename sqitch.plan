@@ -40,3 +40,4 @@
 00037.notify_weight_set 2026-01-11T11:51:33Z System Administrator <root@Sonny.local> # notify_weight_set
 00038.courier_call 2026-01-12T06:47:32Z System Administrator <root@Sonny.local> # courier call
 00039.weight_substracting 2026-01-15T06:32:59Z System Administrator <root@Sonny.local> # weight accumulator: substract weight if order status changes from paid
+00040.order 2026-01-16T08:59:03Z System Administrator <root@Sonny.local> # order status: scheduled for pickup

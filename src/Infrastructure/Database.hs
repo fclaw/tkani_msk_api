@@ -73,6 +73,7 @@ module Infrastructure.Database
   , fetchWeightTrackerStateInfo
   , getTodaysDostavistaOrder
   , setDostavistaOrderStatus
+  , setDostavistaPickupByCourierStatus
   ) where
 
 
@@ -1963,9 +1964,9 @@ recordAndLinkPickup CourierPickupData {..} pool =
         Hasql.statement 
          ( cpdDay
          , encodeToText cpdProvider
-         , cpdOrderId
+         , cpdDostavistaOrderId
          , cpdCost
-         , cpdOrderStatus) $ 
+         , cpdDostavistaOrderStatus) $ 
          [Hasql.maybeStatement|
           INSERT INTO external_courier_pickups
           (pickup_date, provider, order_id, cost, status)
@@ -1984,10 +1985,12 @@ recordAndLinkPickup CourierPickupData {..} pool =
           -- STEP 2: Execute the bulk update
           Hasql.statement
            ( courierPickupId
-           , V.fromList cpdOrders) $
+           , V.fromList cpdOrders
+           , cpdOrderStatus) $
            [Hasql.resultlessStatement|
             UPDATE orders
-            SET courier_pickup_id = $1 :: int8
+            SET courier_pickup_id = $1 :: int8,
+                status = CAST($3 :: text AS order_status)
             WHERE id = ANY($2 :: text[])
            |]
 
@@ -2037,3 +2040,22 @@ setDostavistaOrderStatus orderId status pool =
         SET status = $2 :: text
         WHERE order_id = $1 :: int8 
       |]
+
+setDostavistaPickupByCourierStatus :: Int64 -> DostavistaOrderStatus -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
+setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement 
+       ( orderId
+       , encodeToText dostavistaStatus
+       , encodeToText orderStatus)
+       [Hasql.resultlessStatement|
+        WITH pickup_id AS (
+        UPDATE external_courier_pickups
+        SET status = $2 :: text
+        WHERE order_id = $1 :: int8
+        RETURNING id :: int8)
+        UPDATE orders 
+        SET status = CAST($3 :: text AS order_status)
+        WHERE courier_pickup_id = (SELECT * FROM pickup_id)
+       |]

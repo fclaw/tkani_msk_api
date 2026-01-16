@@ -21,15 +21,16 @@ import Control.Concurrent.STM (TVar, newTVarIO)
 import Control.Concurrent.Async.Lifted (async)
 
 import App
+import API.Types (OrderStatus(PickedUpByCourier))
 import Text (tshow)
 import TH.Location (currentModule)
 import Concurrency (runJobWithCleanup)
-import Infrastructure.Services.Dostavista (getOrder, cancelOrder)
-import  Infrastructure.Database (getTodaysDostavistaOrder, setDostavistaOrderStatus)
-import Infrastructure.Services.Dostavista.Types (DostavistaOrdersResponse (..), Order (..), Courier (..))
-import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Dostavista (getOrder, cancelOrder)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
+import Infrastructure.Services.Dostavista.Types (DostavistaOrdersResponse (..), Order (..), Courier (..))
+import  Infrastructure.Database (getTodaysDostavistaOrder, setDostavistaOrderStatus, setDostavistaPickupByCourierStatus)
 
 
 
@@ -105,7 +106,7 @@ pollerLogic statusVar orderId = do
                     $(logTM) InfoS $ "Status changed to " <> ls (show status) <> ". a courier is assigned."
                   -- The courier is assigned! Notify the admin.
                   -- ... send notification with courier details ...
-                    void $ setDostavistaOrderStatus orderId Active pool
+                    void $ setDostavistaPickupByCourierStatus orderId Active PickedUpByCourier pool
                     case courier of 
                       Just Courier {..} -> do
                         let templateData = 

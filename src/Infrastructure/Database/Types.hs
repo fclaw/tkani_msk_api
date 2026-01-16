@@ -276,12 +276,13 @@ $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding 
 
 data CourierPickupData = 
      CourierPickupData
-     { cpdDay         :: Day
-     , cpdProvider    :: CourierService
-     , cpdOrders      :: [Text]
-     , cpdOrderId     :: Int64
-     , cpdOrderStatus :: Text
-     , cpdCost        :: Double
+     { cpdDay                   :: Day
+     , cpdProvider              :: CourierService
+     , cpdOrders                :: [Text]
+     , cpdDostavistaOrderId     :: Int64
+     , cpdDostavistaOrderStatus :: Text
+     , cpdCost                  :: Double
+     , cpdOrderStatus           :: Text
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpd" } ''CourierPickupData)
