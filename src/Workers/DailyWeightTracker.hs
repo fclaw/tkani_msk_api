@@ -60,12 +60,13 @@ data WeighedOrderEvent =
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''WeighedOrderEvent)
 
 -- The in-memory state for our worker
-data WeightTrackerState = WeightTrackerState
-  { wtsCurrentDay       :: Day
-  , wtsTotalWeightGrams :: Int
-  , wtsCourierCalled    :: Bool -- A flag to ensure we only call once per day
-  , wtsOrders           :: [Text] -- what orders are actually handed over to a courier in the batch
-  } deriving (Show)
+data WeightTrackerState = 
+     WeightTrackerState
+     { wtsCurrentDay       :: Day
+     , wtsTotalWeightGrams :: Int
+     , wtsCourierCalled    :: Bool   -- A flag to ensure we only call once per day
+     , wtsOrders           :: [Text] -- what orders are actually handed over to a courier in the batch
+     } deriving (Show)
 
 
 runDailyWeightTracker :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
@@ -151,11 +152,21 @@ runStatusChangeListener stateVar connInfo runAppM = do
           liftIO $ atomically $ do
             -- Atomically subtract the weight and remove the order from the list
             modifyTVar' stateVar $ \s ->
-              s { wtsTotalWeightGrams = 
+              s { wtsTotalWeightGrams =
                     wtsTotalWeightGrams s - weightGrams
                 , wtsOrders = 
                     delete orderId (wtsOrders s)
                 }
+          state <- liftIO $ atomically $ readTVar stateVar    
+          void $ runAppM $ do
+            let templateData = 
+                  HM.fromList 
+                  [ ("order_id", orderId)
+                  , ("weight", tshow weightGrams)
+                  , ("total_weight", tshow (wtsTotalWeightGrams state + weightGrams))
+                  ]
+            msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".DropWeight") templateData
+            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
 runWeightAccumulator :: TVar WeightTrackerState -> PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
 runWeightAccumulator stateVar connInfo runAppM = 
@@ -206,6 +217,17 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
 
   -- Check the threshold
   $(logTM) InfoS $ "Order weighed. Current daily total: " <> ls (show $ wtsTotalWeightGrams updatedState) <> "g"
+
+  -- add message to order channel
+  let templateData = 
+        HM.fromList 
+        [ ("order_id", orderId)
+        , ("weight", tshow weightGrams)
+        , ("total_weight", tshow $ wtsTotalWeightGrams updatedState - weightGrams)
+        ]
+  msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".AddWeight") templateData
+  void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+
 
   let totalWeight = wtsTotalWeightGrams updatedState
   let weightExceeded = totalWeight >= weightThreshold
