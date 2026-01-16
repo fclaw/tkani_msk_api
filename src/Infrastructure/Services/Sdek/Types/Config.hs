@@ -61,6 +61,7 @@ data SdekConfig = SdekConfig
   , sender          :: Sender
   , pickupMinimum   :: Int
   , dropOffPoint    :: Text
+  , commissionRate  :: Double
   } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where

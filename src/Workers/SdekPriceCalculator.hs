@@ -32,10 +32,11 @@ import System.Timeout.Lifted (timeout)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Ord (Down (..))
 import Data.List (sortOn)
+import Data.Foldable (foldl')
 import Data.Bifunctor (second)
 
 
-import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither)
+import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER))
 import Text (camelToSnake, tshow)
 import Infrastructure.Database 
        ( setReceiptReady
@@ -47,7 +48,10 @@ import Infrastructure.Database
        , PatchedOrderDetailsItem (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
 import Infrastructure.Services.Sdek.CachedCityCodes (fetchCityCodeForPvz)
-import Infrastructure.Services.Sdek.Types.Config (dropOffPoint)
+import Infrastructure.Services.Sdek.Types.Config (dropOffPoint, commissionRate)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Sdek.Types.Enums (SdekVatRate (VatRate7, NoVat), vatToDouble)
 import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration, getOrderStatus)
 import Infrastructure.Services.Sdek.Types
 import Concurrency (runJobWithCleanup)
@@ -81,8 +85,7 @@ runSdekPriceCalculator connInfo runAppM = do
       void $ async $
         -- We still run the main logic inside 'runAppM' to get the AppM context,
         -- but now it's happening in the background.
-        void $ do threadDelay (5 * 1000000) 
-                  runAppM $ runJobWithCleanup (processSingleJob ePayload)
+        void $ runAppM $ runJobWithCleanup (processSingleJob ePayload)
 
 processSingleJob :: Either String PriceJob -> AppM ()
 processSingleJob (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (PriceJob), error: " <> err
@@ -106,30 +109,78 @@ processSingleJob (Right PriceJob {..}) = do
              , pWidth = piWidth
              , pHeight = piHeight
              }
-        let service = TotalSumRequestService "INSURANCE" (tshow piPrice)
+        let service = TotalSumRequestService INSURANCE (tshow piPrice)
         let totalSumReq = mkTotalSumRequest piTariff from to package service
         eResp <- getTotalSumByTariff totalSumReq
-        extractFromEither eResp $ \total@TotalSumResponse {..} -> do
-          $(logTM) InfoS $ ls $ "TotalSumResponse: \n" <> encodePretty total
+        extractFromEither eResp $ \totalSumResponse@TotalSumResponse {..} -> do
+          $(logTM) InfoS $ ls $ "TotalSumResponse: \n" <> encodePretty totalSumResponse
+
+          -- validate the total with manually calculated grand total
+          let grandTotal = calculateGrandTotal totalSumResponse
+          
+          when (abs (tsrTotalSum - grandTotal) > 0.01) $ do -- Use a small epsilon for float comparison
+            $(logTM) WarningS $
+              "SDEK total_sum mismatch! API: " <> 
+              ls (show tsrTotalSum) <>
+              ", Manual Calc: " <>
+              ls (show grandTotal)
+            let msg = escapeMarkdownV2 $
+                       "SDEK total_sum mismatch! API: " <>
+                        tshow tsrTotalSum <> 
+                        ", Manual Calc: " <>
+                        tshow grandTotal
+            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+
           eDbRes <- getPatchedOrderDetails orderId pool
           extractValue eDbRes $ \details@PatchedOrderDetails {..} -> do
             case tsrErrors of 
               Just errs -> $(logTM) ErrorS $ ls $ "getPatchedOrderDetails has resulted in error: " <> show errs
               Nothing -> do
                 $(logTM) InfoS $ ls $ "PatchedOrderDetails: \n" <> encodePretty details
-                let totalCost = fromMaybe undefined tsrTotalSum
-                let items = flip map (zip [1..] podItems) $ \(idx, PatchedOrderDetailsItem {..}) -> 
-                            PatchedOrderRequestPackageItem
-                            { porpiName    = podiName 
-                            , porpiWareKey = podiArticle
-                            , porpiPayment = SdekPayment $ 
-                                if idx == 1 then 
-                                  addFivePercent totalCost 
-                                else 0 
-                            , porpiWeight  = podiWeight
-                            , porpiAmount  = 1
-                            , porpiCost    = podiCost
-                            }
+                -- 1. Calculate the final, VAT-inclusive grand total using your helper
+                -- let grandTotalInclusive = calculateGrandTotal totalSumResponse
+                let items = flip map (zip [1..] podItems) $ \(idx, PatchedOrderDetailsItem {..}) ->
+                      let 
+                          -- Define the VAT rate (as a decimal and a divisor)
+                          vatRate = vatToDouble VatRate7 / 100.0
+                          vatDivisor = 1 + vatToDouble VatRate7 / 100.0
+
+                          -- Back-calculate the VAT sum from the inclusive total.
+                          -- This is the correct way to find the tax portion of a final price.
+                          totalSumWithCommission = tsrTotalSum * commissionRate (_sdekConfig cfg)
+                          baseAmount = totalSumWithCommission / vatDivisor
+                          vatAmount = totalSumWithCommission - baseAmount
+
+                      in
+                          -- Build the payment object for the FIRST item
+                          -- (The payment for all other items will be 0)
+                          let paymentDetails = 
+                                if idx == 1 -- Use index 0 for the first item
+                                then
+                                  SdekPayment
+                                  { -- This is the final amount the customer pays + agent's commission ~ 3 percent
+                                    payValue = totalSumWithCommission,
+                                    -- This is the portion of 'payValue' that is VAT
+                                    vatSum = Just vatAmount,
+                                    -- This tells the fiscal system the rate used
+                                    vatRate = Just VatRate7
+                                  }
+                                else
+                                  -- For all other items, the payment is zero
+                                  SdekPayment
+                                  { payValue = 0.0
+                                  , vatSum = Nothing
+                                  , vatRate = Just NoVat -- It's good practice to specify "NoVat"
+                                  }
+
+                          in PatchedOrderRequestPackageItem
+                             { porpiName    = podiName 
+                             , porpiWareKey = podiArticle
+                             , porpiPayment = paymentDetails                           
+                             , porpiWeight  = podiWeight
+                             , porpiAmount  = 1
+                             , porpiCost    = podiCost
+                             }
                 let package = defPatchedOrderRequestPackage 
                               { porpWeight = piWeight
                               , porpLength = piLength
@@ -167,7 +218,27 @@ processSingleJob (Right PriceJob {..}) = do
                        state -> $(logTM) ErrorS $ ls $ "order " <> orderId <> " is not patched, state: " <> tshow state    
                        
 
-addFivePercent cost = cost + cost * 0.05
+-- | Calculates the grand total from a SDEK 'TotalSumResponse' by summing the
+--   individual components. This is useful for verifying the top-level 'total_sum'.
+--
+--   The logic is: Grand Total = Base Delivery Cost (delivery_sum) + Sum of all Service Costs.
+--   NOTE: This assumes 'delivery_sum' is the pre-tax base, and the 'services'
+--   array contains the tax for delivery as a separate line item.
+calculateGrandTotal :: TotalSumResponse -> Double
+calculateGrandTotal TotalSumResponse {..} =
+    -- The Grand Total is the main tariff's inclusive cost PLUS
+    -- the inclusive cost of all additional services.
+
+        -- 1. 'tsrTotalSum' is the final, inclusive cost of the base tariff.
+    let baseTariffTotal = tsrDeliverySum
+
+        vatRate = vatToDouble VatRate7 / 100.0
+
+        -- 2. 'tsrServices' is a list of *additional* services. We sum their inclusive totals.
+        additionalServicesTotal = foldl' (\acc service -> acc + tssTotalSum service) 0.0 tsrServices
+
+    in (baseTariffTotal + vatRate * baseTariffTotal) + additionalServicesTotal
+
 
 -- requestReceiptGeneration
 registerReceipt :: UUID -> AppM (Either Text UUID)
@@ -209,6 +280,8 @@ pollForPatchCompletion orderUuid = go 1
                      liftIO $ threadDelay (delaySeconds * 1000000)
                      go (attempt + 1)
                         
+                   Just s | spsState s == Invalid -> pure $ Left $ "SDEK order has failed to patch." <> tshow statusResponse
+
                    Just s -> do
                      -- Any other status (e.g., CREATED, RECEIVED) means the patch is done.
                      $(logTM) InfoS $ 

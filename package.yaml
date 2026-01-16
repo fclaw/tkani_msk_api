@@ -86,6 +86,7 @@ library:
     - yaml
     - cassava
     - file-embed
+    - scientific
 
 executables:
   tkani-api-exe:

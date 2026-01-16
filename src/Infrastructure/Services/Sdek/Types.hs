@@ -21,6 +21,7 @@ import Data.Maybe (listToMaybe)
 import Data.Time (UTCTime)
 
 import Text (camelToSnake, recordLabelModifier)
+import Infrastructure.Services.Sdek.Types.Enums
 import Infrastructure.Services.Sdek.Types.State
 import Infrastructure.Services.Sdek.Types.Error
 
@@ -64,9 +65,15 @@ data SdekRecipient = SdekRecipient
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "rcp" } ''SdekRecipient)
 
 -- SDEK requires a 'payment' object for the item cost.
-data SdekPayment = SdekPayment { payValue :: Double } deriving (Show, Eq, Generic)
+data SdekPayment = 
+     SdekPayment 
+     { payValue :: Double
+     , vatSum   :: Maybe Double
+     , vatRate  :: Maybe SdekVatRate 
+     }
+     deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pay" } ''SdekPayment)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pay", allowOmittedFields = True } ''SdekPayment)
 
 -- | An item inside a package. We can create a sensible default.
 data SdekPackageItem = SdekPackageItem
@@ -100,7 +107,7 @@ data SdekServiceCode
   = INSURANCE    -- Страхование
   | NONE
   -- Add other service codes here as you need them
-  deriving (Show, Generic)
+  deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { sumEncoding = UntaggedValue } ''SdekServiceCode)
 
@@ -255,18 +262,19 @@ data SdekCallCourierSender = SdekCallCourierSender
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''SdekCallCourierSender)
 
 -- | Request body for the "Call Courier" endpoint.
-data SdekCallCourierRequest = SdekCallCourierRequest
-  { -- | The UUID of the order for which we are requesting a courier pickup.
-    sccrOrderUuid      :: UUID
-    -- | The desired date for the courier to arrive (YYYY-MM-DD).
-  , sccrIntakeDate     :: Text
-    -- | The start of the pickup time window (HH:MM).
-  , sccrIntakeTimeFrom :: Text
-    -- | The end of the pickup time window (HH:MM).
-  , sccrIntakeTimeTo   :: Text
-    -- You would also include sender info here if not linked to the order
-  , sccrSender         :: SdekCallCourierSender
-  } deriving (Show, Eq, Generic)
+data SdekCallCourierRequest = 
+     SdekCallCourierRequest
+     { -- | The UUID of the order for which we are requesting a courier pickup.
+      sccrOrderUuid      :: UUID
+      -- | The desired date for the courier to arrive (YYYY-MM-DD).
+     , sccrIntakeDate     :: Text
+      -- | The start of the pickup time window (HH:MM).
+     , sccrIntakeTimeFrom :: Text
+      -- | The end of the pickup time window (HH:MM).
+     , sccrIntakeTimeTo   :: Text
+      -- You would also include sender info here if not linked to the order
+     , sccrSender         :: SdekCallCourierSender
+     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''SdekCallCourierRequest)
 
@@ -312,7 +320,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 1 } ''Pac
 
 data TotalSumRequestService = 
      TotalSumRequestService 
-     { tsrsCode :: Text
+     { tsrsCode :: SdekServiceCode
      , tsrsParameter :: Text
      } deriving (Show, Eq, Generic)
 
@@ -338,17 +346,28 @@ mkTotalSumRequest tariff fromCode toCode package service =
       tsrServices = [service]
   in TotalSumRequest {..}
 
-data TotalSumResponseService = 
-     TotalSumResponseService 
-     { tsrsTotalSum :: Double }
- deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 4 } ''TotalSumResponseService)
+-- | Represents a single item in the 'services' array of the calculator response.
+--   This can be the insurance fee, delivery fee VAT, etc.
+data TotalSumService = 
+     TotalSumService
+     { tssCode      :: Text
+     , tssSum       :: Double -- Cost before VAT
+     , tssTotalSum  :: Double -- Cost INCLUDING VAT
+     , tssVatRate   :: Double
+     , tssVatSum    :: Double
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''TotalSumService)
 
 data TotalSumResponse = 
      TotalSumResponse
-     { tsrTotalSum :: Maybe Double
-     , tsrServices :: [TotalSumResponseService]
+     { -- | The base cost of delivery, BEFORE additional services and their VAT.
+       tsrDeliverySum  :: Double
+       -- | The total final cost. This is the field we ultimately want.
+     , tsrTotalSum     :: Double
+       -- | A list of all services, including base delivery VAT and insurance.
+     , tsrServices     :: [TotalSumService]
      , tsrErrors :: Maybe [SdekErrorDetail]
      } deriving (Show, Eq, Generic)
 

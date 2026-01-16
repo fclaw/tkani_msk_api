@@ -250,7 +250,7 @@ main = do
             , _providers = providers
             , _tinkoffCred = TinkoffCredentials {..}
             , _sdekConfig = 
-                 sdekConfig 
+                 sdekConfig
                  { credentials = 
                    SdekCredentials 
                    configSdekClientId 

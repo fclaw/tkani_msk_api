@@ -197,7 +197,12 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       SdekPackageItem
       { pkiName = oiName -- A generic name is fine for your manual workflow
       , pkiWareKey = oiArticle -- Use your internal fabric ID
-      , pkiPayment = SdekPayment { payValue = 0 }
+      , pkiPayment = 
+          SdekPayment 
+          { payValue = 0
+          , vatSum = Nothing
+          , vatRate = Nothing 
+          }
       , pkiWeight = 500 -- A sensible default weight in grams
       , pkiAmount = 1   -- It's one "item" (one piece of fabric)
       , pkiCost = round oiTotalPrice
