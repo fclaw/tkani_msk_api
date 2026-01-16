@@ -85,8 +85,13 @@ runDailyWeightTracker connInfo runAppM = do
             , wtsTotalWeightGrams = initialWeight
             , wtsCourierCalled = courierCalledToday
             , wtsOrders = orders
-            }    
+            }
       stateVar <- liftIO $ newTVarIO initialState
+
+      let template_orders = T.unlines (map ((<>) "• `" . (`T.append` "`")) orders)
+      let templateData = HM.fromList [ ("orders", template_orders), ("total_weight", tshow initialWeight)]
+      msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Init") templateData
+      void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
       -- Worker A: Resets the 'courier called' flag at midnight
       let midnightResetter = runAppM (resetCourierCalledFlag stateVar)
