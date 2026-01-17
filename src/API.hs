@@ -180,6 +180,14 @@ data Routes route = Routes
       :> "tally-up"
       :> ReqBody '[JSON] Expenses
       :> Put '[JSON] (ApiResponse ())
+  , _setOrderDimensions
+      :: route
+      :- "warehouse"
+      :> "orders"
+      :> "dimensions"
+      :> Capture "order_id" Text
+      :> ReqBody '[JSON] SetOrderDimensionsRequest
+      :> Put '[JSON] (ApiResponse ())   
   } deriving (Generic)
 
 

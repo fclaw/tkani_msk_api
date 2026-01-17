@@ -57,6 +57,7 @@ library
       API.Handlers.ReportMonthlySales
       API.Handlers.SearchFabricCard
       API.Handlers.SearchFabrics
+      API.Handlers.SetOrderDimensions
       API.Handlers.SetTelegramMessage
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder

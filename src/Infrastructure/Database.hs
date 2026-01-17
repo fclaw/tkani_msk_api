@@ -74,6 +74,7 @@ module Infrastructure.Database
   , getTodaysDostavistaOrder
   , setDostavistaOrderStatus
   , setDostavistaPickupByCourierStatus
+  , setOrderDimensions
   ) where
 
 
@@ -2058,4 +2059,23 @@ setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =
         UPDATE orders 
         SET status = CAST($3 :: text AS order_status)
         WHERE courier_pickup_id = (SELECT * FROM pickup_id)
+       |]
+
+setOrderDimensions :: Text -> SetOrderDimensionsRequest -> Hasql.Pool -> AppM (Either Text ())
+setOrderDimensions orderId dimensions pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement dimensions $
+        lmap ( app3 fromIntegral 
+             . app2 fromIntegral
+             . app4 fromIntegral
+             . consT orderId 
+             . ($(recordToTuple ''SetOrderDimensionsRequest)))
+        [Hasql.resultlessStatement|
+         UPDATE orders
+         SET
+          length = $2 :: int4,
+          width = $3 :: int4,
+          height = $4 :: int4
+         WHERE id = $1 :: text
        |]

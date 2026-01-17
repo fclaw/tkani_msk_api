@@ -36,6 +36,8 @@ import qualified API.Handlers.PlaceYamlOrder as PlaceYamlOrder
 import qualified API.Handlers.ReportDailySales as ReportDailySales
 import qualified API.Handlers.ReportMonthlySales as ReportMonthlySales
 import qualified API.Handlers.TallyUpExpenses as TallyUpExpenses
+import qualified API.Handlers.SetOrderDimensions as SetOrderDimensions
+
 
 
 -- This is the implementation of our server.
@@ -67,4 +69,5 @@ apiHandlers = Routes
   , _reportDailySales      = ReportDailySales.handler
   , _reportMonthlySales    = ReportMonthlySales.handler
   , _tallyUpExpenses       = TallyUpExpenses.handler
+  , _setOrderDimensions    = SetOrderDimensions.handler
   }

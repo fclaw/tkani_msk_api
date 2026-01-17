@@ -567,3 +567,12 @@ data Expenses =
      } deriving (Show, Eq)
      
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "exp" } ''Expenses)
+
+data SetOrderDimensionsRequest =
+     SetOrderDimensionsRequest
+     { sodrLength  :: Int
+     , sodrWidth   :: Int
+     , sodrHeight  :: Int
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sodr" } ''SetOrderDimensionsRequest)
