@@ -65,6 +65,8 @@ data Config = Config
   , configDostavistaToken        :: Text
   , configCourierCallCutoffHour  :: Maybe Int
   , configDostavistaUrl          :: Maybe Text
+  , configGeocodeApiKey          :: Text
+  , configGeocodeUrl             :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -148,6 +150,9 @@ loadConfig = do
   let configCourierCallCutoffHour = fmap (fromIntegral . extractNumber "COURIER_CALL_CUTOFF_HOUR" . textToInt) $ (Map.!?) env "COURIER_CALL_CUTOFF_HOUR"
   let configDostavistaUrl = (Map.!?) env "DOSTAVISTA_URL"
   let configDostavistaToken = (Map.!) env "DOSTAVISTA_TOKEN"
+
+  let configGeocodeApiKey = (Map.!) env "GEOCODE_API_KEY"
+  let configGeocodeUrl = (Map.!) env "GEOCODE_URL"
 
 
   -- 3. Parse the port number

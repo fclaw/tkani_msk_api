@@ -56,6 +56,7 @@ import qualified Data.ByteString.Lazy as BL
 import Control.Concurrent (threadDelay)
 
 
+import qualified Lib.Servant.RateLimit as RL
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import qualified Config as GlobalCfg (loadConfig, Config(..), maskSecrets)
 import API.Types (ProviderInfo)
@@ -285,7 +286,8 @@ main = do
                 configCourierCallCutoffHour
               , url = fromMaybe (Dostativsta.url dostavistaConfig) configDostavistaUrl
                }
-            
+            , _geocodeApiKey = configGeocodeApiKey
+            , _geocodeUrl = configGeocodeUrl
             }
 
       tinkoffPaymentChan <- newTChanIO
@@ -323,12 +325,17 @@ main = do
 
         -- Define our concurrent tasks as a list of IO actions.
         -- Task 1: The Web Server
-        let server = 
+        rateLimitState <- newTVarIO @RL.RateLimit M.empty
+        let context = rateLimitState :. EmptyContext
+        let server =
               run configApiPort $ 
                 methodsCors $  
-                  serve tkaniApiProxy $
-                    hoistServer
+                  serveWithContext 
+                  tkaniApiProxy 
+                  context $
+                    hoistServerWithContext
                       tkaniApiProxy
+                      (Proxy @'[RL.RateLimitState])
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
 

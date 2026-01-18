@@ -28,6 +28,7 @@ library:
     - Infrastructure.Services.Overpass
     - Application.Listener
     - Application.Cart
+    - Lib.Servant.RateLimit
     - Infrastructure.Services.Sdek.Types
     - Infrastructure.Services.Sdek.Types.Config
     - Infrastructure.Services.Dostavista.Types.Config
@@ -87,6 +88,10 @@ library:
     - cassava
     - file-embed
     - scientific
+    - network
+    - servant-auth-server
+    - time-units
+    - time-units-types
 
 executables:
   tkani-api-exe:

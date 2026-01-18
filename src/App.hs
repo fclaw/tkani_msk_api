@@ -221,6 +221,8 @@ data Config = Config
   , _messageNotFound        :: Text
   , _courierWeightThreshold :: Int
   , _dostavistaConfig       :: DostavistaConfig
+  , _geocodeApiKey          :: Text
+  , _geocodeUrl             :: Text
   }
 
 -- A helper type for parsing the YAML

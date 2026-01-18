@@ -45,6 +45,10 @@ packages:
 #
 # extra-deps: []
 
+# extra-deps:
+  # Add these two lines. This forces stack to use these specific, modern versions.
+  # - servant-rate-limit-0.5.1
+
 # Override default flag values for project packages and extra-deps
 # flags: {}
 
@@ -69,6 +73,9 @@ packages:
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
 
+# This tells stack to only run 4 compile jobs at a time,
+# which will dramatically reduce the peak memory usage.
+# jobs: 4
 
 # 1. Tell Stack to always use the GHC found on PATH (provided by Nix)
 # system-ghc: true

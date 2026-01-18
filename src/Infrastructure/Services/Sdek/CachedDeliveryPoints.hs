@@ -23,11 +23,11 @@ import Data.HashSet (member)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.STM (atomically, readTVar, modifyTVar')
 
-import App (AppM, runAppM, _sdekConfig, sdekAccessToken, _metroCityCodes, _metroStations, _pointCache, currentTime, _configHttpManager)
-import API.Types (DeliveryPoint, ApiResponse)
+import App
+import Text (tshow)
+import API.Types
 import API.WithField (WithField)
 import Text (recordLabelModifier)
-import API.Types
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import Infrastructure.Utils.Http
 import TH.Location (currentModule)
@@ -105,7 +105,7 @@ storeDeliveryPoints cityCode = do
   cfg <- ask
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
-  let pointsUrl = "https://" <> url <> "/v2/deliverypoints"
+  let pointsUrl = show HTTPS <> url <> "/v2/deliverypoints"
   let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
   let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl pointsParams . Just . mkDefToken . sdekAccessToken)
   ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
