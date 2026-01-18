@@ -300,14 +300,15 @@ main = do
 
       let state =
            State 
-           { _sdekToken = Nothing
-           , _pointCache = mempty
-           , _sdekPromises = mempty
+           { _sdekToken          = Nothing
+           , _pointCache         = mempty
+           , _sdekPromises       = mempty
            , _tinkoffPaymentChan = tinkoffPaymentChan
-           , _appSdekChan = appSdekChan
-           , _metroStations = []
+           , _appSdekChan        = appSdekChan
+           , _metroStations      = []
            , _cityCodeByPVZCache = CityCodeByPVZCache {..}
-           , _dostavistaChan = dostavistaChan
+           , _dostavistaChan     = dostavistaChan
+           , _allSdekPointsCache =  Nothing
            }
       initialState <- newTVarIO state
   

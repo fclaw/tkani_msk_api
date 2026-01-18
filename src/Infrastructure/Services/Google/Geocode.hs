@@ -1,13 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 
 module Infrastructure.Services.Google.Geocode where
 
 import Data.Aeson
+import Data.Aeson.TH
 import GHC.Generics
 import Data.Text (Text)
+import Data.Maybe (listToMaybe) -- Perfect for safely getting the first element
 
 -- | Represents the latitude and longitude. Matches the innermost "location" object.
 data GeoLocation = GeoLocation
@@ -42,17 +45,38 @@ instance FromJSON GeocodingResult where
         <$> v .: "formatted_address"
         <*> v .: "geometry"
 
+data Status = OK | ZERO_RESULTS | OVER_QUERY_LIMIT | REQUEST_DENIED | INVALID_REQUEST | UNKNOWN_ERROR
+ deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { sumEncoding = UntaggedValue } ''Status)
+
 -- | Represents the top-level response from the Geocoding API.
 data GeocodingResponse = GeocodingResponse
-    { results :: [GeocodingResult]
-    , status  :: Text -- e.g., "OK", "ZERO_RESULTS"
+    { result :: Maybe GeocodingResult -- CHANGED: From [GeocodingResult] to Maybe GeocodingResult
+    , status :: Status
     } deriving (Show, Eq, Generic)
 
--- Aeson can derive this automatically as field names "results" and "status" match.
-instance FromJSON GeocodingResponse
+-- Because our Haskell type no longer perfectly mirrors the JSON (list vs. Maybe),
+-- we write a custom FromJSON instance to bridge the gap.
+instance FromJSON GeocodingResponse where
+  parseJSON = withObject "GeocodingResponse" $ \v -> do
+    -- 1. Parse the "results" field from JSON, which is still an array.
+    resultsList <- v .: "results"
+
+    -- 2. Safely take the first element of the list. 'listToMaybe' returns
+    --    'Nothing' for an empty list and 'Just the_first_element' otherwise.
+    --    This is the core of the implementation.
+    let mostRelevantResult = listToMaybe (resultsList :: [GeocodingResult])
+
+    -- 3. Parse the status field into our new 'Status' ADT.
+    statusValue <- v .: "status"
+
+    -- 4. Construct our record.
+    pure $ GeocodingResponse mostRelevantResult statusValue
+
+extractGeoCoordinates :: GeocodingResult -> (Double, Double)
+extractGeoCoordinates GeocodingResult {..} = (lat (location  geometry),  lng (location  geometry))
 
 
-extractGeoCoordinates :: GeocodingResponse -> (Double, Double)
-extractGeoCoordinates GeocodingResponse {..} = undefined
 
 --

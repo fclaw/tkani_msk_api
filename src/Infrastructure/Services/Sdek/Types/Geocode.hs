@@ -10,7 +10,7 @@ import Data.Aeson
 -- We can add more fields like 'address' or 'name' later without
 -- affecting the logic of getNearestDeliveryPoint.
 data SdekPoint = SdekPoint
-    { uuid      :: Text
+    { code      :: Text
     , latitude  :: Double
     , longitude :: Double
     , address   :: Text -- Added for more useful output
@@ -28,7 +28,7 @@ instance FromJSON SdekPoint where
     -- The 'uuid' comes from the top-level object 'v'.
     -- The 'latitude', 'longitude', and 'address_full' come from the nested 'locationObj'.
     SdekPoint
-      <$> v .: "uuid"
+      <$> v .: "code"
       <*> locationObj .: "latitude"
       <*> locationObj .: "longitude"
       <*> locationObj .: "address_full"

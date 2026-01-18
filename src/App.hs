@@ -79,6 +79,7 @@ import Text (recordLabelModifier)
 import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
+import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
@@ -186,6 +187,7 @@ data State = State
   , _appSdekChan        :: TChan SdekJob
   , _metroStations      :: [MetroStation]
   , _dostavistaChan     :: TChan DostavistaJob
+  , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
   }
 
 

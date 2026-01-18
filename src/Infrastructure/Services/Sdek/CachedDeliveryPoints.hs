@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 
 
-module Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints) where
+module Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints, storeAllDeliveryPoints) where
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -22,6 +22,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.HashSet (member)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.STM (atomically, readTVar, modifyTVar')
+import Data.Time.Clock (diffUTCTime)
 
 import App
 import Text (tshow)
@@ -34,6 +35,7 @@ import TH.Location (currentModule)
 import API.WithField (WithField (..))
 import Infrastructure.Services.Overpass.Types (MetroStation)
 import Infrastructure.Services.Overpass.Geo (findNearestMetros)
+import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek (url)
 
 
@@ -143,3 +145,37 @@ enrichWithMetro sdekPoint allMetros =
     in 
     -- 4. Wrap it
     WithField nearestMetros basePoint
+
+  
+-- | Fetches all SDEK delivery points, using a 1-day cache.
+storeAllDeliveryPoints :: AppM (Either HttpError [SdekPoint])
+storeAllDeliveryPoints = do
+  now <- currentTime
+  -- Try to get the cached value first. 'use' is a lens helper.
+  stateVar <- get
+  state <- readTVarIO stateVar
+  let maybeCache = _allSdekPointsCache state
+  case maybeCache of
+    -- Cache hit, now check if it's expired.
+    Just (cachedTime, cachedPoints) ->
+      -- 1 day = 86400 seconds
+      if diffUTCTime now cachedTime < 86400
+      then do
+        $(logTM) InfoS "Returning all SDEK delivery points from cache."
+        return $ Right cachedPoints
+      else
+        -- Cache is expired, fetch new data.
+        fetchAllPointsAndCache
+        
+    -- Cache miss, fetch new data.
+    Nothing -> fetchAllPointsAndCache
+
+fetchAllPointsAndCache :: AppM (Either HttpError [SdekPoint])
+fetchAllPointsAndCache = do
+  $(logTM) InfoS "Fetching all SDEK delivery points."
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let pointsUrl = show HTTPS <> url <> "/v2/deliverypoints"
+  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl [] . Just . mkDefToken . sdekAccessToken)
+  makeRequestWithRetries @[SdekPoint] (Just (void $ getValidSdekToken)) pointsReq
