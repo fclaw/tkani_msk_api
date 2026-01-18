@@ -10,6 +10,7 @@ import Data.Text (Text)
 import Control.Monad.IO.Class (liftIO)
 
 import App (AppM)
+import API.Types (SdekDeliveryPoint (..))
 import Infrastructure.Services.Google.Geocode
 import Infrastructure.Services.Google (getGeocode)
 import Infrastructure.Services.Sdek.Geocode (getNearestDeliveryPoint)
@@ -17,7 +18,7 @@ import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint (..))
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeAllDeliveryPoints)
 import API.Types (ApiResponse, ApiError (..), wrongParamsErrorCode, mkError)
 
-handler :: Maybe Text -> AppM (ApiResponse Text)
+handler :: Maybe Text -> AppM (ApiResponse SdekDeliveryPoint)
 handler (Just address) = do 
   res <- getGeocode address
   case res of
@@ -42,7 +43,7 @@ handler (Just address) = do
                       point = uncurry getNearestDeliveryPoint coords $ points
                   in case point of
                     Nothing -> return (Left (mkError "address not found"))
-                    Just SdekPoint {..} -> return (Right code)
+                    Just SdekPoint {..} -> return (Right (SdekDeliveryPoint code address))
         ZERO_RESULTS -> return (Left (mkError "address not found"))
         _ -> return (Left (mkError "server error"))
 handler Nothing = fmap (const (Left $ ApiError wrongParamsErrorCode mempty)) $ $(logTM) ErrorS $ "parameter 'address' is missing."

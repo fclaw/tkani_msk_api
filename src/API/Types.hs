@@ -576,3 +576,11 @@ data SetOrderDimensionsRequest =
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sodr" } ''SetOrderDimensionsRequest)
+
+data SdekDeliveryPoint =
+     SdekDeliveryPoint
+     { spdCode    :: Text
+     , spdAddress :: Text
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "spd" } ''SdekDeliveryPoint)

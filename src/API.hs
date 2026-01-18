@@ -221,7 +221,7 @@ data Routes route = Routes
        :> "delivery-point"
        :> RateLimitPerIP (Minute 10)
        :> QueryParam "address" Text
-       :> Get '[JSON] (ApiResponse Text)
+       :> Get '[JSON] (ApiResponse SdekDeliveryPoint)
   } deriving (Generic)
 
 
