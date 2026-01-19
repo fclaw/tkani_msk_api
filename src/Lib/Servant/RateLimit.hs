@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Lib.Servant.RateLimit (RateLimit, RateLimitState, RateLimitPerUser) where
+module Lib.Servant.RateLimit (RateLimitState, RateLimitPerUser, State (..)) where
 
 import Servant
 import Data.Int (Int64)
@@ -29,16 +29,19 @@ import Network.HTTP.Types.URI (queryToQueryText)
 import qualified Data.Text as T
 import Servant.Server.Internal.Delayed (addAcceptCheck)
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Control.Concurrent.STM (TVar, atomically, readTVar, writeTVar)
+import Control.Concurrent.STM (TVar, atomically, readTVar, modifyTVar')
 import Servant.Server.Internal.DelayedIO (withRequest, delayedFailFatal)
 import Data.Time.TypeLevel (TimePeriod,  KnownDuration, DurationUnit, durationMicroseconds)
 import Data.Time.Clock (UTCTime, NominalDiffTime, addUTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime, nominalDiffTimeToSeconds)
 
 import Text (textToInt)
 
+
+data State = State { timeoutMap :: Map Int64 UTCTime, allowedUsers :: [Int64] }
+
+
 -- The state now stores the time when the next request is allowed for each IP.
-type RateLimit = Map Int64 UTCTime
-type RateLimitState = TVar (Map Int64 UTCTime)
+type RateLimitState = TVar State
 
 data RateLimitPerUser (delay :: TimePeriod) (user :: Maybe Symbol)
 
@@ -93,22 +96,32 @@ checkRateLimit delay (Just userParamName) stateTVar req = do
         Nothing -> throwIO $ MalformedUserId $ "Query parameter '" <> userParamName <> "' must be an integer."
         Just userId ->
           atomically $ do
-            stateMap <- readTVar stateTVar
-            case Map.lookup userId stateMap of
-              -- Case 1: user is in the map.
-              Just nextAllowedTime ->
-                if now >= nextAllowedTime then do
-                -- The user waited long enough. Allow and update the timestamp.
+            state <- readTVar stateTVar
+            if userId `elem` allowedUsers state then 
+              return Nothing
+            else do
+              let stateMap = timeoutMap state
+              case Map.lookup userId stateMap of
+                -- Case 1: user is in the map.
+                Just nextAllowedTime ->
+                  if now >= nextAllowedTime then do
+                    -- The user waited long enough. Allow and update the timestamp.
+                    let newNextTime = addUTCTime delay now
+                    let newTimeoutMap = Map.insert userId newNextTime stateMap
+                    fmap (const Nothing) $ 
+                      modifyTVar' stateTVar $ \s -> 
+                        s { timeoutMap = newTimeoutMap } -- SUCCESS
+                  else do
+                    -- The user is too early. Deny and calculate the wait time.
+                    let timeLeft = ceiling (nextAllowedTime `diffUTCTime` now)
+                    pure (Just timeLeft) -- FAILURE
+                -- Case 2: user is not in the map (first request).
+                Nothing -> do
                   let newNextTime = addUTCTime delay now
-                  fmap (const Nothing) $ writeTVar stateTVar (Map.insert userId newNextTime stateMap) -- SUCCESS
-                else do
-                  -- The user is too early. Deny and calculate the wait time.
-                  let timeLeft = ceiling (nextAllowedTime `diffUTCTime` now)
-                  pure (Just timeLeft) -- FAILURE
-               -- Case 2: user is not in the map (first request).
-              Nothing -> do
-                let newNextTime = addUTCTime delay now
-                fmap (const Nothing) $ writeTVar stateTVar (Map.insert userId newNextTime stateMap) -- SUCCESS
+                  let newTimeoutMap = Map.insert userId newNextTime stateMap
+                  fmap (const Nothing) $ 
+                    modifyTVar' stateTVar $ \s -> 
+                      s { timeoutMap = newTimeoutMap } -- SUCCESS
 
 
 -- Our final HasServer instance, based on the library's source code.

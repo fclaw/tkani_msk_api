@@ -326,7 +326,7 @@ main = do
 
         -- Define our concurrent tasks as a list of IO actions.
         -- Task 1: The Web Server
-        rateLimitState <- newTVarIO @RL.RateLimit M.empty
+        rateLimitState <- newTVarIO @RL.State (RL.State M.empty configRateLimitAllowedUsers)
         let context = rateLimitState :. EmptyContext
         let server =
               run configApiPort $ 

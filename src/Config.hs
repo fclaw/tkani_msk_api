@@ -1,9 +1,10 @@
 -- src/Config.hs
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Config
   ( Config(..)
@@ -17,7 +18,8 @@ import Data.Text (Text, pack, unpack, strip)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Text.Read (readMaybe)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
+import Control.Monad (join, when)
 import qualified Data.Map as Map
 import Control.Exception (catch, IOException)
 import Database.PostgreSQL.Simple (ConnectInfo (..), defaultConnectInfo)
@@ -25,6 +27,7 @@ import Data.Int (Int64)
 import Text.Printf (printf)
 import GHC.Generics (Generic)
 import Data.Aeson
+import qualified Data.ByteString.Lazy.Char8 as LBS
 
 
 import Text (textToInt, textToDouble, textToBool)
@@ -67,6 +70,7 @@ data Config = Config
   , configDostavistaUrl          :: Maybe Text
   , configGeocodeApiKey          :: Text
   , configGeocodeUrl             :: Text
+  , configRateLimitAllowedUsers  :: [Int64]
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -154,6 +158,11 @@ loadConfig = do
   let configGeocodeApiKey = (Map.!) env "GEOCODE_API_KEY"
   let configGeocodeUrl = (Map.!) env "GEOCODE_URL"
 
+  let configRateLimitAllowedUsersMaybe = decode @[Int64] . LBS.pack . T.unpack $ (Map.!) env "RATE_LIMIT_ALLOWED_USER_IDS"
+
+  when(isNothing configRateLimitAllowedUsersMaybe) $ error "cannot parse RATE_LIMIT_ALLOWED_USER_IDS"
+
+  let Just configRateLimitAllowedUsers = configRateLimitAllowedUsersMaybe
 
   -- 3. Parse the port number
   let configApiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)
