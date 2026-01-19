@@ -14,7 +14,7 @@ import Data.Int (Int64)
 import Data.Time.TypeLevel (TimePeriod(Minute, Second))
 
 import API.Types
-import Lib.Servant.RateLimit (RateLimitPerIP)
+import Lib.Servant.RateLimit (RateLimitPerUser)
 import API.WithField (WithField)
 import Domain.Warehouse.Types (FabricType)
 
@@ -27,14 +27,14 @@ data Routes route = Routes
        :: route
        :- "warehouse"
        :> "fabric"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] RawIngestRequest
        :> Put '[JSON] (ApiResponse NewFabric)
   , _patchFabric
        :: route
        :- "warehouse"
        :> "fabric"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "fabric_id" Int64
        :> ReqBody '[JSON] RawIngestRequest
        :> Patch '[JSON] (ApiResponse NewFabric)
@@ -42,7 +42,7 @@ data Routes route = Routes
        :: route
        :- "warehouse"
        :> "fabric"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "fabric_id" Int64
        :> Capture "fabric_type" FabricType
        :> Delete '[JSON] (ApiResponse ())  
@@ -50,14 +50,14 @@ data Routes route = Routes
        :: route 
        :- "fabric"
        :> "preview"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "fabric_id" Int64
        :> QueryParam "fabric_type" FabricType
        :> Get '[JSON] (ApiResponse FabricPreview)
   , _getDeliveryPoints
        :: route 
        :- "providers"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "provider" Providers 
        :> "delivery-points" 
        :> QueryParam "city" Text 
@@ -65,40 +65,40 @@ data Routes route = Routes
   , _getProviders
        :: route
        :- "providers"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse [ProviderInfo])
   , _placeNewOrder
        :: route
        :- "order"
        :> "create"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] OrderRequest
        :> Post '[JSON] (ApiResponse OrderConfirmationDetails)
   , _setTelegramMessage
        :: route
        :- "order"
        :> "set_telegram_message"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] SetTelegramMessageRequest
        :> Post '[JSON] (ApiResponse ())
   , _trackOrder
        :: route
        :- "order"
        :> "track"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "query" Text
        :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
   , _getCatalogSummary
        :: route
        :- "catalog"
        :> "by-date"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "date" CatalogDate
        :> Get '[JSON] (ApiResponse CatalogSummary)
    , _searchFabrics 
        :: route
        :- "search"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "query" Text
        :> QueryParam "page" Int
        :> QueryParam "limit" Int
@@ -106,7 +106,7 @@ data Routes route = Routes
    , _searchFabricCard 
        :: route
        :- "search"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "type" FabricType
        :> Capture "id" Int64
        :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
@@ -114,14 +114,14 @@ data Routes route = Routes
        :: route
        :- "warehouse"
        :> "daily-digest"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> Post '[JSON] ()
   , _draftDailyDigestDraft
        :: route
        :- "warehouse"
        :> "daily-digest"
        :> "draft"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] DailyDigestDraft
        :> Post '[JSON] (ApiResponse ())
   , _publishDailyDigest
@@ -129,21 +129,21 @@ data Routes route = Routes
        :- "warehouse"
        :> "daily-digest"
        :> "publish"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] DailyDigest
        :> Post '[JSON] (ApiResponse ())
   , _cancelOrder
        :: route
        :- "order"
        :> "cancel"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] CancelOrder
        :> Post '[JSON] (ApiResponse ())
   , _checkCartItem
        :: route
        :- "cart"
        :> "check-item"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> QueryParam "fabric_id" Int64
        :> QueryParam "fabric_type" FabricType
@@ -152,20 +152,20 @@ data Routes route = Routes
        :: route
        :- "cart"
        :> "add"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] CartNewFabric
        :> Post '[JSON] (ApiResponse CartCheckStatus)
   , _clearCart
        :: route
        :- "cart"
        :> "clear"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ())
   , _viewCart
        :: route
        :- "cart"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ViewCart)
   , _measureOrder
@@ -173,7 +173,7 @@ data Routes route = Routes
        :- "warehouse"
        :> "orders"
        :> "measure"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] MeasureRequest
        :> Post '[JSON] (ApiResponse MeasureResponse)
   , _placeYamlOrder
@@ -181,7 +181,7 @@ data Routes route = Routes
        :- "warehouse"
        :> "orders"
        :> "create-from-yaml"
-       :> RateLimitPerIP (Second 1)
+       :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] YamlOrderRequest
        :> Put '[JSON] (ApiResponse YamlOrderResponse)
   , _reportDailySales
@@ -189,21 +189,21 @@ data Routes route = Routes
       :- "warehouse"
       :> "reports"
       :> "daily-sales"
-      :> RateLimitPerIP (Second 1)
+      :> RateLimitPerUser (Second 1) 'Nothing
       :> Post '[JSON] (ApiResponse ())
   , _reportMonthlySales
       :: route
       :- "warehouse"
       :> "reports"
       :> "monthly-sales"
-      :> RateLimitPerIP (Second 1)
+      :> RateLimitPerUser (Second 1) 'Nothing
       :> Post '[JSON] (ApiResponse ())
   , _tallyUpExpenses
       :: route
       :- "warehouse"
       :> "expenses"
       :> "tally-up"
-      :> RateLimitPerIP (Second 1)
+      :> RateLimitPerUser (Second 1) 'Nothing
       :> ReqBody '[JSON] Expenses
       :> Put '[JSON] (ApiResponse ())
   , _setOrderDimensions
@@ -211,7 +211,7 @@ data Routes route = Routes
       :- "warehouse"
       :> "orders"
       :> "dimensions"
-      :> RateLimitPerIP (Second 1)
+      :> RateLimitPerUser (Second 1) 'Nothing
       :> Capture "order_id" Text
       :> ReqBody '[JSON] SetOrderDimensionsRequest   
       :> Put '[JSON] (ApiResponse ())
@@ -219,8 +219,9 @@ data Routes route = Routes
        :: route
        :- "sdek"
        :> "delivery-point"
-       :> RateLimitPerIP (Minute 10)
+       :> RateLimitPerUser (Minute 10) ('Just "user")
        :> QueryParam "address" Text
+       :> QueryParam "user" Int64
        :> Get '[JSON] (ApiResponse SdekDeliveryPoint)
   } deriving (Generic)
 

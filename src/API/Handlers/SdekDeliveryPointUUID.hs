@@ -6,6 +6,7 @@ module API.Handlers.SdekDeliveryPointUUID (handler) where
 
 
 import Katip
+import Data.Int (Int64)
 import Data.Text (Text)
 import Control.Monad.IO.Class (liftIO)
 
@@ -18,8 +19,8 @@ import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint (..))
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeAllDeliveryPoints)
 import API.Types (ApiResponse, ApiError (..), wrongParamsErrorCode, mkError)
 
-handler :: Maybe Text -> AppM (ApiResponse SdekDeliveryPoint)
-handler (Just address) = do 
+handler :: Maybe Text -> Maybe Int64 -> AppM (ApiResponse SdekDeliveryPoint)
+handler (Just address) (Just _) = do 
   res <- getGeocode address
   case res of
     Left err ->
@@ -46,4 +47,4 @@ handler (Just address) = do
                     Just SdekPoint {..} -> return (Right (SdekDeliveryPoint code address))
         ZERO_RESULTS -> return (Left (mkError "address not found"))
         _ -> return (Left (mkError "server error"))
-handler Nothing = fmap (const (Left $ ApiError wrongParamsErrorCode mempty)) $ $(logTM) ErrorS $ "parameter 'address' is missing."
+handler _ _ = fmap (const (Left $ ApiError wrongParamsErrorCode mempty)) $ $(logTM) ErrorS $ "parameter 'address' or 'user' is missing."

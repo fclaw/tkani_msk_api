@@ -11,10 +11,12 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Lib.Servant.RateLimit (RateLimit, RateLimitState, RateLimitPerIP) where
+module Lib.Servant.RateLimit (RateLimit, RateLimitState, RateLimitPerUser) where
 
 import Servant
-import GHC.TypeLits (Nat)
+import Data.Int (Int64)
+import Control.Exception (handle, Exception, throwIO)
+import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 import Data.Time.Units (TimeUnit)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (ToJSON, encode)
@@ -22,8 +24,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import GHC.Generics (Generic)
-import Network.Socket (SockAddr)
-import Network.Wai (Request, remoteHost)
+import Network.Wai (Request, remoteHost, queryString)
+import Network.HTTP.Types.URI (queryToQueryText)
 import qualified Data.Text as T
 import Servant.Server.Internal.Delayed (addAcceptCheck)
 import qualified Data.ByteString.Lazy.Char8 as LBS
@@ -32,18 +34,38 @@ import Servant.Server.Internal.DelayedIO (withRequest, delayedFailFatal)
 import Data.Time.TypeLevel (TimePeriod,  KnownDuration, DurationUnit, durationMicroseconds)
 import Data.Time.Clock (UTCTime, NominalDiffTime, addUTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime, nominalDiffTimeToSeconds)
 
+import Text (textToInt)
 
 -- The state now stores the time when the next request is allowed for each IP.
-type RateLimit = Map SockAddr UTCTime
-type RateLimitState = TVar (Map SockAddr UTCTime)
+type RateLimit = Map Int64 UTCTime
+type RateLimitState = TVar (Map Int64 UTCTime)
 
-data RateLimitPerIP (delay :: TimePeriod)
+data RateLimitPerUser (delay :: TimePeriod) (user :: Maybe Symbol)
+
+-- This class is the bridge from the type-level 'Maybe Nat' to the
+-- value-level 'Maybe Integer'.
+class HasRateLimitUser (user :: Maybe Symbol) where
+  getUser :: Proxy user -> Maybe Text
+
+-- The instance for the 'Nothing case. If the type is 'Nothing, the value is Nothing.
+instance HasRateLimitUser 'Nothing where
+  getUser _ = Nothing
+
+-- The instance for the 'Just n case.
+-- We require 'KnownNat n' to get the value of 'n'.
+instance KnownSymbol n => HasRateLimitUser ('Just n) where
+  getUser _ = Just (T.pack (symbolVal (Proxy @n)))
+
+
+-- We can reuse RateLimitExceeded, or create a more specific one.
+-- Let's create a more descriptive error type.
+data RateLimitException = MalformedUserId { reason :: Text } deriving (Show, Exception)
 
 -- A custom exception to carry our "time left" value.
-data RateLimitExceeded =
-     RateLimitExceeded
-     { timeLeftSeconds :: Integer -- The number of seconds the user must wait.
-     } deriving (Show)
+-- data RateLimitExceeded =
+--      RateLimitExceeded
+--      { timeLeftSeconds :: Integer -- The number of seconds the user must wait.
+--      } deriving (Show)
 
 -- We'll create a JSON response for our error.
 data RateLimitError =
@@ -55,39 +77,49 @@ data RateLimitError =
 instance ToJSON RateLimitError
 
 -- New signature! No more exceptions from this function.
-checkRateLimit :: NominalDiffTime -> RateLimitState -> Request -> IO (Maybe Integer)
-checkRateLimit delay stateTVar req = do
+checkRateLimit :: NominalDiffTime -> Maybe Text -> RateLimitState -> Request -> IO (Maybe Integer)
+checkRateLimit _ Nothing _ _ = pure Nothing 
+checkRateLimit delay (Just userParamName) stateTVar req = do
   now <- getCurrentTime
-  let clientIp = remoteHost req
+  let queryParams = queryToQueryText $ queryString req
+  let maybeUserId = lookup userParamName queryParams
 
-  atomically $ do
-    stateMap <- readTVar stateTVar
-    case Map.lookup clientIp stateMap of
-      -- Case 1: IP is in the map.
-      Just nextAllowedTime ->
-        if now >= nextAllowedTime then do
-          -- The user waited long enough. Allow and update the timestamp.
-          let newNextTime = addUTCTime delay now
-          fmap (const Nothing) $ writeTVar stateTVar (Map.insert clientIp newNextTime stateMap) -- SUCCESS
-        else do
-          -- The user is too early. Deny and calculate the wait time.
-          let timeLeft = ceiling (nextAllowedTime `diffUTCTime` now)
-          pure (Just timeLeft) -- FAILURE
-
-      -- Case 2: IP is not in the map (first request).
-      Nothing -> do
-        let newNextTime = addUTCTime delay now
-        fmap (const Nothing) $ writeTVar stateTVar (Map.insert clientIp newNextTime stateMap) -- SUCCESS
+  case maybeUserId of
+    Nothing -> return Nothing -- SUCCESS
+    Just Nothing -> throwIO $ MalformedUserId $ "Required query parameter '" <> userParamName <> "' is missing."
+    Just (Just userIdText) -> do
+      let maybeUserId = fmap fromIntegral $ textToInt userIdText
+      case maybeUserId of 
+        Nothing -> throwIO $ MalformedUserId $ "Query parameter '" <> userParamName <> "' must be an integer."
+        Just userId ->
+          atomically $ do
+            stateMap <- readTVar stateTVar
+            case Map.lookup userId stateMap of
+              -- Case 1: user is in the map.
+              Just nextAllowedTime ->
+                if now >= nextAllowedTime then do
+                -- The user waited long enough. Allow and update the timestamp.
+                  let newNextTime = addUTCTime delay now
+                  fmap (const Nothing) $ writeTVar stateTVar (Map.insert userId newNextTime stateMap) -- SUCCESS
+                else do
+                  -- The user is too early. Deny and calculate the wait time.
+                  let timeLeft = ceiling (nextAllowedTime `diffUTCTime` now)
+                  pure (Just timeLeft) -- FAILURE
+               -- Case 2: user is not in the map (first request).
+              Nothing -> do
+                let newNextTime = addUTCTime delay now
+                fmap (const Nothing) $ writeTVar stateTVar (Map.insert userId newNextTime stateMap) -- SUCCESS
 
 
 -- Our final HasServer instance, based on the library's source code.
 instance ( HasServer api context
          , HasContextEntry context RateLimitState
          , KnownDuration delay
+         , HasRateLimitUser user
          , TimeUnit (DurationUnit delay)
-         ) => HasServer (RateLimitPerIP delay :> api) context where
+         ) => HasServer (RateLimitPerUser delay user :> api) context where
 
-  type ServerT (RateLimitPerIP delay :> api) m = ServerT api m
+  type ServerT (RateLimitPerUser delay user :> api) m = ServerT api m
 
   hoistServerWithContext _ pc nt s = hoistServerWithContext (Proxy :: Proxy api) pc nt s
 
@@ -110,20 +142,26 @@ instance ( HasServer api context
         rateLimitDelay :: NominalDiffTime
         rateLimitDelay = fromRational delaySeconds
         
+        -- user id if present
+        maybeUser :: Maybe Text
+        maybeUser = getUser (Proxy @user)
+
         rateLimitState = getContextEntry context
+
+        handleErrors (MalformedUserId reason) = pure $ Left reason
 
         -- Define the check that will be run on each request.
         -- This uses 'withRequest' to gain access to the 'Request' object.
         rateCheck = withRequest $ \req -> do
           -- Apply our rate-limiting logic.
-          maybeSeconds <- liftIO $ checkRateLimit rateLimitDelay rateLimitState req
+          eitherSeconds <- liftIO $ handle @RateLimitException handleErrors $ fmap Right $ checkRateLimit rateLimitDelay maybeUser rateLimitState req
           
           -- Handle the result.
-          case maybeSeconds of
+          case eitherSeconds of
             -- SUCCESS: The request is allowed. Do nothing and let it proceed.
-            Nothing -> pure ()
+            Right Nothing -> pure ()
             -- FAILURE: The rate limit was exceeded.
-            Just seconds ->
+            Right (Just seconds) ->
               -- Fail the request fatally using Servant's internal machinery.
               -- This immediately stops routing and sends the specified error.
               delayedFailFatal $ err429
@@ -135,6 +173,7 @@ instance ( HasServer api context
                     -- Include the standard 'Retry-After' header.
                     [ ("Retry-After", LBS.toStrict $ LBS.pack $ show seconds) ]
                 }
+            Left err -> delayedFailFatal $ err400 { errBody = encode err }
     in
       -- Attach the check to the server and route it.
       -- Note: The library uses a helper `addAcceptCheck`. This function is
