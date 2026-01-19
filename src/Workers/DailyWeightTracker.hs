@@ -96,6 +96,9 @@ runDailyWeightTracker connInfo runAppM = do
       msg <- fmap escapeMarkdownV2 $ render ($currentModule <> loadedTmpl) templateData
       void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
+      -- on restarting determine whether there is enough weight to call a courier
+      callDostavistaCourier initialState stateVar
+
       -- Worker A: Resets the 'courier called' flag at midnight
       let midnightResetter = runAppM (resetCourierCalledFlag stateVar)
 
@@ -308,3 +311,78 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
          -- The weight is high enough, but it's too late in the day.
          $(logTM) WarningS "Weight threshold met, but it's too late to call a courier today. Manual action may be required."
          -- Optionally, send an alert to the admin here.
+
+callDostavistaCourier :: WeightTrackerState -> TVar WeightTrackerState -> AppM ()
+callDostavistaCourier (WeightTrackerState {..}) stateVar = do 
+  $(logTM) InfoS "starting measuring weight for courier call..."
+  cfg <- ask
+  let weightThreshold = _courierWeightThreshold cfg
+   -- Get current Moscow hour
+  let msk = TimeZone (3 * 60) False "MSK"
+  now <- liftIO getZonedTime
+  let mskTime = utcToLocalTime msk (zonedTimeToUTC now)
+  let (TimeOfDay currentHour _ _) = localTimeOfDay mskTime
+  let weightExceeded = wtsTotalWeightGrams >= weightThreshold
+  let courierNotCalled = not wtsCourierCalled
+  let isWithinTimeWindow = currentHour < (courierCallCutoffHour . _dostavistaConfig) cfg -- e.g., Is current hour < 16?
+
+  when(weightExceeded && 
+     courierNotCalled && 
+     isWithinTimeWindow) $ do
+    $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."    
+    -- Call the Dostavista Service
+    eDostavistaResult <- scheduleDostavistaPickup wtsTotalWeightGrams
+    case eDostavistaResult of
+      Left apiErr -> $(logTM) ErrorS $ "Dostavista API call failed: " <> ls (show apiErr)
+      Right ord@DostavistaOrderResponse {..} ->
+        if isSuccessful then do
+          let Just Order {..} = order    
+          -- Dostavista call was successful. Now, update both the
+          -- in-memory TVar AND the database.
+          $(logTM) InfoS "Dostavista call successful. Persisting state."
+          $(logTM) DebugS $ "Dostavista order: " <> ls (show ord)          
+          -- Persist the "called" state to the database
+          pool <- fmap _appDBPool ask
+          -- Get the list of orders to include in this batch from the state
+          let ordersInBatch = wtsOrders
+
+          tm <- currentTime
+          let today = utctDay tm
+          let courierPickupData = 
+               CourierPickupData 
+                { cpdDay                   = today 
+                , cpdProvider              = DOSTAVISTA
+                , cpdOrders                = ordersInBatch
+                , cpdDostavistaOrderId     = orderId
+                , cpdDostavistaOrderStatus = encodeToText status
+                , cpdCost                  = 
+                  fromMaybe (error "cannot extract paymentAmount") $
+                    textMoneyToDouble paymentAmount
+                , cpdOrderStatus           = encodeToText ScheduledForPickup   
+                }
+          eDbResult <- recordAndLinkPickup courierPickupData pool
+          for_ eDbResult $ const $ do
+            -- Update the in-memory flag immediately
+            modifyTVarIO stateVar $
+              \s -> s { wtsTotalWeightGrams = 0
+                      -- Still true for today, will be reset tomorrow
+                      , wtsCourierCalled = True
+                      -- Clear the list for the next batch
+                      , wtsOrders = [] }
+
+            -- delegate the tracking to Dostavista worker
+            appStateVar <- get
+            appState <- readTVarIO appStateVar
+            start <- currentTime
+            liftIO $ atomically $ writeTChan (_dostavistaChan appState) $ DostavistaJob orderId status start
+
+            -- Send a detailed notification to the admin channel
+            let templateData = 
+                  HM.fromList
+                  [ ("count", tshow (length ordersInBatch))
+                  , ("weight", tshow wtsTotalWeightGrams)
+                  , ("order_list",  T.unlines (map ((<>) "• `" . (`T.append` "`")) ordersInBatch))
+                  ]
+            msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
+            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+        else $(logTM) ErrorS "Dostativsta call has ended up in failure"  
