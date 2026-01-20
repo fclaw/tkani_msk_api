@@ -118,13 +118,13 @@ formatBlock index OrderDeliveryItem {..} =
              daysLeft = diffDays (utctDay keepUntilDate) today
 
              -- Determine the prefix: a warning emoji if 1 day or less is left.
-             prefix = if daysLeft <= 1 then "⚠️ " else mempty
+             prefix = if daysLeft <= 1 then " ⚠️" else mempty
                 
              -- Format the date into a human-readable string.
              dateString = T.pack (formatTime defaultTimeLocale "%d %B %Y" keepUntilDate)
           in
-            -- Assemble the final line.
-            prefix <> ", Хранение до: *" <> dateString <> "*"
+             -- Assemble the final line.
+             ", Хранение до: *" <> dateString <> "*" <> prefix
 
   -- Combine the lines into the final multi-line block.
   -- The filter removes the expiry line completely if it's empty.
