@@ -18,12 +18,14 @@ import Data.Text (pack)
 
 import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
 import Data.Aeson.TH
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Data.Time (Day, parseTimeM, defaultTimeLocale)
 
+import API.WithField (WithField)
 import Text (camelToSnake, recordLabelModifier) 
 import Domain.Warehouse.Types (FabricType)
 import Domain.Logic.Dimensions (FabricDensity)
+import Domain.Warehouse.Enums (FabricLifecycle)
 
 
 
@@ -103,8 +105,11 @@ data RawIngestRequest =
     , rawMediaType        :: MediaType   -- ^ Parsed via the Enum above
     , rawFileId           :: Maybe Text  -- ^ The file ID
     , rawThumbnailUrl     :: Maybe Text
+      -- !! deprecated field
     , rawGalleryDate      :: Maybe Day
     , rawFabricProperties :: FabricProperties
+    , rawLifeCycle  :: Maybe FabricLifecycle
+    , rawSellingPrice     :: Maybe Int32
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)
@@ -393,6 +398,21 @@ data CatalogSummary = CatalogSummary
 
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)
+
+
+type CatalogSummaryItemExt = WithField "life_cycle" FabricLifecycle (WithField "selling_price" (Maybe Int) (CatalogSummaryItem))
+
+-- | The top-level response for a catalog request.
+data CatalogSummaryV2 = CatalogSummaryV2
+  { -- | The total number of items in a catalog.
+    csv2TotalItems :: Int
+    -- | The list of fabric summary items for the carousel.
+  , csv2Items      :: [CatalogSummaryItemExt]
+  } deriving (Show, Eq, Generic)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csv2" } ''CatalogSummaryV2)
+
 
 -- | ADT for the lightweight search result list (Inline "Teaser" Mode)
 -- Contains just enough info for the bot to display a title, description, and thumbnail.

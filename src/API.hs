@@ -17,6 +17,7 @@ import API.Types
 import Lib.Servant.RateLimit (RateLimitPerUser)
 import API.WithField (WithField)
 import Domain.Warehouse.Types (FabricType)
+import Domain.Warehouse.Enums (FabricLifecycle)
 
 
 -- This 'data' definition IS our new API ADT.
@@ -88,6 +89,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "query" Text
        :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
+     -- deprecated, will be replaced by fixed catalogs: regular, on sale, clearance
   , _getCatalogSummary
        :: route
        :- "catalog"
@@ -223,6 +225,13 @@ data Routes route = Routes
        :> QueryParam "address" Text
        :> QueryParam "user" Int64
        :> Get '[JSON] (ApiResponse SdekDeliveryPoint)
+   , _getCatalogSummaryV2
+       :: route
+       :- "catalog"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> QueryParam "life-cycle" FabricLifecycle 
+       :> Get '[JSON] (ApiResponse CatalogSummaryV2)
+
   } deriving (Generic)
 
 

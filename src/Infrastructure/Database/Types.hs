@@ -17,11 +17,13 @@ import           Data.Int (Int64, Int32)
 import           Data.Char (toLower)
 import           Data.Time.Calendar.Month (Month)
 
+
+import Domain.Logic.Dimensions
+import Domain.Warehouse.Enums (FabricLifecycle)
 import Text (recordLabelModifier, encodeToText)
 import Infrastructure.Services.Types (PaymentProvider)
 import Domain.Warehouse.Types (FabricType, Fabric (..))
 import API.Types (RawIngestRequest (..), MediaType)
-import Domain.Logic.Dimensions
 
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -110,18 +112,21 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''
 
 data PatchedFabric = 
      PatchedFabric
-     { prId  :: Int64
-     , prDescription :: Text
-     , prLength :: Double
-     , prWidth :: Int32
-     , prPrice :: Int32
-     , prIsSearchable :: Bool
-     , prName :: Text
-     , prFileId :: Maybe Text                 
-     , prMediaGroupId :: Maybe Text   
-     , prThumbnailUrl :: Maybe Text          
-     , prMediaType :: Text
-     , prGalleryDate :: Maybe Day
+     { prId              :: Int64
+     , prDescription     :: Text
+     , prLength          :: Double
+     , prWidth           :: Int32
+     , prPrice           :: Int32
+     , prIsSearchable    :: Bool
+     , prName            :: Text
+     , prFileId          :: Maybe Text                 
+     , prMediaGroupId    :: Maybe Text   
+     , prThumbnailUrl    :: Maybe Text          
+     , prMediaType       :: Text
+       -- !!deprecated field
+     , prGalleryDate     :: Maybe Day
+     , prLifeCycle       :: Maybe Text
+     , prSellingPrice    :: Maybe Int32
      } deriving (Show, Eq, Generic)
 
 
@@ -139,10 +144,12 @@ mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
       prThumbnailUrl = rawThumbnailUrl
       prMediaType = encodeToText rawMediaType
       prGalleryDate = rawGalleryDate
+      prLifeCycle = fmap encodeToText rawLifeCycle
+      prSellingPrice = rawSellingPrice
   in PatchedFabric {..}
 
 
-data PriceInfo = 
+data PriceInfo =
      PriceInfo 
      { piTariff      :: Int
      , piPickUpPoint :: Text

@@ -24,7 +24,7 @@ import Data.String (fromString)
 data WithField (fieldName :: Symbol) idType a = WithField
   { withFieldValue :: idType
   , withFieldData  :: a
-  } deriving (Show)
+  } deriving (Show, Eq)
 
 -- | The magic: our custom ToJSON instance.
 instance (KnownSymbol fieldName, ToJSON idType, ToJSON a) => ToJSON (WithField fieldName idType a) where

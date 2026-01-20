@@ -46,6 +46,7 @@ library
       API.Handlers.DailyDigest.Publish
       API.Handlers.DeleteFabric
       API.Handlers.GetCatalogSummary
+      API.Handlers.GetCatalogSummaryV2
       API.Handlers.GetDeliveryPoints
       API.Handlers.GetFabricPreview
       API.Handlers.GetProviders
@@ -72,6 +73,7 @@ library
       Domain.Services.Reporting
       Domain.Services.Shipping
       Domain.Telegram.Types
+      Domain.Warehouse.Enums
       Domain.Warehouse.Parser
       Domain.Warehouse.Types
       Infrastructure.Database

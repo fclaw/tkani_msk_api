@@ -28,7 +28,9 @@ module Infrastructure.Database
   , fetchOrderStatus
   , getOrdersInTransit
   , markOrderAsInvalid
+    -- !!! deprecated
   , fetchCatalogSummaryItem
+  , fetchCatalogSummaryItemV2
   , checkFabricPreCuts
   , insertNewPaymentRecord
   , fetchPendingPayments
@@ -115,6 +117,7 @@ import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
 import Infrastructure.Database.Types as Types
 import Text (encodeToText, tshow)
+import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Database.Fabric (ingestFabricDB)
 import qualified Domain.Warehouse.Types as DWT
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
@@ -1304,6 +1307,8 @@ patchRoll fabric pool =
               FROM daily_digests 
               WHERE announcement_date = $12 :: date?
               LIMIT 1),
+            lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
+            selling_price = COALESCE($14 :: int4?, selling_price),
             updated_at = now()
           WHERE id = $1 :: int8
           RETURNING EXISTS (
@@ -1342,6 +1347,8 @@ patchPrecut fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
+            lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
+            selling_price = COALESCE($14 :: int4?, selling_price),
             updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
           RETURNING EXISTS (
@@ -2079,3 +2086,118 @@ setOrderDimensions orderId dimensions pool =
           height = $4 :: int4
          WHERE id = $1 :: text
        |]
+
+
+fetchCatalogSummaryItemV2 :: FabricLifecycle -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text [CatalogSummaryItemExt])
+fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement (encodeToText lifeCycle, chatId, threshold) $
+        rmap (V.toList . V.map (extractADT . convertFromJson)) $
+        [Hasql.vectorStatement|
+          WITH pre_cut_in_order AS (
+            SELECT ofb.pre_cut_id as pre_cut_id
+            FROM order_fabric_bindings ofb
+            JOIN orders o
+            ON ofb.order_id = o.id
+            WHERE ofb.pre_cut_id IS NOT NULL
+            AND o.status = 'registered'
+            AND o.created_at > 
+                NOW() - INTERVAL '30 minutes'
+          )
+          SELECT item_json :: jsonb
+            FROM (
+                SELECT
+                  f.updated_at,
+                  jsonb_build_object(
+                    'id', f.id,
+                    'name', f.name,
+                    'article', f.article,
+                    'type', 'roll',
+                    'price_per_meter', f.price_per_meter,
+                    'total_price', NULL,
+                    'length_m', NULL,
+                    'available_length', 
+                      f.available_length_m - 
+                      COALESCE(locked_stock.total_locked, 0),
+                    'is_sold_out', f.is_sold,
+                    'warehouse_message_id', f.warehouse_message_id,
+                    'warehouse_chat_id', $2 :: int8,
+                    'warehouse_file_id', f.image_url,
+                    'description', f.description,
+                    'media_type', to_jsonb(f.media_type),
+                    'width', f.width,
+                    'selling_price', f.selling_price,
+                    'life_cycle', to_jsonb($1 :: text)
+                  ) AS item_json
+                FROM 
+                  fabrics AS f
+                LEFT JOIN (
+                  SELECT 
+                    ci.fabric_id, 
+                    SUM(ci.length_m) AS total_locked
+                  FROM cart_items ci
+                  JOIN carts c 
+                  ON ci.cart_id = c.id
+                  WHERE 
+                    ci.item_type = 'roll'
+                    AND c.updated_at > NOW() - INTERVAL '30 minutes' 
+                  GROUP BY ci.fabric_id
+
+                  UNION ALL
+
+                  SELECT
+                    ofb.fabric_id,
+                    COALESCE(SUM(ofb.length_m), 0.0) AS total_locked
+                  FROM order_fabric_bindings ofb
+                  JOIN orders o 
+                  ON ofb.order_id = o.id
+                  WHERE 
+                    ofb.fabric_id IS NOT NULL
+                    AND ofb.pre_cut_id IS NULL
+                    AND o.status = 'registered'
+                    AND o.created_at > NOW() - INTERVAL '30 minutes'
+                  GROUP BY ofb.fabric_id 
+                ) AS locked_stock
+                ON f.id = locked_stock.fabric_id
+                WHERE f.is_sold = FALSE
+                AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0.0)) > $3 :: float8
+                AND f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
+
+                UNION ALL
+
+                SELECT
+                    f.updated_at,
+                    jsonb_build_object(
+                        'id', pc.id,
+                        'name', f.name,
+                        'article', f.article,
+                        'type', 'pre_cut',
+                        'price_per_meter', NULL,
+                        'total_price', pc.price_rub,
+                        'length_m', pc.length_m,
+                        'available_length', null,
+                        'is_sold_out', FALSE,
+                        'warehouse_message_id', f.warehouse_message_id,
+                        'warehouse_chat_id', $2 :: int8,
+                        'warehouse_file_id', f.image_url,
+                        'description', f.description,
+                        'media_type', to_jsonb(f.media_type),
+                        'width', f.width,
+                        'selling_price', f.selling_price,
+                        'life_cycle', to_jsonb($1 :: text)
+                    ) :: jsonb AS item_json
+                FROM pre_cuts AS pc
+                LEFT JOIN cart_items AS ci
+                ON pc.id = ci.pre_cut_id
+                JOIN fabrics AS f 
+                ON pc.fabric_id = f.id
+                LEFT JOIN pre_cut_in_order as pcio
+                ON pcio.pre_cut_id = ci.id
+                WHERE pc.in_stock = TRUE
+                AND ci.pre_cut_id IS NULL
+                AND pcio.pre_cut_id IS NULL
+                AND f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
+            ) AS catalog_items
+          ORDER BY updated_at DESC
+        |]

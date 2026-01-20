@@ -38,7 +38,7 @@ import qualified API.Handlers.ReportMonthlySales as ReportMonthlySales
 import qualified API.Handlers.TallyUpExpenses as TallyUpExpenses
 import qualified API.Handlers.SetOrderDimensions as SetOrderDimensions
 import qualified API.Handlers.SdekDeliveryPointUUID as SdekDeliveryPointUUID
-
+import qualified API.Handlers.GetCatalogSummaryV2 as GetCatalogSummaryV2
 
 
 -- This is the implementation of our server.
@@ -72,4 +72,5 @@ apiHandlers = Routes
   , _tallyUpExpenses          = TallyUpExpenses.handler
   , _setOrderDimensions       = SetOrderDimensions.handler
   , _getSdekDeliveryPointUUID = SdekDeliveryPointUUID.handler
+  , _getCatalogSummaryV2      = GetCatalogSummaryV2.handler
   }
