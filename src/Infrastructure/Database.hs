@@ -77,6 +77,7 @@ module Infrastructure.Database
   , setDostavistaOrderStatus
   , setDostavistaPickupByCourierStatus
   , setOrderDimensions
+  , fetchDostavistaPackages
   ) where
 
 
@@ -117,6 +118,7 @@ import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
 import Infrastructure.Database.Types as Types
 import Text (encodeToText, tshow)
+import Infrastructure.Services.Dostavista.Types (DostavistaPackage)
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Database.Fabric (ingestFabricDB)
 import qualified Domain.Warehouse.Types as DWT
@@ -2201,3 +2203,48 @@ fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool =
             ) AS catalog_items
           ORDER BY updated_at DESC
         |]
+
+fetchDostavistaPackages :: [Text] -> Hasql.Pool -> AppM (Either Text [DostavistaPackage])
+fetchDostavistaPackages ordersId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (V.fromList ordersId) $
+      rmap (V.toList . V.map (extractADT . convertFromJson)) $
+      [Hasql.vectorStatement|
+        SELECT
+          jsonb_build_object(
+            'ware_code', o.id,
+            'description', oi.description,
+            'items_count', oi.length,
+            'item_payment_amount', CAST(oi.price AS text)
+          ) :: jsonb
+        FROM orders AS o
+        INNER JOIN (
+          SELECT
+            moi.order_id,
+            STRING_AGG(moi.item_name, ', ') AS description,
+            SUM(moi.length_m) AS length,
+            SUM(moi.total_price) AS price
+          FROM manual_order_items AS moi
+          GROUP BY moi.order_id
+           UNION
+          SELECT
+            ofb.order_id,
+            STRING_AGG(f.name, ', ') AS description,
+            SUM(ofb.length_m) AS length,
+            SUM(CASE 
+             WHEN pre_cut_id IS NULL THEN
+              ROUND(f.price_per_meter * ofb.length_m)
+             ELSE pc.price_rub
+            END) AS price
+          FROM order_fabric_bindings AS ofb
+          INNER JOIN fabrics AS f
+          ON ofb.fabric_id = f.id
+          LEFT JOIN pre_cuts AS pc
+          ON ofb.pre_cut_id = pc.id
+          GROUP BY ofb.order_id
+        ) AS oi
+        ON o.id = oi.order_id
+        WHERE o.id = ANY($1 :: text[])
+        ORDER BY o.id ASC
+      |]

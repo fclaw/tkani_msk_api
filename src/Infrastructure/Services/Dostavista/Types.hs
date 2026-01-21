@@ -26,6 +26,16 @@ data DostavistaContact =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "contact"} ''DostavistaContact)
 
+data DostavistaPackage =
+     DostavistaPackage
+     { pkgWareCode          :: Text
+     , pkgDescription       :: Text
+     , pkgItemsCount        :: Double
+     , pkgItemPaymentAmount :: Text
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pkg" } ''DostavistaPackage)
+
 -- | Represents a point in the delivery (either pickup or dropoff)
 data DostavistaPoint = 
      DostavistaPoint
@@ -35,6 +45,7 @@ data DostavistaPoint =
      -- Other fields like 'latitude', 'longitude' might be needed
     , pointLatitude      :: Text
     , pointLongitude     :: Text
+    , pointPackages      :: [DostavistaPackage]
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "point" } ''DostavistaPoint)

@@ -17,13 +17,14 @@ import Data.Text (Text)
 import Data.String (fromString)
 import Control.Monad (void, forever, when)
 import Control.Monad.IO.Class (liftIO)
-import Servant.Server (ServerError)
+import Servant.Server (ServerError, err500)
 import qualified Data.Text as T
 import Data.Foldable (for_)
 import Data.Either (isLeft, fromLeft)
 import Control.Exception (SomeException, try)
 import Data.Maybe (fromMaybe)
 import Data.List (delete)
+import Control.Monad.Catch (throwM)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text.Encoding as TE
 import Control.Concurrent.Async (async, waitAnyCatchCancel)
@@ -48,7 +49,7 @@ import Infrastructure.Services.Dostavista (scheduleDostavistaPickup)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import  Infrastructure.Services.Dostavista.Types.Config (courierCallCutoffHour)
-import Infrastructure.Database (recordAndLinkPickup, fetchWeightTrackerStateInfo, CourierService (DOSTAVISTA), CourierPickupData (..))
+import Infrastructure.Database (fetchDostavistaPackages, recordAndLinkPickup, fetchWeightTrackerStateInfo, CourierService (DOSTAVISTA), CourierPickupData (..))
 
 
 -- ADT for the notification payload
@@ -251,7 +252,13 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   then do
     $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."            
     -- Call the Dostavista Service
-    eDostavistaResult <- scheduleDostavistaPickup totalWeight
+    pool <- fmap _appDBPool ask
+    eDbRes <- fetchDostavistaPackages (wtsOrders updatedState) pool
+    when(isLeft eDbRes) $ do
+       $(logTM) ErrorS $ ls $ "ddb failure " <> tshow eDbRes
+       throwM err500
+    let Right dostavistaPackages = eDbRes
+    eDostavistaResult <- scheduleDostavistaPickup dostavistaPackages totalWeight
     case eDostavistaResult of
       Left apiErr -> $(logTM) ErrorS $ "Dostavista API call failed: " <> ls (show apiErr)
       Right ord@DostavistaOrderResponse {..} ->
@@ -262,7 +269,6 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
           $(logTM) InfoS "Dostavista call successful. Persisting state."
           $(logTM) DebugS $ "Dostavista order: " <> ls (show ord)          
           -- Persist the "called" state to the database
-          pool <- fmap _appDBPool ask
           -- Get the list of orders to include in this batch from the state
           let ordersInBatch = wtsOrders updatedState
 
@@ -331,7 +337,13 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
      isWithinTimeWindow) $ do
     $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."    
     -- Call the Dostavista Service
-    eDostavistaResult <- scheduleDostavistaPickup wtsTotalWeightGrams
+    pool <- fmap _appDBPool ask
+    eDbRes <- fetchDostavistaPackages wtsOrders pool
+    when(isLeft eDbRes) $ do
+      $(logTM) ErrorS $ ls $ "ddb failure " <> tshow eDbRes
+      throwM err500
+    let Right dostavistaPackages = eDbRes
+    eDostavistaResult <- scheduleDostavistaPickup dostavistaPackages wtsTotalWeightGrams
     case eDostavistaResult of
       Left apiErr -> $(logTM) ErrorS $ "Dostavista API call failed: " <> ls (show apiErr)
       Right ord@DostavistaOrderResponse {..} ->
@@ -342,7 +354,6 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
           $(logTM) InfoS "Dostavista call successful. Persisting state."
           $(logTM) DebugS $ "Dostavista order: " <> ls (show ord)          
           -- Persist the "called" state to the database
-          pool <- fmap _appDBPool ask
           -- Get the list of orders to include in this batch from the state
           let ordersInBatch = wtsOrders
 

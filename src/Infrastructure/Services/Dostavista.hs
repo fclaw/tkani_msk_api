@@ -9,6 +9,7 @@ import Data.Int (Int64)
 import qualified Data.Text as T
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson.Encode.Pretty (encodePretty)
 
 
 import Text (tshow)
@@ -19,8 +20,8 @@ import qualified Infrastructure.Services.Dostavista.Types.Config as Cfg
 import App (AppM, _dostavistaConfig, _configHttpManager, Scheme (HTTPS))
 
 
-scheduleDostavistaPickup :: Int -> AppM (Either HttpError DostavistaOrderResponse)
-scheduleDostavistaPickup totalWeightGrams = do
+scheduleDostavistaPickup :: [DostavistaPackage] -> Int -> AppM (Either HttpError DostavistaOrderResponse)
+scheduleDostavistaPickup packages totalWeightGrams = do
   cfg <- ask
   let mgr = _configHttpManager cfg
   let dostavistaCfg = _dostavistaConfig cfg
@@ -35,17 +36,20 @@ scheduleDostavistaPickup totalWeightGrams = do
         contact 
         (Cfg.latitude (Cfg.source dostavistaCfg)) 
         (Cfg.longitude (Cfg.source dostavistaCfg))
+        packages
   let end = 
         DostavistaPoint 
         (Cfg.address (Cfg.destination dostavistaCfg)) 
         contact
         (Cfg.latitude (Cfg.destination dostavistaCfg)) 
         (Cfg.longitude (Cfg.destination dostavistaCfg))
+        []
   let orderReq = 
         defDostavistaOrderRequest 
         { drTotalWeightKg = fromIntegral totalWeightGrams / 1000
-        , drPoints = [start, end]
+        , drPoints        = [start, end]
         }
+  $(logTM) InfoS $ ls $ "orderReq: " <> encodePretty orderReq
   let token = Token "X-DV-Auth-Token" (Cfg.token dostavistaCfg)
   eResp <- postReq @DostavistaOrderResponse mgr url orderReq (Just token)
   fmap (const eResp) $ $(logTM) InfoS $ "Dostavista order registration response: " <> ls (show eResp)
