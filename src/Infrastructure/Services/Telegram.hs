@@ -13,6 +13,7 @@ module Infrastructure.Services.Telegram
   , sendPhotoToTelegram
   , editMessageMediaWithPhoto
   , sendDocument
+  , forwardTelegramMessage
   , TelegramError(..)
   , MessageIdResponse (..)
   )
@@ -84,12 +85,12 @@ try' = try
 --   >   Left err -> $(logTM) ErrorS ...
 --   >   Right _  -> $(logTM) InfoS ...
 sendOrEditTelegramMessage
-  :: Text                        
+  :: Text                         -- ^ The context for logging
   -> Text                         -- ^ The message text, pre-formatted with MarkdownV2
   -> ChatKey                      -- ^ The target chat
   -> Maybe Int64                  -- ^ The target message_id
-  -> Maybe Int64
-  -> Maybe A.Value
+  -> Maybe Int64                  -- ^ The reply_to_message_id
+  -> Maybe A.Value                -- ^ The reply_markup
   -> AppM (Either TelegramError MessageIdResponse)
 sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId mReplyMarkup = do
   -- 1. Get the necessary config from our application environment
@@ -309,3 +310,55 @@ sendDocument chatKey caption filename fileContent contentType = do
       Left httpErr -> return $ Left (ApiRequestFailed (toException httpErr))
       Right _ -> return $ Right () 
   case res of Nothing -> pure $ Left BotNotFound; Just res -> pure res;
+
+
+
+-- The top-level response for a successful forwardMessage call.
+data ForwardMessageResponse = 
+     ForwardMessageResponse
+     { ok      :: Bool
+      , result :: MessageIdResponse
+     } deriving (Show, Generic)
+
+instance A.FromJSON ForwardMessageResponse
+
+forwardTelegramMessage
+  :: Text                         -- ^ The context for logging.
+  -> ChatKey                      -- ^ The target chat to forward TO.
+  -> ChatKey                      -- ^ The source chat to forward FROM.
+  -> Int64                        -- ^ The message_id in the source chat to forward.
+  -> AppM (Either TelegramError ForwardMessageResponse)
+forwardTelegramMessage context toChatKey fromChaKey fromMessageId = do
+  -- 1. Get the bot token and chat ID for the DESTINATION chat.
+  bots <- fmap _bots ask
+  let mToBotInfo = M.lookup toChatKey bots
+  let mFromBotInfo = M.lookup fromChaKey bots
+  
+  case (,) <$> mToBotInfo <*> mFromBotInfo of
+    Nothing -> pure $ Left BotNotFound
+    Just ((botToken, toChatId), (_, fromChatId)) -> do
+      httpManager <- fmap _configHttpManager ask
+      
+      -- 2. Construct the API URL for the 'forwardMessage' endpoint.
+      let url = "https://api.telegram.org/bot" <> T.unpack botToken <> "/forwardMessage"
+      
+      -- 3. The JSON payload is simple for this endpoint.
+      let payload = A.object
+            [ "chat_id"      A..= toChatId
+            , "from_chat_id" A..= fromChatId
+            , "message_id"   A..= fromMessageId
+            ]
+            
+      -- 4. Perform the API call (reusing your existing pattern).
+      eResult <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+
+      -- 5. Handle the response (reusing your existing error handling).
+      case eResult of
+        Right response -> do
+          -- Decode the response into our new 'ForwardMessageResponse' type.
+          let eitherDecodeResult = A.eitherDecode @ForwardMessageResponse (response ^. responseBody)
+          pure $ first (JSONError . T.pack) eitherDecodeResult
+          
+        Left err ->
+          fmap (const (Left (ApiRequestFailed err))) $
+            $(logTM) ErrorS $ "CRITICAL: Failed to forward a message for " <> ls context <> ". Error: " <> ls (show err)

@@ -187,6 +187,7 @@ processSingleJob (Right PriceJob {..}) = do
                               , porpWidth  = piWidth
                               , porpHeight = piHeight
                               , porpItems  = items
+                              , porpNumber = orderId
                               }
                 let patchedOrderReq = PatchedOrderRequest podSdekUuid [package]
                 $(logTM) InfoS $ ls $ "PatchedOrderRequest: \n" <> encodePretty patchedOrderReq
