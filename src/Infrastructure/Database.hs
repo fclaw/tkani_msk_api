@@ -2075,7 +2075,7 @@ fetchSpecialPostDetails lifeCycle pool =
              ) AS ordered_items
             ) AS all_items,
             (SELECT 
-             array_agg(random_thumbnails)
+             array_agg(random_thumbnails.thumbnail)
              FROM (
               SELECT thumbnail
               FROM relevant_fabrics
