@@ -19,6 +19,7 @@ import Data.Foldable (for_)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
+import System.Environment (lookupEnv)
 import Network.HTTP.Client (Manager)
 import Data.UUID.V4 (nextRandom)
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -67,7 +68,7 @@ generateCollageViaService urls jobId = do
       liftIO $ fmap Right $ getStubFilePath mgr stubPath
     else do
       -- 1. Define paths within the shared volume (from the API container's perspective)
-      let sharedVolumePath = "/app/tmp" -- The mount point in the tkani-api container
+      sharedVolumePath <- liftIO $ fromMaybe "/data"  <$> lookupEnv "SHARED_DATA_PATH" -- The mount point in the tkani-api container
       let jobDir = sharedVolumePath </> ("collage_job_" <> show jobId)
       let outputFilename = "collage_result_" <> showt jobId <> ".jpg"
 

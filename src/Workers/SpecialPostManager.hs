@@ -56,7 +56,7 @@ runSpecialPostManager = do
             fromMaybe (7, 10) $
               lookup lifeCycle postsCfgs
       managePost lifeCycle lifeTime itemThreshold
-    liftIO $ threadDelay (30 * 60 * 1000000) -- Wait 30 minutes
+    liftIO $ threadDelay (10 * 60 * 1000000) -- Wait 30 minutes
   
 
 -- | Returns the appropriate button text for a given lifecycle state.

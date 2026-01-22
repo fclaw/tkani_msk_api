@@ -406,6 +406,7 @@ data SearchTeaser = SearchTeaser
   , stArticle      :: Text
   , stType         :: FabricType
   , stPrice        :: Int       -- Can be price_per_meter or total_price
+  , stDiscount     :: Double
   , stThumbnailUrl :: Maybe Text
   } deriving (Show, Eq, Generic)
 
