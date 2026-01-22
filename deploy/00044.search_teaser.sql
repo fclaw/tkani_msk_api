@@ -23,7 +23,7 @@ BEGIN
                 'name', f.name,
                 'article', f.article,
                 'type', 'roll',
-                'price', f.price_per_meter,
+                'price', ROUND(f.price_per_meter * (1 - f.discount)),
                 'discount', f.discount,
                 'thumbnail_url', f.thumbnail_url
             ) :: jsonb AS teaser_json
@@ -53,7 +53,7 @@ BEGIN
                 'name', f.name || ' (отрез ' || pc.length_m || 'м)',
                 'article', f.article,
                 'type', 'pre_cut',
-                'price', pc.price_rub,
+                'price', ROUND(pc.price_rub * (1 - f.discount)),
                 'discount', f.discount,
                 'thumbnail_url', f.thumbnail_url
             ) :: jsonb AS teaser_json
