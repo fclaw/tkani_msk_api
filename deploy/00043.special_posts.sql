@@ -25,11 +25,14 @@ CREATE TABLE special_posts (
     -- The timestamp when this post was last created or updated.
     posted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-        -- Enforce the "one active post per type" rule at the database level.
-    UNIQUE (post_type, is_active) WHERE (is_active = TRUE)
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- This is the correct way to create a partial unique constraint.
+-- It enforces that for any given post_type, only one row can have is_active = TRUE.
+CREATE UNIQUE INDEX special_posts_unique_active_post_type
+ON special_posts (post_type)
+WHERE (is_active = TRUE);
 
 
 ALTER TABLE fabrics DROP COLUMN IF EXISTS selling_price;
