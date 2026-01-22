@@ -13,6 +13,8 @@ module Config
   ) where
 
 
+import Data.Aeson
+import Data.Either (isLeft)
 import Control.Applicative ((<|>))
 import Data.Text (Text, pack, unpack, strip)
 import qualified Data.Text as T
@@ -26,11 +28,11 @@ import Database.PostgreSQL.Simple (ConnectInfo (..), defaultConnectInfo)
 import Data.Int (Int64)
 import Text.Printf (printf)
 import GHC.Generics (Generic)
-import Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as LBS
 
 
 import Text (textToInt, textToDouble, textToBool)
+import Domain.Warehouse.Enums (FabricLifecycle)
 
 
 instance ToJSON ConnectInfo
@@ -71,6 +73,8 @@ data Config = Config
   , configGeocodeApiKey          :: Text
   , configGeocodeUrl             :: Text
   , configRateLimitAllowedUsers  :: [Int64]
+  , configPostLifeDetails        :: [(FabricLifecycle, (Int, Int))]
+  , configConciergeBotUrl        :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -158,10 +162,17 @@ loadConfig = do
   let configGeocodeApiKey = (Map.!) env "GEOCODE_API_KEY"
   let configGeocodeUrl = (Map.!) env "GEOCODE_URL"
 
+  let configConciergeBotUrl = (Map.!) env "CONCIERGE_BOT_URL"
+
   let configRateLimitAllowedUsersMaybe = decode @[Int64] . LBS.pack . T.unpack $ (Map.!) env "RATE_LIMIT_ALLOWED_USER_IDS"
 
   when(isNothing configRateLimitAllowedUsersMaybe) $ error "cannot parse RATE_LIMIT_ALLOWED_USER_IDS"
 
+  let configPostLifeDetailEither = eitherDecode @[(FabricLifecycle, (Int, Int))] . LBS.pack . T.unpack $ (Map.!) env "POST_LIFE_DETAILS"
+
+  when(isLeft configPostLifeDetailEither) $ error $ "cannot parse POST_LIFE_DETAILS " <> show configPostLifeDetailEither
+
+  let Right configPostLifeDetails = configPostLifeDetailEither
   let Just configRateLimitAllowedUsers = configRateLimitAllowedUsersMaybe
 
   -- 3. Parse the port number

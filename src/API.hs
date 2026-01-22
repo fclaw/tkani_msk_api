@@ -89,14 +89,6 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "query" Text
        :> Get '[JSON] (ApiResponse (Maybe TrackOrder))
-     -- deprecated, will be replaced by fixed catalogs: regular, on sale, clearance
-  , _getCatalogSummary
-       :: route
-       :- "catalog"
-       :> "by-date"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> QueryParam "date" CatalogDate
-       :> Get '[JSON] (ApiResponse CatalogSummary)
    , _searchFabrics 
        :: route
        :- "search"
@@ -112,28 +104,6 @@ data Routes route = Routes
        :> Capture "type" FabricType
        :> Capture "id" Int64
        :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
-   , _putDailyDigest
-       :: route
-       :- "warehouse"
-       :> "daily-digest"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> Post '[JSON] ()
-  , _draftDailyDigestDraft
-       :: route
-       :- "warehouse"
-       :> "daily-digest"
-       :> "draft"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> ReqBody '[JSON] DailyDigestDraft
-       :> Post '[JSON] (ApiResponse ())
-  , _publishDailyDigest
-       :: route
-       :- "warehouse"
-       :> "daily-digest"
-       :> "publish"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> ReqBody '[JSON] DailyDigest
-       :> Post '[JSON] (ApiResponse ())
   , _cancelOrder
        :: route
        :- "order"
@@ -225,12 +195,12 @@ data Routes route = Routes
        :> QueryParam "address" Text
        :> QueryParam "user" Int64
        :> Get '[JSON] (ApiResponse SdekDeliveryPoint)
-   , _getCatalogSummaryV2
+   , _getCatalogSummary
        :: route
        :- "catalog"
        :> RateLimitPerUser (Second 1) 'Nothing
-       :> QueryParam "life-cycle" FabricLifecycle 
-       :> Get '[JSON] (ApiResponse CatalogSummaryV2)
+       :> QueryParam "life-cycle" FabricLifecycle
+       :> Get '[JSON] (ApiResponse CatalogSummary)
 
   } deriving (Generic)
 

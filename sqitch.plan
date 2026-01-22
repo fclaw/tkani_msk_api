@@ -43,3 +43,4 @@
 00040.order 2026-01-16T08:59:03Z System Administrator <root@Sonny.local> # order status: scheduled for pickup
 00041.price_calulcator 2026-01-17T06:21:16Z System Administrator <root@Sonny.local> # notify price calculator event
 00042.fabric_lifecycle 2026-01-20T12:50:23Z System Administrator <root@Sonny.local> # fabric: life cycle
+00043.special_posts 2026-01-21T08:36:01Z System Administrator <root@Sonny.local> # special posts

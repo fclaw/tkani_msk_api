@@ -29,8 +29,8 @@ library
       Workers.OrderDeliveryScheduler
       Workers.DailyWeightTracker
       Workers.DostavistaOrderStatusPoller
+      Workers.SpecialPostManager
       Infrastructure.Services.Overpass
-      Application.Listener
       Application.Cart
       Lib.Servant.RateLimit
       Infrastructure.Services.Sdek.Types
@@ -41,12 +41,8 @@ library
       API.Handlers.CancelOrder
       API.Handlers.CheckCartItem
       API.Handlers.ClearCart
-      API.Handlers.DailyDigest.Draft
-      API.Handlers.DailyDigest.New
-      API.Handlers.DailyDigest.Publish
       API.Handlers.DeleteFabric
       API.Handlers.GetCatalogSummary
-      API.Handlers.GetCatalogSummaryV2
       API.Handlers.GetDeliveryPoints
       API.Handlers.GetFabricPreview
       API.Handlers.GetProviders

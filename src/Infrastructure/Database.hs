@@ -28,8 +28,6 @@ module Infrastructure.Database
   , fetchOrderStatus
   , getOrdersInTransit
   , markOrderAsInvalid
-    -- !!! deprecated
-  , fetchCatalogSummaryItem
   , fetchCatalogSummaryItemV2
   , checkFabricPreCuts
   , insertNewPaymentRecord
@@ -38,10 +36,6 @@ module Infrastructure.Database
   , updatePaymentStatus
   , searchFabrics
   , searchFabricCard
-  , saveDailyDigestDraft
-  , checkDailyDigestDraft
-  , updateDailyDigestDraft
-  , setDailyDigestStatus
   , fetchPaymentId
   , isItemInCart
   , addToCart
@@ -78,6 +72,9 @@ module Infrastructure.Database
   , setDostavistaPickupByCourierStatus
   , setOrderDimensions
   , fetchDostavistaPackages
+  , fetchSpecialPostDetails
+  , insertNewSpecialPost
+  , deleteSpecialPost
   ) where
 
 
@@ -207,7 +204,7 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', f.price_per_meter :: int4,
+        'price', ROUND(f.price_per_meter * (1 - f.discount)) :: int4,
         'stock_available', 
           (f.available_length_m - 
            COALESCE(cl.length, 0.0)) :: float8,
@@ -236,7 +233,7 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', pc.price_rub :: int4,
+        'price', ROUND(pc.price_rub * (1 - f.discount)),
         'stock_available', pc.length_m,
         'status',
           CASE 
@@ -286,9 +283,9 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', f.price_per_meter * ci.length_m,
+        'total_price', ROUND(f.price_per_meter * (1 - f.discount)) * ci.length_m,
         'fabric_type', ci.item_type,
-        'price_per_metre', f.price_per_meter,
+        'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
         'length_m', ci.length_m,
         'telegram_url', ci.telegram_url
        ) :: jsonb
@@ -305,7 +302,7 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', pc.price_rub,
+        'total_price', ROUND(pc.price_rub * (1 - f.discount)),
         'fabric_type', ci.item_type,
         'price_per_metre', null,
         'length_m', null,
@@ -601,124 +598,6 @@ searchFabrics query limit offset metreThreshold pool =
         metreThreshold) 
       searchFabricsStatement
 
-fetchCatalogSummaryItemStatement :: Hasql.Statement (Day, Double) [CatalogSummaryItem]
-fetchCatalogSummaryItemStatement =
-  rmap (V.toList . V.map (extractADT . convertFromJson)) $
-  [Hasql.vectorStatement|
-    WITH pre_cut_in_order AS (
-      SELECT ofb.pre_cut_id as pre_cut_id
-      FROM order_fabric_bindings ofb
-      JOIN orders o
-      ON ofb.order_id = o.id
-      WHERE ofb.pre_cut_id IS NOT NULL
-      AND o.status = 'registered'
-      AND o.created_at > 
-          NOW() - INTERVAL '30 minutes'
-    )
-    SELECT item_json :: jsonb
-      FROM (
-          SELECT
-            f.updated_at,
-            jsonb_build_object(
-              'id', f.id,
-              'name', f.name,
-              'article', f.article,
-              'type', 'roll',
-              'price_per_meter', f.price_per_meter,
-              'total_price', NULL,
-              'length_m', NULL,
-              'available_length', 
-                f.available_length_m - 
-                COALESCE(locked_stock.total_locked, 0),
-              'is_sold_out', f.is_sold,
-              'warehouse_message_id', f.warehouse_message_id,
-              'warehouse_chat_id', -1001234567890,
-              'warehouse_file_id', f.image_url,
-              'description', f.description,
-              'media_type', to_jsonb(f.media_type),
-              'width', f.width
-            ) AS item_json
-          FROM 
-            fabrics AS f
-          LEFT JOIN (
-            SELECT 
-              ci.fabric_id, 
-              SUM(ci.length_m) AS total_locked
-            FROM cart_items ci
-            JOIN carts c 
-            ON ci.cart_id = c.id
-            WHERE 
-              ci.item_type = 'roll'
-              AND c.updated_at > NOW() - INTERVAL '30 minutes' 
-            GROUP BY ci.fabric_id
-
-            UNION ALL
-
-            SELECT
-              ofb.fabric_id,
-              COALESCE(SUM(ofb.length_m), 0.0) AS total_locked
-            FROM order_fabric_bindings ofb
-            JOIN orders o 
-            ON ofb.order_id = o.id
-            WHERE 
-              ofb.fabric_id IS NOT NULL
-              AND ofb.pre_cut_id IS NULL
-              AND o.status = 'registered'
-              AND o.created_at > NOW() - INTERVAL '30 minutes'
-            GROUP BY ofb.fabric_id 
-          ) AS locked_stock
-          ON f.id = locked_stock.fabric_id
-          INNER JOIN daily_digests AS dd
-          ON dd.id = f.daily_digest_id
-          WHERE
-            dd.announcement_date = $1 :: date
-            AND f.is_sold = FALSE
-            AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0.0)) > $2 :: float8
-
-          UNION ALL
-
-          SELECT
-              f.updated_at,
-              jsonb_build_object(
-                  'id', pc.id,
-                  'name', f.name,
-                  'article', f.article,
-                  'type', 'pre_cut',
-                  'price_per_meter', NULL,
-                  'total_price', pc.price_rub,
-                  'length_m', pc.length_m,
-                  'available_length', null,
-                  'is_sold_out', FALSE,
-                  'warehouse_message_id', f.warehouse_message_id,
-                  'warehouse_chat_id', -1001234567890,
-                  'warehouse_file_id', f.image_url,
-                  'description', f.description,
-                  'media_type', to_jsonb(f.media_type),
-                  'width', f.width
-              ) :: jsonb AS item_json
-          FROM pre_cuts AS pc
-          LEFT JOIN cart_items AS ci
-          ON pc.id = ci.pre_cut_id
-          JOIN fabrics AS f ON pc.fabric_id = f.id
-          LEFT JOIN pre_cut_in_order as pcio
-          ON pcio.pre_cut_id = ci.id
-          INNER JOIN daily_digests AS dd
-          ON dd.id = pc.daily_digest_id
-          WHERE dd.announcement_date = $1 :: date
-          AND pc.in_stock = TRUE
-          AND ci.pre_cut_id IS NULL
-          AND pcio.pre_cut_id IS NULL
-      ) AS catalog_items
-    ORDER BY updated_at DESC
-  |]
-
-fetchCatalogSummaryItem :: Day -> Double -> Hasql.Pool -> AppM (Either Text [CatalogSummaryItem])
-fetchCatalogSummaryItem day threshold pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      (day, threshold) `Hasql.statement` fetchCatalogSummaryItemStatement
-
-
 checkFabricPreCutsStatement :: Hasql.Statement Text Bool
 checkFabricPreCutsStatement =
   [Hasql.singletonStatement|
@@ -846,7 +725,7 @@ searchFabricCardStatement =
             'name', f.name,
             'article', f.article,
             'type', 'roll',
-            'price_per_meter', f.price_per_meter,
+            'price_per_meter', ROUND(f.price_per_meter * (1 - f.discount)),
             'total_price', NULL,
             'length_m', NULL,
             'available_length', 
@@ -874,7 +753,7 @@ searchFabricCardStatement =
             'article', f.article,
             'type', 'pre_cut',
             'price_per_meter', NULL,
-            'total_price', pc.price_rub,
+            'total_price', ROUND(pc.price_rub * (1 - f.discount)),
             'length_m', pc.length_m,
             'is_sold_out', FALSE,
             'warehouse_message_id', f.warehouse_message_id,
@@ -910,71 +789,6 @@ searchFabricCard fabricType fabricId threshold pool =
     runTransactionM pool Hasql.Read $ 
       (fabricType, fabricId, threshold) `Hasql.statement` 
         searchFabricCardStatement
-
-
-checkDailyDigestStatement :: Hasql.Statement Day Bool
-checkDailyDigestStatement = [Hasql.singletonStatement|SELECT EXISTS(SELECT 1 FROM daily_digests WHERE announcement_date = $1 :: date) :: bool|]
-
-checkDailyDigestDraft :: Day -> Hasql.Pool -> AppM (Either Text Bool)
-checkDailyDigestDraft day pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Read $ 
-      day `Hasql.statement` checkDailyDigestStatement
-
-saveDailyDigestStatement :: Hasql.Statement (Day, Int64, Int64) ()
-saveDailyDigestStatement =
-  rmap (const ())
-  [Hasql.rowsAffectedStatement|
-    INSERT INTO daily_digests 
-    ( announcement_date
-    , warehouse_chat_id
-    , warehouse_message_id)
-    VALUES ($1 :: date, $2 :: int8, $3 :: int8)
-    ON CONFLICT (announcement_date)
-    DO NOTHING
-  |]
-
-saveDailyDigestDraft :: Day -> Int64 -> Int64 -> Hasql.Pool -> AppM (Either Text ())
-saveDailyDigestDraft day chatId messageId pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      (day, chatId, messageId) `Hasql.statement` 
-      saveDailyDigestStatement
-
-updateDailyDigestStatement :: Hasql.Statement DailyDigestDraft ()
-updateDailyDigestStatement =
-  dimap $(recordToTuple ''DailyDigestDraft) (const ())
-  [Hasql.rowsAffectedStatement|
-    UPDATE daily_digests
-    SET final_draft = $3 :: text
-    WHERE warehouse_chat_id = $1 :: int8 
-    AND warehouse_message_id = $2 :: int8
-  |]
-
-
-updateDailyDigestDraft :: DailyDigestDraft -> Hasql.Pool -> AppM (Either Text ())
-updateDailyDigestDraft draft pool =
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      draft `Hasql.statement` 
-      updateDailyDigestStatement
-
-setDailyDigestStatusStatement :: DailyDigestStatus -> Hasql.Statement DailyDigest ()
-setDailyDigestStatusStatement status = 
-  dimap (snocT (encodeToText status) . $(recordToTuple ''DailyDigest)) (const ())
-  [Hasql.rowsAffectedStatement|
-    UPDATE daily_digests
-    SET status = CAST($3 :: text AS daily_digests_status)
-    WHERE warehouse_chat_id = $1 :: int8 
-    AND warehouse_message_id = $2 :: int8
-  |]
-
-setDailyDigestStatus :: DailyDigest -> DailyDigestStatus -> Hasql.Pool -> AppM (Either Text ())
-setDailyDigestStatus publish status pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      publish `Hasql.statement` (setDailyDigestStatusStatement status)
-
 
 fetchPaymentIdStatement :: Hasql.Statement Text (Maybe Text)
 fetchPaymentIdStatement = 
@@ -1239,7 +1053,7 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', ci.length_m,
-        'price', ci.length_m * f.price_per_meter
+        'price', ci.length_m * ROUND(f.price_per_meter * (1 - f.discount))
        ) :: jsonb
      FROM carts as c 
      INNER JOIN cart_items as ci
@@ -1256,7 +1070,7 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', pc.length_m,
-        'price', pc.price_rub
+        'price', ROUND(pc.price_rub * (1 - f.discount))
        ) :: jsonb
      FROM cart_items as ci
 	   INNER JOIN carts as c
@@ -1310,7 +1124,7 @@ patchRoll fabric pool =
               WHERE announcement_date = $12 :: date?
               LIMIT 1),
             lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
-            selling_price = COALESCE($14 :: int4?, selling_price),
+            discount = COALESCE($14 :: float8?, discount),
             updated_at = now()
           WHERE id = $1 :: int8
           RETURNING EXISTS (
@@ -1350,7 +1164,7 @@ patchPrecut fabric pool =
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
             lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
-            selling_price = COALESCE($14 :: int4?, selling_price),
+            discount = COALESCE($14 :: float8?, discount),
             updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
           RETURNING EXISTS (
@@ -1702,8 +1516,8 @@ getOrderDetailsForPricing orderId pool =
                 'price',
                  CASE
                    WHEN ofb.pre_cut_id IS NULL
-                   THEN CAST(ofb.length_m * f.price_per_meter AS int)
-                   ELSE pc.price_rub
+                   THEN CAST(ofb.length_m * ROUND(f.price_per_meter * (1 - f.discount)) AS int)
+                   ELSE ROUND(pc.price_rub * (1 - f.discount))
                  END          
               )) :: jsonb[] AS items
           FROM orders AS o
@@ -1770,8 +1584,8 @@ getPatchedOrderDetails orderId pool =
                 'cost',
                   CASE
                     WHEN ofb.length_m IS NOT NULL
-                    THEN f.price_per_meter * ofb.length_m
-                    ELSE pc.price_rub
+                    THEN ROUND(f.price_per_meter * (1 - f.discount)) * ofb.length_m
+                    ELSE ROUND(pc.price_rub * (1 - f.discount))
                   END
                ) ORDER BY COALESCE(f.article, pcf.article))
             ) :: jsonb
@@ -2116,7 +1930,7 @@ fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool =
                     'name', f.name,
                     'article', f.article,
                     'type', 'roll',
-                    'price_per_meter', f.price_per_meter,
+                    'price_per_meter', ROUND(f.price_per_meter * (1 - f.discount)),
                     'total_price', NULL,
                     'length_m', NULL,
                     'available_length', 
@@ -2129,8 +1943,7 @@ fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool =
                     'description', f.description,
                     'media_type', to_jsonb(f.media_type),
                     'width', f.width,
-                    'selling_price', f.selling_price,
-                    'life_cycle', to_jsonb($1 :: text)
+                    'discount', f.discount
                   ) AS item_json
                 FROM 
                   fabrics AS f
@@ -2176,7 +1989,7 @@ fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool =
                         'article', f.article,
                         'type', 'pre_cut',
                         'price_per_meter', NULL,
-                        'total_price', pc.price_rub,
+                        'total_price', ROUND(pc.price_rub * (1 - f.discount)),
                         'length_m', pc.length_m,
                         'available_length', null,
                         'is_sold_out', FALSE,
@@ -2186,8 +1999,7 @@ fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool =
                         'description', f.description,
                         'media_type', to_jsonb(f.media_type),
                         'width', f.width,
-                        'selling_price', f.selling_price,
-                        'life_cycle', to_jsonb($1 :: text)
+                        'discount', f.discount
                     ) :: jsonb AS item_json
                 FROM pre_cuts AS pc
                 LEFT JOIN cart_items AS ci
@@ -2234,8 +2046,8 @@ fetchDostavistaPackages ordersId pool =
             SUM(ofb.length_m) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
-              ROUND(f.price_per_meter * ofb.length_m)
-             ELSE pc.price_rub
+              ROUND(ROUND(f.price_per_meter * (1 - f.discount)) * ofb.length_m)
+             ELSE ROUND(pc.price_rub * (1 - f.discount))
             END) AS price
           FROM order_fabric_bindings AS ofb
           INNER JOIN fabrics AS f
@@ -2247,4 +2059,83 @@ fetchDostavistaPackages ordersId pool =
         ON o.id = oi.order_id
         WHERE o.id = ANY($1 :: text[])
         ORDER BY o.id ASC
+      |]
+
+
+fetchSpecialPostDetails :: FabricLifecycle -> Hasql.Pool -> AppM (Either Text SpecialPostDetails)
+fetchSpecialPostDetails lifeCycle pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (encodeToText lifeCycle) $
+      rmap (extractADT . convertFromJson @SpecialPostDetails) $
+      [Hasql.singletonStatement|
+        WITH relevant_fabrics AS (
+          SELECT
+            f.name,
+            f.thumbnail_url AS thumbnail,
+            f.lifecycle_changed_at,
+            ROUND(100 * f.discount) AS discount
+          FROM fabrics AS f
+          WHERE f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
+          AND f.is_sold = FALSE
+        ),
+        fabric_summary AS (
+          SELECT
+            (SELECT COUNT(*) FROM relevant_fabrics) AS total_count,
+            (SELECT 
+              array_agg(
+               jsonb_build_object(
+                'name', name,
+                'discount', discount
+              ))
+             FROM (
+              SELECT name, discount
+              FROM relevant_fabrics
+              ORDER BY lifecycle_changed_at ASC
+             ) AS ordered_items
+            ) AS all_items,
+            (SELECT 
+             array_agg(random_thumbnails)
+             FROM (
+              SELECT thumbnail
+              FROM relevant_fabrics
+              ORDER BY random()
+              LIMIT 9
+             ) AS random_thumbnails
+            ) AS random_thumbnail_urls
+        )
+        SELECT
+          jsonb_build_object(
+           'message_id',  sp.message_id :: int8?,
+           'posted_at', sp.posted_at :: timestamptz?,
+           'items_count', fs.total_count :: int4,
+           'items', COALESCE(fs.all_items, '{}') :: jsonb[],
+           'random_thumbnail_urls', COALESCE(fs.random_thumbnail_urls, '{}') :: text[]
+          ) :: jsonb
+        FROM fabric_summary AS fs
+        LEFT JOIN special_posts AS sp
+        ON sp.post_type = CAST($1 :: text AS special_post_type) 
+        AND sp.is_active = TRUE
+      |]
+
+insertNewSpecialPost :: Int64 -> FabricLifecycle -> Hasql.Pool -> AppM (Either Text ())
+insertNewSpecialPost msgId lifeCycle pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (msgId, encodeToText lifeCycle) $
+      [Hasql.resultlessStatement|
+        INSERT INTO 
+        special_posts (message_id,post_type) 
+        VALUES ($1 :: int8, CAST($2 :: text AS special_post_type))
+      |]
+
+deleteSpecialPost :: Int64 -> Hasql.Pool -> AppM (Either Text ())
+deleteSpecialPost msgId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (msgId) $
+      [Hasql.resultlessStatement|
+        UPDATE special_posts
+        SET is_active = FALSE
+        WHERE message_id = $1 :: int8
       |]

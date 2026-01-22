@@ -79,6 +79,7 @@ import Text (recordLabelModifier)
 import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
+import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
@@ -201,6 +202,9 @@ data ChatKey =
 
 type Bots = M.Map ChatKey (Text, Int64)
 
+
+type PostCfg = (Int, Int)
+
 -- | AppState holds all the shared, read-only resources for our application.
 data Config = Config
   { _appDBPool              :: Pool
@@ -225,6 +229,8 @@ data Config = Config
   , _dostavistaConfig       :: DostavistaConfig
   , _geocodeApiKey          :: Text
   , _geocodeUrl             :: Text
+  , _postsCfgs              :: [(FabricLifecycle, PostCfg)]
+  , _conciergeBotUrl        :: Text
   }
 
 -- A helper type for parsing the YAML

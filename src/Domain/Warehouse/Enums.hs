@@ -24,7 +24,7 @@ data FabricLifecycle
   | OnSale
   | Clearance
   | Archived
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, Enum)
 
 
 -- The Template Haskell that generates your FromJSON and ToJSON instances

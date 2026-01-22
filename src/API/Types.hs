@@ -108,12 +108,11 @@ data RawIngestRequest =
       -- !! deprecated field
     , rawGalleryDate      :: Maybe Day
     , rawFabricProperties :: FabricProperties
-    , rawLifeCycle  :: Maybe FabricLifecycle
-    , rawSellingPrice     :: Maybe Int32
+    , rawLifeCycle        :: Maybe FabricLifecycle
+    , rawDiscount         :: Maybe Double
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)
-
 
 
 data NewFabric = 
@@ -386,32 +385,19 @@ data CatalogSummaryItem = CatalogSummaryItem
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)
 
--- | The top-level response for a daily catalog request.
+
+type CatalogSummaryItemExt = WithField "discount" (Maybe Double) (CatalogSummaryItem)
+
+-- | The top-level response for a catalog request.
 data CatalogSummary = CatalogSummary
-  { -- | The date for which the catalog is generated (e.g., "2025-11-26").
-    csDate       :: Text
-    -- | The total number of items in today's catalog.
-  , csTotalItems :: Int
+  { -- | The total number of items in a catalog.
+    csTotalItems :: Int
     -- | The list of fabric summary items for the carousel.
-  , csItems      :: [CatalogSummaryItem]
+  , csItems      :: [CatalogSummaryItemExt]
   } deriving (Show, Eq, Generic)
 
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cs" } ''CatalogSummary)
-
-
-type CatalogSummaryItemExt = WithField "life_cycle" FabricLifecycle (WithField "selling_price" (Maybe Int) (CatalogSummaryItem))
-
--- | The top-level response for a catalog request.
-data CatalogSummaryV2 = CatalogSummaryV2
-  { -- | The total number of items in a catalog.
-    csv2TotalItems :: Int
-    -- | The list of fabric summary items for the carousel.
-  , csv2Items      :: [CatalogSummaryItemExt]
-  } deriving (Show, Eq, Generic)
-
-
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csv2" } ''CatalogSummaryV2)
 
 
 -- | ADT for the lightweight search result list (Inline "Teaser" Mode)

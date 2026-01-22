@@ -65,8 +65,10 @@ runSdekOrderStatusPoller = do
                   orderId <> 
                   " has changed status from " <> 
                   pack (show status) <> " to " <> 
-                  pack (show newStatus)
-              let keepUntil | newStatus == Delivered = 
+                  pack (show newStatus) <>
+                  ", SDEK status: " <> 
+                  pack (show (entityCdekStatus entity))
+              let keepUntil | newStatus == Delivered =
                               entityKeepFreeUntil entity
                             | otherwise = Nothing
               void $ updateOrderStatus orderId newStatus keepUntil pool)

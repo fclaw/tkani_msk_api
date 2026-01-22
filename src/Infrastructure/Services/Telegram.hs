@@ -16,6 +16,7 @@ module Infrastructure.Services.Telegram
   , forwardTelegramMessage
   , TelegramError(..)
   , MessageIdResponse (..)
+  , ForwardMessageResponse (..)
   )
 where
 

@@ -18,12 +18,8 @@ import qualified API.Handlers.GetProviders as GetProviders
 import qualified API.Handlers.PlaceNewOrder as PlaceNewOrder
 import qualified API.Handlers.SetTelegramMessage as SetTelegramMessage
 import qualified API.Handlers.TrackOrder as TrackOrder
-import qualified API.Handlers.GetCatalogSummary as GetCatalogSummary
 import qualified API.Handlers.SearchFabrics as SearchFabrics
 import qualified API.Handlers.SearchFabricCard as SearchFabricCard
-import qualified API.Handlers.DailyDigest.New as DailyDigest.New
-import qualified API.Handlers.DailyDigest.Draft as DailyDigest.Draft
-import qualified API.Handlers.DailyDigest.Publish as DailyDigest.Publish
 import qualified API.Handlers.CancelOrder as CancelOrder
 import qualified API.Handlers.CheckCartItem as CheckCartItem
 import qualified API.Handlers.AddToCart as AddToCart
@@ -38,7 +34,7 @@ import qualified API.Handlers.ReportMonthlySales as ReportMonthlySales
 import qualified API.Handlers.TallyUpExpenses as TallyUpExpenses
 import qualified API.Handlers.SetOrderDimensions as SetOrderDimensions
 import qualified API.Handlers.SdekDeliveryPointUUID as SdekDeliveryPointUUID
-import qualified API.Handlers.GetCatalogSummaryV2 as GetCatalogSummaryV2
+import qualified API.Handlers.GetCatalogSummary as GetCatalogSummary
 
 
 -- This is the implementation of our server.
@@ -52,12 +48,8 @@ apiHandlers = Routes
   , _placeNewOrder            = PlaceNewOrder.handler
   , _setTelegramMessage       = SetTelegramMessage.handler
   , _trackOrder               = TrackOrder.handler
-  , _getCatalogSummary        = GetCatalogSummary.handler
   , _searchFabrics            = SearchFabrics.handler
   , _searchFabricCard         = SearchFabricCard.handler
-  , _putDailyDigest           = DailyDigest.New.handler
-  , _draftDailyDigestDraft    = DailyDigest.Draft.handler
-  , _publishDailyDigest       = DailyDigest.Publish.handler
   , _cancelOrder              = CancelOrder.handler
   , _checkCartItem            = CheckCartItem.handler
   , _addToCart                = AddToCart.handler
@@ -72,5 +64,5 @@ apiHandlers = Routes
   , _tallyUpExpenses          = TallyUpExpenses.handler
   , _setOrderDimensions       = SetOrderDimensions.handler
   , _getSdekDeliveryPointUUID = SdekDeliveryPointUUID.handler
-  , _getCatalogSummaryV2      = GetCatalogSummaryV2.handler
+  , _getCatalogSummary      = GetCatalogSummary.handler
   }

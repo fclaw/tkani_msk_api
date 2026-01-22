@@ -1,43 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module API.Handlers.GetCatalogSummary(handler) where
+module API.Handlers.GetCatalogSummary (handler) where
 
 
 import Katip
-import Control.Monad.Reader.Class (ask)
-import Control.Monad.IO.Class (liftIO)
-import Data.Time.Format.ISO8601 (iso8601Show)
-import Data.Coerce (coerce)
-import Data.Text (pack)
-import Data.Time (Day)
 import Data.Bifunctor (first)
+import Control.Monad.Reader.Class (ask)
 import qualified Data.Map.Strict as M
 
-import API.Types (CatalogDate (..), CatalogSummary (..))
 import App (AppM)
+import Text (tshow)
+import API.Types (CatalogSummary (..))
+import Domain.Warehouse.Enums (FabricLifecycle)
 import API.Types (ApiResponse, mkError, csiWarehouseChatId)
-import Infrastructure.Database (fetchCatalogSummaryItem)
+import Infrastructure.Database (fetchCatalogSummaryItemV2)
 import App (AppM, _appDBPool, _bots, ChatKey (WAREHOUSE), _thresholdMetres)
 
 
-handler :: Maybe CatalogDate -> AppM (ApiResponse CatalogSummary)
-handler Nothing = return $ Left $ mkError "Date parameter is required"
-handler (Just cday) = do
-  let day = (coerce cday) :: Day
-  $(logTM) InfoS $ ls $ "Request received for fetching catalog items for " <> (pack (iso8601Show day))
+handler :: Maybe FabricLifecycle -> AppM (ApiResponse CatalogSummary)
+handler Nothing = return $ Left $ mkError "FabricLifecycle is required"
+handler (Just lifeCycle) = do
+  $(logTM) InfoS $ ls $ "Request received for fetching catalog items for " <> tshow lifeCycle
   cfg <- ask
   let pool = _appDBPool cfg
   let threshold = _thresholdMetres cfg
   let Just (_, chatId) = M.lookup WAREHOUSE $ _bots cfg
-  eRes <- fetchCatalogSummaryItem day threshold pool
-  let catalogSummary =
-        flip fmap eRes $ \items ->
-          let newItems = 
-                flip map items $ \item -> 
-                  item { csiWarehouseChatId = fromIntegral chatId }
-          in CatalogSummary 
-              (pack (iso8601Show day))
-              (length newItems)
-              newItems
+  eRes <- fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool
+  let catalogSummary = 
+        flip fmap eRes $ \items -> 
+          CatalogSummary (length items) items
   return $ first mkError catalogSummary

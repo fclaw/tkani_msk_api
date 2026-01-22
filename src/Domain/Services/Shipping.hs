@@ -50,7 +50,10 @@ prepareAndSchedulePickup = do
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->
         if null orders then
-          fmap (const False) $ $(logTM) InfoS "No new paid orders to schedule. (Or outside of 16:00-17:00 window)."
+          fmap (const False) $ 
+            $(logTM) InfoS $ ls $ 
+              "No new paid orders to schedule. (Or outside of " <> 
+              tshow (fromTime - 1) <> ":00-" <> tshow fromTime <> ":00 window)."
         else if length orders < minCourierPickup then
           fmap (const False) $ $(logTM) InfoS $ ls $
             "Found only " <> tshow (length orders) <>

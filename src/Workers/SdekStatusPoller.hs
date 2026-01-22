@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 module Workers.SdekStatusPoller (runSdekStatusPoller) where
 

@@ -25,8 +25,8 @@ library:
     - Workers.OrderDeliveryScheduler
     - Workers.DailyWeightTracker
     - Workers.DostavistaOrderStatusPoller
+    - Workers.SpecialPostManager
     - Infrastructure.Services.Overpass
-    - Application.Listener
     - Application.Cart
     - Lib.Servant.RateLimit
     - Infrastructure.Services.Sdek.Types

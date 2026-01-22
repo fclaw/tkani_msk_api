@@ -64,6 +64,7 @@ import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCit
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
+-- workers START
 import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
@@ -74,8 +75,9 @@ import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
 import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
 import Workers.DailyWeightTracker (runDailyWeightTracker)
 import Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller)
+import Workers.SpecialPostManager (runSpecialPostManager)
+-- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
-import Application.Listener (runCollageJobListener)
 import Application.Cart (runCartsCleaner)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig (..))
@@ -97,6 +99,7 @@ data Workers =
       | OrderDeliveryScheduler
       | DailyWeightTracker
       | DostavistaOrderStatusPoller
+      | SpecialPostManager
 
 instance Show Workers where
   show WebServer                   = "Web Server"
@@ -112,7 +115,7 @@ instance Show Workers where
   show OrderDeliveryScheduler      = "Order Delivery Scheduler"
   show DailyWeightTracker          = "Daily Weight Tracker"
   show DostavistaOrderStatusPoller = "Dostavista Order Status Poller"
-
+  show SpecialPostManager          = "Special Post Manager"
 
 methodsCors :: Middleware
 methodsCors = cors $ const (Just (simpleCorsResourcePolicy { corsMethods = map renderStdMethod [ DELETE, PUT, PATCH]}))
@@ -288,6 +291,8 @@ main = do
                }
             , _geocodeApiKey = configGeocodeApiKey
             , _geocodeUrl = configGeocodeUrl
+            , _postsCfgs = configPostLifeDetails
+            , _conciergeBotUrl = configConciergeBotUrl
             }
 
       tinkoffPaymentChan <- newTChanIO
@@ -353,10 +358,6 @@ main = do
                  runInIO runTinkoffPaymentStatusPoller 
                    >>= showErrorInWorker 
                         Tinkoff)
-              , (CollageMaker,
-                  runInIO (runCollageJobListener connInfo runInIO)
-                    >>= showErrorInWorker 
-                         CollageMaker)
               , (CartsCleaner,
                  runForever 1 $
                    runInIO runCartsCleaner 
@@ -397,6 +398,10 @@ main = do
                  runInIO runDostavistaOrderStatusPoller 
                    >>= showErrorInWorker 
                         DostavistaOrderStatusPoller)
+              , (SpecialPostManager,
+                 runInIO (runSpecialPostManager)
+                   >>= showErrorInWorker
+                        SpecialPostManager)
               ]
 
         let extTasks 

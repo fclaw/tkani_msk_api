@@ -126,7 +126,7 @@ data PatchedFabric =
        -- !!deprecated field
      , prGalleryDate     :: Maybe Day
      , prLifeCycle       :: Maybe Text
-     , prSellingPrice    :: Maybe Int32
+     , prDiscount        :: Maybe Double
      } deriving (Show, Eq, Generic)
 
 
@@ -145,7 +145,7 @@ mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
       prMediaType = encodeToText rawMediaType
       prGalleryDate = rawGalleryDate
       prLifeCycle = fmap encodeToText rawLifeCycle
-      prSellingPrice = rawSellingPrice
+      prDiscount = rawDiscount
   in PatchedFabric {..}
 
 
@@ -293,3 +293,26 @@ data CourierPickupData =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpd" } ''CourierPickupData)
+
+
+
+data SpecialPostDetailsItems =
+     SpecialPostDetailsItems
+     { name      :: Text
+     , discount  :: Int32
+     } deriving (Show) 
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier mempty } ''SpecialPostDetailsItems)
+
+
+-- message_id, posted_at, items_count, list of ALL names, list of 9 random thumbnails
+data SpecialPostDetails = 
+     SpecialPostDetails
+     { messageId           :: Maybe Int64
+     , postedAt            :: Maybe UTCTime
+     , itemsCount          :: Int32
+     , items               :: [SpecialPostDetailsItems]
+     , randomThumbnailUrls :: [Text]
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier mempty } ''SpecialPostDetails)
