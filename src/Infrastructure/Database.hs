@@ -268,7 +268,7 @@ getFabricPreview fabricId fabricType threshold pool =
     runTransactionM pool Hasql.Read $
       (fabricId, fabricType, threshold) `Hasql.statement` getFabricPreviewStatement
 
-putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> AppM (Either Text (Int64, Text, Bool))
+putNewFabric :: DWT.Fabric -> RawIngestRequest -> Hasql.Pool -> AppM (Either Text (Int64, Text))
 putNewFabric fabric req pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $
@@ -1098,13 +1098,13 @@ getOrderItemsForAdjustStatement =
   |]
 
 
-patchRoll :: PatchedFabric -> Hasql.Pool -> AppM (Either Text Bool)
+patchRoll :: PatchedFabric -> Hasql.Pool -> AppM (Either Text ())
 patchRoll fabric pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
-        [Hasql.singletonStatement|
+        [Hasql.resultlessStatement|
           UPDATE fabrics 
           SET
             description = $2 :: text,
@@ -1118,40 +1118,25 @@ patchRoll fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
-            daily_digest_id = (
-              SELECT id
-              FROM daily_digests 
-              WHERE announcement_date = $12 :: date?
-              LIMIT 1),
-            lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
-            discount = COALESCE($14 :: float8?, discount),
+            lifecycle = COALESCE(CAST($12 :: text? AS fabric_lifecycle), lifecycle),
+            discount = COALESCE($13 :: float8?, discount),
             updated_at = now()
           WHERE id = $1 :: int8
-          RETURNING EXISTS (
-            SELECT 1
-            FROM daily_digests 
-            WHERE announcement_date = $12 :: date?
-          ) :: bool
         |]
 
-patchPrecut :: PatchedFabric -> Hasql.Pool -> AppM (Either Text Bool)
+patchPrecut :: PatchedFabric -> Hasql.Pool -> AppM (Either Text ())
 patchPrecut fabric pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ 
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
-        [Hasql.singletonStatement|
+        [Hasql.resultlessStatement|
           WITH new_precut AS (
             UPDATE pre_cuts
             SET
              length_m = $3 :: float8,
              price_rub = $5 :: int4,
-             is_searchable = $6 :: bool,
-             daily_digest_id = (
-              SELECT id
-              FROM daily_digests 
-              WHERE announcement_date = $12 :: date?
-              LIMIT 1)
+             is_searchable = $6 :: bool
             WHERE id = $1 :: int8
             RETURNING fabric_id :: int8)
           UPDATE fabrics
@@ -1163,15 +1148,10 @@ patchPrecut fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
-            lifecycle = COALESCE(CAST($13 :: text? AS fabric_lifecycle), lifecycle),
-            discount = COALESCE($14 :: float8?, discount),
+            lifecycle = COALESCE(CAST($12 :: text? AS fabric_lifecycle), lifecycle),
+            discount = COALESCE($13 :: float8?, discount),
             updated_at = now()
           WHERE id = (SELECT * FROM new_precut)
-          RETURNING EXISTS (
-            SELECT 1
-            FROM daily_digests 
-            WHERE announcement_date = $12 :: date?
-          ) :: bool
         |]
 
 deleteFabric :: Int64 -> FabricType -> Hasql.Pool -> AppM (Either Text ())

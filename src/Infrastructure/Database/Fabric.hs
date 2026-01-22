@@ -18,7 +18,7 @@ import Text (encodeToText)
 
 
 -- | Main Entry Point
-ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction (Int64, Text, Bool)
+ingestFabricDB :: Fabric -> RawIngestRequest -> Hasql.Transaction (Int64, Text)
 ingestFabricDB fabric req = do
   -- 1. Calculate 'Per Meter' properties for the Parent Fabric
   -- If it's a pre-cut, derive the meter price so the parent table stays consistent.
@@ -32,7 +32,7 @@ ingestFabricDB fabric req = do
   -- If New: Insert it.
   let rollLength | fType fabric == Roll = fLength fabric
                  | otherwise = 0.0
-  (parentId, article, isGalleryRoll) <- 
+  (parentId, article) <- 
     Hasql.statement (
       fArticle fabric,                 -- $1 Article (Unique Key)
       fName fabric,                    -- $2 Name
@@ -47,10 +47,6 @@ ingestFabricDB fabric req = do
       fromIntegral (fWidth fabric),    -- $11 the width of a fabric
       fIsSearchable fabric && 
       fType fabric == Roll,
-      if fType fabric == Roll &&
-         isJust (rawGalleryDate req) then 
-        rawGalleryDate req
-      else Nothing,
       encodeToText (fpDensity (rawFabricProperties req)),
       fpWeightPerMetre (rawFabricProperties req)
     ) upsertFabricQuery
@@ -63,13 +59,12 @@ ingestFabricDB fabric req = do
       let isSearchable = 
              fIsSearchable fabric && 
              fType fabric == PreCut
-      let galleryDate = if fType fabric == PreCut && isJust (rawGalleryDate req) then rawGalleryDate req else Nothing
-      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable, galleryDate) insertPreCutQuery
+      fmap Just $ Hasql.statement (parentId, len, fromIntegral total :: Int32, isSearchable) insertPreCutQuery
     else return Nothing
 
   return $ case precutRes of
-    Nothing -> (parentId, article, isGalleryRoll)
-    Just (precutId, isGalleryPreCut) -> (precutId, article, isGalleryRoll || isGalleryPreCut)
+    Nothing -> (parentId, article)
+    Just (precutId) -> (precutId, article)
 
 -- -----------------------------------------------------------------------------
 -- SQL QUERIES (Hasql TH)
@@ -88,11 +83,10 @@ type RawFabric =
      , Maybe Text
      , Int32
      , Bool
-     , Maybe Day
      , Text
      , Double)
 
-upsertFabricQuery :: Hasql.Statement RawFabric (Int64, Text, Bool)
+upsertFabricQuery :: Hasql.Statement RawFabric (Int64, Text)
 upsertFabricQuery = 
   [Hasql.singletonStatement|
     INSERT INTO fabrics (
@@ -109,7 +103,6 @@ upsertFabricQuery =
       thumbnail_url,
       width,
       is_searchable,
-      daily_digest_id,
       density,
       weight_per_metre
     ) 
@@ -127,11 +120,8 @@ upsertFabricQuery =
       $10 :: text?,
       $11 :: int4,
       $12 :: bool,
-      (SELECT id
-       FROM daily_digests 
-       WHERE announcement_date = $13 :: date?),
-      CAST($14 :: text AS fabric_density),
-      $15 :: float8  
+      CAST($13 :: text AS fabric_density),
+      $14 :: float8  
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -154,42 +144,26 @@ upsertFabricQuery =
         updated_at = NOW(),
         in_stock = TRUE,
         is_sold = FALSE
-    RETURNING 
-      id :: int8, 
-      article :: text, 
-      EXISTS (
-        SELECT 1
-        FROM daily_digests 
-        WHERE announcement_date = $13 :: date?
-      ) :: bool
-|]
+    RETURNING id :: int8, article :: text
+  |]
 
-insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool, Maybe Day) (Int64, Bool)
+insertPreCutQuery :: Hasql.Statement (Int64, Double, Int32, Bool) Int64
 insertPreCutQuery = 
   [Hasql.singletonStatement| 
     INSERT INTO pre_cuts 
     (fabric_id, 
      length_m, 
      price_rub, 
-     is_searchable,
-     daily_digest_id)
+     is_searchable)
     VALUES (
       $1 :: int8, 
       $2 :: float8, 
       $3 :: int4, 
-      $4 :: bool,
-      (SELECT id 
-       FROM daily_digests 
-       WHERE announcement_date = $5 :: date?))
+      $4 :: bool
+    )
     ON CONFLICT (fabric_id, length_m, price_rub) 
     DO UPDATE SET
       is_searchable = EXCLUDED.is_searchable,
       in_stock = TRUE
-    RETURNING 
-      id :: int8,
-      EXISTS (
-        SELECT 1
-        FROM daily_digests 
-        WHERE announcement_date = $5 :: date?
-      ) :: bool
+    RETURNING id :: int8
   |]

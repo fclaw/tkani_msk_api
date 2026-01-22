@@ -105,8 +105,6 @@ data RawIngestRequest =
     , rawMediaType        :: MediaType   -- ^ Parsed via the Enum above
     , rawFileId           :: Maybe Text  -- ^ The file ID
     , rawThumbnailUrl     :: Maybe Text
-      -- !! deprecated field
-    , rawGalleryDate      :: Maybe Day
     , rawFabricProperties :: FabricProperties
     , rawLifeCycle        :: Maybe FabricLifecycle
     , rawDiscount         :: Maybe Double
@@ -120,7 +118,6 @@ data NewFabric =
      { nfId :: Int64
      , nfType :: FabricType
      , nfArticle :: Text
-     , nfIsGallery :: Bool
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "nf" } ''NewFabric)

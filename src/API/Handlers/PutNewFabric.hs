@@ -75,12 +75,12 @@ handler rawIngestReq = do
           else do
             dbRes <- putNewFabric fabric rawIngestReq pool
             when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-            let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
-            return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes
+            let mkNewFabric id art = NewFabric id (fType fabric) art
+            return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes
       else do
         dbRes <- putNewFabric fabric rawIngestReq pool
         when(isLeft dbRes) $ $(logTM) ErrorS $ ls $ "Error while inserting new fabric: " <> pack (show dbRes)
-        let mkNewFabric id art isGallery = NewFabric id (fType fabric) art isGallery
-        return $ first (const (mkError "server error")) $ (second (uncurry3 mkNewFabric)) dbRes 
+        let mkNewFabric id art = NewFabric id (fType fabric) art
+        return $ first (const (mkError "server error")) $ (second (uncurry mkNewFabric)) dbRes 
   when(isLeft eFabric) $ $(logTM) ErrorS $ ls $ "Validation errors: " <> pack (show eFabric)
   return $ join $ first (ApiError wrongModelErrorCode . renderValidationErrors) res

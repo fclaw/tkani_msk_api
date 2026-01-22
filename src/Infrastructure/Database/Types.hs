@@ -123,8 +123,6 @@ data PatchedFabric =
      , prMediaGroupId    :: Maybe Text   
      , prThumbnailUrl    :: Maybe Text          
      , prMediaType       :: Text
-       -- !!deprecated field
-     , prGalleryDate     :: Maybe Day
      , prLifeCycle       :: Maybe Text
      , prDiscount        :: Maybe Double
      } deriving (Show, Eq, Generic)
@@ -143,7 +141,6 @@ mkPatchedFabric fabricId Fabric {..} RawIngestRequest {..} =
       prMediaGroupId = rawMediaGroupId
       prThumbnailUrl = rawThumbnailUrl
       prMediaType = encodeToText rawMediaType
-      prGalleryDate = rawGalleryDate
       prLifeCycle = fmap encodeToText rawLifeCycle
       prDiscount = rawDiscount
   in PatchedFabric {..}
