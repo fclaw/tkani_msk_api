@@ -1,4 +1,4 @@
--- Deploy tkani-api:00007.add_function to pg
+-- Deploy tkani-api:00016.add_function to pg
 
 BEGIN;
 
@@ -6,7 +6,8 @@ BEGIN;
 CREATE OR REPLACE FUNCTION search_fabrics_paginated(
     search_query TEXT,
     page_limit INT,
-    page_offset INT
+    page_offset INT,
+    metre_threshold DOUBLE PRECISION
 )
 -- The function will return a table with these two columns
 RETURNS TABLE(total_count BIGINT, teaser_json JSONB) AS $$
@@ -31,13 +32,10 @@ BEGIN
             fabrics AS f
         WHERE
             f.is_searchable AND
-            f.in_stock = TRUE AND 
-            f.is_sold = FALSE AND
-            CAST(f.total_length_m AS int4) > 0 AND
-            CAST(f.available_length_m AS int4) > 0 AND
+            f.available_length_m >= CAST($4 :: DOUBLE PRECISION AS NUMERIC) AND
             (
-                f.search_vector @@ to_tsquery('russian', $1 :: text)
-                OR f.article ILIKE ($1 :: text || '%')
+                f.search_vector @@ to_tsquery('russian', $1 :: TEXT)
+                OR f.article ILIKE ($1 :: TEXT || '%')
             )
     )
 
@@ -64,19 +62,18 @@ BEGIN
         WHERE
             pc.is_searchable AND
             pc.in_stock = TRUE AND
-            CAST(f.total_length_m AS int4) = 0 AND
-            CAST(f.available_length_m AS int4) = 0 AND
+            CAST(f.total_length_m AS INT) = 0 AND
+            CAST(f.available_length_m AS INT) = 0 AND
             (
-                f.search_vector @@ to_tsquery('russian', $1 :: text)
-                OR f.article ILIKE ($1 :: text || '%')
+                f.search_vector @@ to_tsquery('russian', $1 :: TEXT)
+                OR f.article ILIKE ($1 :: TEXT || '%')
             )
     )
     ORDER BY updated_at DESC
-    LIMIT $2 :: int4
-    OFFSET $3 :: int4)
+    LIMIT $2 :: INT
+    OFFSET $3 :: INT)
     SELECT res.total_count :: int8, res.teaser_json :: jsonb FROM search_result AS res;
 END;
 $$ LANGUAGE plpgsql;
-
 
 COMMIT;

@@ -34,7 +34,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Utils.CollageMaker (generateCollageViaService)
 import Domain.Warehouse.Enums (FabricLifecycle (..))
 import Infrastructure.Database (fetchSpecialPostDetails, insertNewSpecialPost, deleteSpecialPost, SpecialPostDetails (..), SpecialPostDetailsItems (..))
-import App (AppM, _postsCfgs, _messageCannotBeDeleted, _appDBPool, extractFromEither, render, currentTime, ChatKey (MAIN, ORDER), _conciergeBotUrl)
+import App (AppM, _postsCfgs, _thresholdMetres, _messageCannotBeDeleted, _appDBPool, extractFromEither, render, currentTime, ChatKey (MAIN, ORDER), _conciergeBotUrl)
 
 
 
@@ -115,8 +115,9 @@ managePost lifeCycle lifeTime itemThreshold = do
 
   cfg <- ask
   let pool = _appDBPool cfg
+  let threshold = _thresholdMetres cfg
 
-  eDbRes <- fetchSpecialPostDetails lifeCycle pool
+  eDbRes <- fetchSpecialPostDetails lifeCycle threshold pool
   extractFromEither eDbRes $ \SpecialPostDetails {..} -> do
     case messageId of
       Nothing ->

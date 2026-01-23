@@ -2042,11 +2042,11 @@ fetchDostavistaPackages ordersId pool =
       |]
 
 
-fetchSpecialPostDetails :: FabricLifecycle -> Hasql.Pool -> AppM (Either Text SpecialPostDetails)
-fetchSpecialPostDetails lifeCycle pool =
+fetchSpecialPostDetails :: FabricLifecycle -> Double -> Hasql.Pool -> AppM (Either Text SpecialPostDetails)
+fetchSpecialPostDetails lifeCycle threshold pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $
-      Hasql.statement (encodeToText lifeCycle) $
+      Hasql.statement (encodeToText lifeCycle, threshold) $
       rmap (extractADT . convertFromJson @SpecialPostDetails) $
       [Hasql.singletonStatement|
         WITH relevant_fabrics AS (
@@ -2056,8 +2056,19 @@ fetchSpecialPostDetails lifeCycle pool =
             f.lifecycle_changed_at,
             ROUND(100 * f.discount) AS discount
           FROM fabrics AS f
+          LEFT JOIN (
+            SELECT
+            fabric_id,
+            COUNT(id) AS in_stock_pre_cuts_count
+            FROM pre_cuts
+            WHERE in_stock = TRUE
+            GROUP BY fabric_id
+          ) AS pc
+          ON pc.fabric_id = f.id
           WHERE f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
-          AND f.is_sold = FALSE
+          AND (f.available_length_m >= $2 :: float8
+               OR (COALESCE(pc.in_stock_pre_cuts_count, 0) > 0
+                   AND f.available_length_m < $2 :: float8))
         ),
         fabric_summary AS (
           SELECT
