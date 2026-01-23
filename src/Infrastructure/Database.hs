@@ -1672,26 +1672,26 @@ fetchOrderDeliveryItem day pool =
           . map (convertFromJson @OrderDeliveryItem) 
           . V.toList)) $
         [Hasql.singletonStatement|
-          WITH post_id AS (
-		        SELECT
-		        message_id :: int
-		        FROM order_delivery_posts AS odp
-		        WHERE odp.created_at :: date + interval '1 day' = $1 :: date
-          )
           SELECT
-		      (SELECT * FROM post_id) :: int?,
-          array_agg(
-            jsonb_build_object(
-              'id', o.id,
-              'track', o.sdek_tracking_number,
-              'keep_free_until', o.keep_free_until
-            ) ORDER BY o.created_at ASC) :: jsonb[]
+		      (SELECT
+		       message_id :: int
+		       FROM order_delivery_posts AS odp
+		       WHERE odp.created_at :: date + interval '1 day' < $1 :: date
+           ORDER BY odp.created_at DESC
+				   LIMIT 1
+          ) :: int?,
+          COALESCE(array_agg(
+           jsonb_build_object(
+            'id', o.id,
+            'track', o.sdek_tracking_number,
+            'keep_free_until', o.keep_free_until
+           ) ORDER BY o.created_at ASC), '{}'::jsonb[]) :: jsonb[]
           FROM orders AS o
 		      WHERE o.status = 'delivered'
           AND NOT EXISTS (
-	          SELECT 1
-	          FROM order_delivery_posts
-	          WHERE created_at :: date = now()::date)
+	         SELECT 1
+           FROM order_delivery_posts
+           WHERE created_at :: date = now()::date)
 		      LIMIT 20
         |]
 
