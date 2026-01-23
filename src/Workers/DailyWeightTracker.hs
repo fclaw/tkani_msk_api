@@ -244,11 +244,15 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   let totalWeight = wtsTotalWeightGrams updatedState
   let weightExceeded = totalWeight >= weightThreshold
   let courierNotCalled = not (wtsCourierCalled updatedState)
-  let isWithinTimeWindow = currentHour < (courierCallCutoffHour . _dostavistaConfig) cfg -- e.g., Is current hour < 16?
+  let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
+  let isWithinSchedulingWindow =
+       let hourBeforeCutoff = cutoffHour - 1
+       in currentHour >= hourBeforeCutoff && 
+          currentHour < cutoffHour
 
   if weightExceeded && 
      courierNotCalled && 
-     isWithinTimeWindow
+     isWithinSchedulingWindow
   then do
     $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."            
     -- Call the Dostavista Service

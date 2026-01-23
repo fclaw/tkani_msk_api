@@ -41,16 +41,15 @@ import App (AppM, _postsCfgs, _thresholdMetres, _messageCannotBeDeleted, _appDBP
 maxNamesToList :: Int
 maxNamesToList = 10
 
-posts = [fromEnum Clearance]
 
 runSpecialPostManager :: AppM ()
 runSpecialPostManager = do
   $(logTM) InfoS "Special Post Manager started..."
   cfg <- ask
+  let postsCfgs = _postsCfgs cfg -- list of type (FabricLifecycle, (lifetime, item threshold))
+  let posts = fst $ unzip postsCfgs
   forever $ do
-    for_ posts $ \id -> do 
-      let lifeCycle = toEnum @FabricLifecycle id
-      let postsCfgs = _postsCfgs cfg -- list of type (FabricLifecycle, (lifetime, item threshold))
+    for_ posts $ \lifeCycle -> do
       -- fall back on default values 7 days and 10 items
       let (lifeTime, itemThreshold) = 
             fromMaybe (7, 10) $

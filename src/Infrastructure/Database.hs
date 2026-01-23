@@ -2023,7 +2023,7 @@ fetchDostavistaPackages ordersId pool =
           SELECT
             ofb.order_id,
             STRING_AGG(f.name, ', ') AS description,
-            SUM(ofb.length_m) AS length,
+            SUM(COALESCE(ofb.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
               ROUND(ROUND(f.price_per_meter * (1 - f.discount)) * ofb.length_m)
