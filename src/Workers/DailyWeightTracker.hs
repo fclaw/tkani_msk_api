@@ -317,7 +317,7 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
 
   else when (weightExceeded && 
              courierNotCalled && 
-             not isWithinTimeWindow) $
+             not isWithinSchedulingWindow) $
          -- The weight is high enough, but it's too late in the day.
          $(logTM) WarningS "Weight threshold met, but it's too late to call a courier today. Manual action may be required."
          -- Optionally, send an alert to the admin here.
