@@ -89,7 +89,7 @@ import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
-import Control.Monad (join, void, forM_)
+import Control.Monad (join, void, forM_, when)
 import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
@@ -1809,7 +1809,8 @@ fetchWeightTrackerStateInfo day service pool =
          COALESCE(SUM(o.actual_weight_grams), 0) :: int4,
          EXISTS (SELECT 1 FROM external_courier_pickups 
          WHERE provider = CAST($2 :: text AS pickup_provider) 
-         AND pickup_date = $1 :: date) :: bool,
+         AND pickup_date = $1 :: date 
+         AND status != 'canceled') :: bool,
          COALESCE(array_agg(o.id), '{}'::text[]) :: text[]
        FROM orders AS o
        WHERE o.status = 'paid'
@@ -1837,13 +1838,22 @@ getTodaysDostavistaOrder today pool =
 setDostavistaOrderStatus :: Int64 -> DostavistaOrderStatus -> Hasql.Pool -> AppM (Either Text ())
 setDostavistaOrderStatus orderId status pool =
   fmap (first (pack . show)) $
-    runTransactionM pool Hasql.Write $
+    runTransactionM pool Hasql.Write $ do
       Hasql.statement (orderId, encodeToText status)
-      [Hasql.resultlessStatement|
+       [Hasql.resultlessStatement|
         UPDATE external_courier_pickups
         SET status = $2 :: text
         WHERE order_id = $1 :: int8 
-      |]
+       |]
+       -- revert all orders linked to this pickup
+      when(status == Canceled) $ 
+        Hasql.statement (orderId) $
+        [Hasql.resultlessStatement|
+         UPDATE orders
+         SET courier_pickup_id = NULL,
+             status = 'paid'
+         WHERE courier_pickup_id = $1 :: int8
+       |]
 
 setDostavistaPickupByCourierStatus :: Int64 -> DostavistaOrderStatus -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
 setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =
@@ -2008,7 +2018,7 @@ fetchDostavistaPackages ordersId pool =
             'ware_code', o.id,
             'description', oi.description,
             'items_count', oi.length,
-            'item_payment_amount', CAST(oi.price AS text)
+            'item_payment_amount', CAST(ROUND(oi.price / oi.length) AS text)
           ) :: jsonb
         FROM orders AS o
         INNER JOIN (

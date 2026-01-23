@@ -64,8 +64,8 @@ pollerLogic statusVar orderId = do
 
   let timeElapsed = round $ diffUTCTime end start
 
-   -- if no courier is found within 2-hour window close the order
-  if timeElapsed > 2 * 3600 &&
+   -- if no courier is found within 4-hour window close the order
+  if timeElapsed > 4 * 3600 &&
      (currentStatus == Available || 
      currentStatus == New)
   then do
@@ -141,6 +141,11 @@ pollerLogic statusVar orderId = do
                     void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
                     liftIO $ threadDelay timeout
                     pollerLogic statusVar orderId
+                  Canceled -> do 
+                    $(logTM) InfoS $ "Dostavista order hae been cancelled.."
+                    void $ setDostavistaOrderStatus orderId Canceled pool
+                    msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Cancelled") $ HM.fromList [("orderId", tshow orderId)]
+                    void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
                   -- Order was canceled. Revert and alert.
                   -- For 'new', 'available', etc., just log it. The next poll will check again.
                   _ -> $(logTM) ErrorS $ "Dostavista API returned an unexpected order status: " <> ls (show status)

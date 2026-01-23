@@ -36,8 +36,9 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically, modifyTVar', TChan, writeTChan)
 import Data.Time (Day, UTCTime, getCurrentTime, utctDay)
 import qualified Database.PostgreSQL.Simple as PG
+import Data.Time.Calendar (dayOfWeek, DayOfWeek(..))
 import qualified Database.PostgreSQL.Simple.Notification as PG
-import Data.Time.LocalTime (TimeZone (..), getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..), localDay)
+import Data.Time.LocalTime (TimeZone (..), getCurrentTimeZone, getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..), localDay)
 
 import App
 import API.Types (OrderStatus (ScheduledForPickup))
@@ -194,6 +195,28 @@ runWeightAccumulator stateVar connInfo runAppM =
       void $ async $ void $ runAppM $ runJobWithCleanup (processWeightEvent stateVar ePayload)
 
 
+-- This is an IO action that returns a Bool.
+isBusinessDay :: IO Bool
+isBusinessDay = do
+  -- 1. Get the current time in UTC
+  nowUTC <- getCurrentTime
+
+  -- 2. Get the user's current timezone
+  timezone <- getCurrentTimeZone
+
+  -- 3. Convert the UTC time to the local time
+  let localTime = utcToLocalTime timezone nowUTC
+  
+  -- 4. Extract the DayOfWeek (Monday, Tuesday, etc.) from the local time
+  let today = dayOfWeek (localDay localTime)
+  
+  -- 5. Define which days are considered business days
+  let businessDays = [Monday, Tuesday, Wednesday, Thursday, Friday]
+  
+  -- 6. Check if today is in the list and return the result
+  return (today `elem` businessDays)
+
+
 -- The logic for processing a single event
 processWeightEvent :: TVar WeightTrackerState -> Either String WeighedOrderEvent -> AppM ()
 processWeightEvent _ (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (WeighedOrderEvent), error: " <> err
@@ -250,11 +273,16 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
        in currentHour >= hourBeforeCutoff && 
           currentHour < cutoffHour
 
-  if weightExceeded && 
+  dayOfWeek <- liftIO isBusinessDay
+
+  when (not dayOfWeek) $ $(logTM) InfoS $ "Weekend. skip the courier call"
+
+  if dayOfWeek &&
+     weightExceeded && 
      courierNotCalled && 
      isWithinSchedulingWindow
   then do
-    $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."            
+    $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."           
     -- Call the Dostavista Service
     pool <- fmap _appDBPool ask
     eDbRes <- fetchDostavistaPackages (wtsOrders updatedState) pool
@@ -334,11 +362,21 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
   let (TimeOfDay currentHour _ _) = localTimeOfDay mskTime
   let weightExceeded = wtsTotalWeightGrams >= weightThreshold
   let courierNotCalled = not wtsCourierCalled
-  let isWithinTimeWindow = currentHour < (courierCallCutoffHour . _dostavistaConfig) cfg -- e.g., Is current hour < 16?
+  let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
+  let isWithinSchedulingWindow =
+       let hourBeforeCutoff = cutoffHour - 1
+       in currentHour >= hourBeforeCutoff &&
+          currentHour < cutoffHour
 
-  when(weightExceeded && 
-     courierNotCalled && 
-     isWithinTimeWindow) $ do
+  dayOfWeek <- liftIO isBusinessDay
+
+  when (not dayOfWeek) $ $(logTM) InfoS $ "Weekend. skip the courier call"
+
+
+  when(dayOfWeek &&
+       weightExceeded && 
+       courierNotCalled && 
+       isWithinSchedulingWindow) $ do
     $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."    
     -- Call the Dostavista Service
     pool <- fmap _appDBPool ask
