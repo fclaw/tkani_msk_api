@@ -35,7 +35,10 @@ import Data.Traversable        (for)
 import qualified Data.Aeson              as A
 import Network.Wreq hiding (get)
 import Control.Lens            ((&), (.~), (^.))
-import           Data.Aeson.KeyMap       as A
+import Data.Aeson.KeyMap       as A
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.ByteString.Lazy as BL
 
 import App 
   ( AppM
@@ -52,17 +55,18 @@ import App
   , _messageCannotBeDeleted
   , _messageNotFound
   , _bots)
+import Text (tshow)
+import TH.Location (currentModule)
+import Domain.Error (handleHttpError)
 import  API.Types (OrderStatus (Cancelled))
-import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus)
+import Infrastructure.Services.Tinkoff.Types.GetState
+import Infrastructure.Services.Tinkoff.Types.Cancel
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus, cancelTinkoffPayment)
 import Infrastructure.Database (getChatDetails, fetchPendingPayments, updatePaymentStatus)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, TelegramError (..))
-import TH.Location (currentModule)
 import Domain.Inventory (adjustInventoryForOrder, InventoryResult (..), Template (..))
-import Infrastructure.Services.Tinkoff.Types.GetState
 import Infrastructure.Services.Tinkoff.Security (generateGetStateToken, GetStateToken(..))
-import Utils.Telegram.Markdown (escapeMarkdownV2)
-import Domain.Error (handleHttpError)
-import Text (tshow)
 
 
 -- Configuration constants (in microseconds)
@@ -227,6 +231,25 @@ processJob (orderId, getStateReq) = do
   when(isNothing mResult) $ do 
     $(logTM) WarningS $ ls $ "Order " <> orderId <> " TIMED OUT."
     currentTime >>= finalizeTelegram orderId "Timeout"
+    
+    let makeCancelReq = 
+         CancelRequest 
+         { cTerminalKey = gsrqTerminalKey getStateReq
+         , cPaymentId   = gsrqPaymentId getStateReq
+         , cToken       = gsrqToken getStateReq
+         }
+    
+    eTinkoffResp <- cancelTinkoffPayment makeCancelReq
+    for_ eTinkoffResp $ \CancelResponse {..} ->
+      if cSuccess then 
+        $(logTM) InfoS $ "tinkoff payment has been cancelled due to timeout"
+      else do
+        let errorMsg = 
+              escapeMarkdownV2 $
+              "‼️ tinkoff cancel order failed. \
+              \ manual intervention is urgently required!! " <>
+              decodeUtf8 (BL.toStrict (encodePretty makeCancelReq))
+        void $ sendOrEditTelegramMessage mempty errorMsg ORDER Nothing Nothing Nothing
     pool <- fmap _appDBPool ask
     eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
     when(isLeft eRes) $ 

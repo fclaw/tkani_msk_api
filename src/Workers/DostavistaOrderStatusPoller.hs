@@ -70,7 +70,6 @@ pollerLogic statusVar orderId = do
      currentStatus == New)
   then do
     pool <- fmap _appDBPool ask
-    cancelOrder orderId
     void $ setDostavistaOrderStatus orderId Canceled pool
     $(logTM) InfoS $ "Dostavista order " <> ls (show orderId) <> " has been cancelled due to timeout."
     let msg = escapeMarkdownV2 $ "⚠️ Dostavista order " <> tshow orderId <> " has been cancelled automatically due to missing courier. timeout"

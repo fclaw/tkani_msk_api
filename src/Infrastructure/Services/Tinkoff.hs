@@ -154,11 +154,33 @@ getTinkoffQRCode qrReq = do
   postReq @GetQrResponse httpManager (show HTTPS <> unpack url <> "/v2/GetQr") qrReq Nothing
 
 
-cancelTinkoffPayment 
+{-|
+Performs a request to the Tinkoff Acquiring 'Cancel' endpoint to reverse a payment.
+
+This function constructs the JSON payload from the provided 'CancelRequest' record,
+sends it to the /v2/Cancel endpoint, and attempts to parse the JSON response
+into a 'CancelResponse'. It handles network errors and decoding failures gracefully.
+
+@see https://securepay.tinkoff.ru/v2/Cancel
+
+@param cancelReq The request body payload ('CancelRequest'). This record should
+                 contain all the necessary fields required by the Tinkoff API,
+                 such as the 'PaymentId' of the transaction to be cancelled
+                 and a security 'Token'.
+
+@return An 'AppM' action that results in an 'Either'.
+        - 'Right CancelResponse' on a successful API call where the response
+          body was successfully parsed. This response typically includes the
+          final 'Status' of the transaction (e.g., "CANCELED").
+        - 'Left HttpError' on failure. This can represent a network error
+          (e.g., timeout), a non-2xx HTTP status code from Tinkoff, or a
+          JSON decoding error if the response is malformed.
+-}
+cancelTinkoffPayment
   :: CancelRequest
   -> AppM (Either HttpError CancelResponse)
 cancelTinkoffPayment cancelReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq Nothing 
+  postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq Nothing
