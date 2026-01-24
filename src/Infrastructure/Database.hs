@@ -1855,6 +1855,14 @@ setDostavistaOrderStatus orderId status pool =
          WHERE courier_pickup_id = $1 :: int8
        |]
 
+      when(status == Infrastructure.Services.Dostavista.Types.Enums.Completed) $ 
+        Hasql.statement (orderId) $
+        [Hasql.resultlessStatement|
+         UPDATE orders
+         SET status = 'on_route'
+         WHERE courier_pickup_id = $1 :: int8
+       |]
+
 setDostavistaPickupByCourierStatus :: Int64 -> DostavistaOrderStatus -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
 setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =
   fmap (first (pack . show)) $
