@@ -283,7 +283,7 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', ROUND(f.price_per_meter * (1 - f.discount)) * ci.length_m,
+        'total_price', ROUND(f.price_per_meter * (1 - f.discount) * ci.length_m),
         'fabric_type', ci.item_type,
         'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
         'length_m', ci.length_m,
@@ -1053,7 +1053,7 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', ci.length_m,
-        'price', ci.length_m * ROUND(f.price_per_meter * (1 - f.discount))
+        'price', ROUND(ci.length_m * f.price_per_meter * (1 - f.discount))
        ) :: jsonb
      FROM carts as c 
      INNER JOIN cart_items as ci
@@ -1496,7 +1496,7 @@ getOrderDetailsForPricing orderId pool =
                 'price',
                  CASE
                    WHEN ofb.pre_cut_id IS NULL
-                   THEN CAST(ofb.length_m * ROUND(f.price_per_meter * (1 - f.discount)) AS int)
+                   THEN ROUND(ofb.length_m * f.price_per_meter * (1 - f.discount))
                    ELSE ROUND(pc.price_rub * (1 - f.discount))
                  END          
               )) :: jsonb[] AS items
@@ -1564,7 +1564,7 @@ getPatchedOrderDetails orderId pool =
                 'cost',
                   CASE
                     WHEN ofb.length_m IS NOT NULL
-                    THEN ROUND(f.price_per_meter * (1 - f.discount)) * ofb.length_m
+                    THEN ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
                     ELSE ROUND(pc.price_rub * (1 - f.discount))
                   END
                ) ORDER BY COALESCE(f.article, pcf.article))
@@ -2036,7 +2036,7 @@ fetchDostavistaPackages ordersId pool =
             SUM(COALESCE(ofb.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
-              ROUND(ROUND(f.price_per_meter * (1 - f.discount)) * ofb.length_m)
+              ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
              ELSE ROUND(pc.price_rub * (1 - f.discount))
             END) AS price
           FROM order_fabric_bindings AS ofb
