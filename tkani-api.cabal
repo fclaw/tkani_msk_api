@@ -30,6 +30,7 @@ library
       Workers.DailyWeightTracker
       Workers.DostavistaOrderStatusPoller
       Workers.SpecialPostManager
+      Workers.SdekOrderCancellationHandler
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

@@ -294,7 +294,7 @@ formatStatus status = case status of
   Cancelled          -> "❌ ОТМЕНЁН"
 
   -- 
-  ScheduledForPickup -> "🗓️ Запланирован к отправке"
+  ScheduledForPickup -> "🗓️ ЗАПЛАНИРОВАН К ОТПРАВКЕ"
 
   -- The courier has picked up the package from our warehouse.
   PickedUpByCourier  -> "📬 ЗАБРАН КУРЬЕРОМ"

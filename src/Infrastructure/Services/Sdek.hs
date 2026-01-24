@@ -24,6 +24,7 @@ module Infrastructure.Services.Sdek
        , patchOrder
        , obtainOrderReceiptUrl
        , requestReceiptGeneration
+       , cancelOrder
        ) where
 
 import Data.Text (Text)
@@ -401,3 +402,13 @@ requestReceiptGeneration uuid = do
   let orders = ReceiptRegisterRequest [ReceiptRegisterRequestOrder uuid] 2
   let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl orders . Just . mkDefToken . sdekAccessToken)
   makeRequestWithRetries @ReceiptRegisterResponse (Just (void $ getValidSdekToken)) totalSumReq
+
+
+cancelOrder :: UUID -> AppM (Either HttpError CancelOrderResponse)
+cancelOrder uuid = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let cancelUrl = show HTTPS <> url <> "/v2/orders/" <> show uuid
+  let cancelReq = getValidSdekToken >>= (_deleteReq' httpManager cancelUrl . Just . mkDefToken . sdekAccessToken)
+  makeRequestWithRetries @CancelOrderResponse (Just (void $ getValidSdekToken)) cancelReq

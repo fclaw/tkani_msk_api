@@ -12,6 +12,7 @@ module Infrastructure.Utils.Http
     postReq,
     postFormReq,
     patchReq,
+    deleteReq,
     
     makeRequestWithRetries,
 
@@ -20,7 +21,8 @@ module Infrastructure.Utils.Http
     _postReq',
     _postFormReq',
     _patchReq',
-
+    _deleteReq',
+    
     handleApiResponse,
     handleWorkerApiResponse,
     withRetry,
@@ -37,7 +39,7 @@ import           Data.Aeson             (FromJSON, ToJSON, eitherDecode, encode)
 import qualified Data.ByteString.Lazy   as LBS
 import           Data.Text              (Text)
 import qualified Data.Text              as T
-import           Network.Wreq           (Response, defaults, getWith, params, patchWith,
+import           Network.Wreq           (Response, defaults, deleteWith, getWith, params, patchWith,
                                          postWith, responseBody, header, FormParam (..), manager) -- ADDED manager
 import qualified Data.Text.Encoding     as TE
 import           Servant                (ServerError, err500, errBody)
@@ -225,6 +227,19 @@ _postFormReq' mgr url payload = do
              responseTimeoutMicro (60 * 1000000) })
   liftIO $ try (postWith opts url payload)
 
+_deleteReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
+_deleteReq' mgr url maybeToken = do
+  -- FIX: Use global manager
+  let baseOpts = 
+        defaults 
+        & manager .~ Right mgr
+        & manager .~ Left (
+           tlsManagerSettings 
+           { managerResponseTimeout = 
+             responseTimeoutMicro (60 * 1000000) })
+  let opts = addToken maybeToken baseOpts
+  liftIO $ try (deleteWith opts url)
+
 
 -- ===================================================================
 -- == 2. PUBLIC API (UPDATED to accept Manager)
@@ -245,6 +260,10 @@ postFormReq mgr url payload = makeRequestWithRetries Nothing (_postFormReq' mgr 
 patchReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m,  FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either HttpError a)
 patchReq mgr url body maybeToken = makeRequestWithRetries Nothing (_patchReq' mgr url body maybeToken)
 {-# INLINE patchReq #-}
+
+deleteReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> Maybe Token -> m (Either HttpError a)
+deleteReq mgr url maybeToken = makeRequestWithRetries Nothing (_deleteReq' mgr url maybeToken)
+{-# INLINE deleteReq #-}
 
 -- ... (Rest of adapters handleApiResponse, etc. remain the same) ...
 

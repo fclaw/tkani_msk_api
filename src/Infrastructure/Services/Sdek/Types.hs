@@ -15,11 +15,13 @@ import Data.Aeson.TH
 import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Data.Text (Text)
+import Data.List (find)
 import Data.UUID (UUID, fromText)
 import qualified Data.Vector as V
 import Data.Maybe (listToMaybe)
 import Data.Time (UTCTime)
 
+import API.WithField (WithField (..))
 import Text (camelToSnake, recordLabelModifier)
 import Infrastructure.Services.Sdek.Types.Enums
 import Infrastructure.Services.Sdek.Types.State
@@ -501,5 +503,42 @@ instance FromJSON ReceiptRegisterResponse where
                 , rrrState  = state firstRequest
                 , rrrErrors = errors firstRequest }
 
-data OrderStatusResponse
-      
+
+-- This is a temporary type used ONLY during parsing.
+-- It represents one of the raw request objects from the array.
+type SdekRequestDtoExt = WithField "type" Text SdekRequestDto
+
+-- THIS IS OUR FINAL, FOCUSED TYPE.
+-- It represents the outcome we are interested in.
+data CancelOrderResponse =
+     CancelOrderResponse
+    { corState  :: SdekRequestState
+    , corErrors :: Maybe [SdekErrorDetail]  -- The array of request statuses
+  } deriving (Show, Generic)
+
+-- --- THE SMART PARSER ---
+
+-- We write a custom FromJSON instance for our top-level wrapper type.
+-- Its only job is to find the right data and put it in our DeleteStatusResponse.
+instance FromJSON CancelOrderResponse where
+  parseJSON = withObject "CancelOrderResponse" $ \v -> do
+    -- 1. Parse the entire 'requests' array into our temporary DTO.
+    requests <- v .: "requests"
+
+    -- 2. Find the last DELETE request in the list.
+    --    - We 'reverse' the list to find the last one first.
+    --    - We use 'find' to get the first element that matches our predicate.
+    let findLastDelete :: [SdekRequestDtoExt] -> Maybe SdekRequestDtoExt
+        findLastDelete reqs = find (\(WithField _type _) -> _type == "DELETE") (reverse reqs)
+
+    case findLastDelete requests of
+      -- If no DELETE request was found, the whole parse fails.
+      Nothing -> fail "No DELETE request found in the response."
+
+      -- If we found it, construct our final, clean data type.
+      Just (WithField _ deleteRequest) -> do
+        let response = CancelOrderResponse
+              { corState  = state deleteRequest
+              , corErrors = errors deleteRequest
+              }
+        pure response

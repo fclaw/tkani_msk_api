@@ -76,6 +76,7 @@ import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
 import Workers.DailyWeightTracker (runDailyWeightTracker)
 import Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller)
 import Workers.SpecialPostManager (runSpecialPostManager)
+import Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -100,22 +101,26 @@ data Workers =
       | DailyWeightTracker
       | DostavistaOrderStatusPoller
       | SpecialPostManager
+      | SdekOrderCancellationHandler
 
 instance Show Workers where
-  show WebServer                   = "Web Server"
-  show SdekOrderStatusPoller       = "SDEK Order Status Poller"
-  show Tinkoff                     = "Tinkoff Poller"
-  show CollageMaker                = "Collage Maker"
-  show CartsCleaner                = "Carts Cleaner"
-  show SdekPickUpScheduler         = "SDEK Pickup Scheduler"
-  show PickupStatusPoller          = "SDEK Pickup Status Poller"
-  show SdekStatusPoller            = "SDEK Status Poller"
-  show SdekPriceCalculator         = "SDEK Price Calculator"
-  show SdekGenerateReceipt         = "SDEK Generate Receipt"
-  show OrderDeliveryScheduler      = "Order Delivery Scheduler"
-  show DailyWeightTracker          = "Daily Weight Tracker"
-  show DostavistaOrderStatusPoller = "Dostavista Order Status Poller"
-  show SpecialPostManager          = "Special Post Manager"
+  show WebServer                    = "Web Server"
+  show SdekOrderStatusPoller        = "SDEK Order Status Poller"
+  show Tinkoff                      = "Tinkoff Poller"
+  show CollageMaker                 = "Collage Maker"
+  show CartsCleaner                 = "Carts Cleaner"
+  show SdekPickUpScheduler          = "SDEK Pickup Scheduler"
+  show PickupStatusPoller           = "SDEK Pickup Status Poller"
+  show SdekStatusPoller             = "SDEK Status Poller"
+  show SdekPriceCalculator          = "SDEK Price Calculator"
+  show SdekGenerateReceipt          = "SDEK Generate Receipt"
+  show OrderDeliveryScheduler       = "Order Delivery Scheduler"
+  show DailyWeightTracker           = "Daily Weight Tracker"
+  show DostavistaOrderStatusPoller  = "Dostavista Order Status Poller"
+  show SpecialPostManager           = "Special Post Manager"
+  show SdekOrderCancellationHandler = "SDEK Order Cancellation Handler"
+
+
 
 methodsCors :: Middleware
 methodsCors = cors $ const (Just (simpleCorsResourcePolicy { corsMethods = map renderStdMethod [ DELETE, PUT, PATCH]}))
@@ -402,6 +407,10 @@ main = do
                  runInIO (runSpecialPostManager)
                    >>= showErrorInWorker
                         SpecialPostManager)
+              , (SdekOrderCancellationHandler,
+                 runInIO (runSdekOrderCancellationHandler connInfo runInIO)
+                   >>= showErrorInWorker
+                        SdekOrderCancellationHandler)
               ]
 
         let extTasks 
