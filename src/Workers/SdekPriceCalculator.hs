@@ -36,6 +36,7 @@ import Data.Foldable (foldl')
 import Data.Bifunctor (second)
 
 
+import API.Types (OrderStatus (Cancelled))
 import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER))
 import Text (camelToSnake, tshow)
 import Infrastructure.Database 
@@ -44,6 +45,7 @@ import Infrastructure.Database
        , extractValue
        , getPatchedOrderDetails
        , getOrderDetailsForPricing
+       , updateOrderStatus
        , PatchedOrderDetails (..)
        , PatchedOrderDetailsItem (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
@@ -53,6 +55,7 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Sdek.Types.Enums (SdekVatRate (VatRate7, NoVat), vatToDouble)
 import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration, getOrderStatus)
+import qualified Infrastructure.Services.Sdek as Sdek (cancelOrder)
 import Infrastructure.Services.Sdek.Types
 import Concurrency (runJobWithCleanup)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
@@ -194,14 +197,18 @@ processSingleJob (Right PriceJob {..}) = do
                 eResp <- patchOrder patchedOrderReq
                 extractFromEither eResp $ \resp@PatchedOrderResponse {..} ->
                   case porRequests of 
-                   [] -> $(logTM) ErrorS $ "porRequests field is empty in PatchedOrderResponse"
+                   [] -> do 
+                     $(logTM) ErrorS $ "porRequests field is empty in PatchedOrderResponse"
+                     cancelOrder orderId
                    (req:_) -> 
                      case porbState req of
                        Accepted -> do
                          $(logTM) InfoS $ "SDEK order patch ACCEPTED. Polling for completion..."
                          ePollRes <- pollForPatchCompletion podSdekUuid
                          case ePollRes of
-                           Left pollErr -> $(logTM) ErrorS $ "Polling for patch completion failed for order " <> ls orderId <> ": " <> ls pollErr
+                           Left pollErr -> do 
+                             $(logTM) ErrorS $ "Polling for patch completion failed for order " <> ls orderId <> ": " <> ls pollErr
+                             cancelOrder orderId
                            Right finalOrderState -> do
                              -- NOW it is safe to generate the receipt
                              $(logTM) InfoS $ "SDEK order patch is complete. Requesting receipt generation..."
@@ -216,7 +223,9 @@ processSingleJob (Right PriceJob {..}) = do
                                extractValue eDbRes $ \_ -> 
                                  $(logTM) InfoS $ ls $ "order " <> orderId <> " has been successfully patched"
                                when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "order " <> orderId <> ", db failure " <> tshow eDbRes
-                       state -> $(logTM) ErrorS $ ls $ "order " <> orderId <> " is not patched, state: " <> tshow state    
+                       state -> do 
+                         $(logTM) ErrorS $ ls $ "order " <> orderId <> " is not patched, state: " <> tshow state
+                         cancelOrder orderId
                        
 
 -- | Calculates the grand total from a SDEK 'TotalSumResponse' by summing the
@@ -293,3 +302,8 @@ pollForPatchCompletion orderUuid = go 1
                      pure $ Right $ spsState s
 
                    Nothing -> pure $ Left "SDEK order has no status history."
+
+cancelOrder :: Text -> AppM ()
+cancelOrder orderId = do
+  $(logTM) InfoS $ "Starting SDEK order cancellation process for order: " <> ls orderId
+  void $ fmap _appDBPool ask >>= updateOrderStatus orderId Cancelled Nothing
