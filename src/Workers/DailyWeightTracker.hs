@@ -100,19 +100,19 @@ runDailyWeightTracker connInfo runAppM = do
       msg <- fmap escapeMarkdownV2 $ render ($currentModule <> loadedTmpl) templateData
       void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
-      -- run poller 
-      let callPoller = runAppM $ callDostavistaCourier stateVar
+      -- Worker A: Periodically checks if we need to call the courier 
+      let checkCourierPoller = runAppM $ callDostavistaCourier stateVar
 
-      -- Worker A: Resets the 'courier called' flag at midnight
+      -- Worker B: Resets the 'courier called' flag at midnight
       let midnightResetter = runAppM $ resetCourierCalledFlag stateVar
 
-      -- Worker B: Listens for NEW weighed orders and adds weight
+      -- Worker C: Listens for NEW weighed orders and adds weight
       let weightAccumulator = runAppM $ runWeightAccumulator stateVar connInfo runAppM
 
-      -- Worker C: Listens for status CHANGES and subtracts weight
+      -- Worker D: Listens for status CHANGES and subtracts weight
       let statusChangeListener = runAppM $ runStatusChangeListener stateVar connInfo runAppM
 
-      let workers = [callPoller, midnightResetter, weightAccumulator, statusChangeListener]
+      let workers = [checkCourierPoller, midnightResetter, weightAccumulator, statusChangeListener]
 
       -- 3. Run all three in parallel and wait for any of them to crash
       $(logTM) InfoS "Spawning all Daily Weight Tracker threads..."
