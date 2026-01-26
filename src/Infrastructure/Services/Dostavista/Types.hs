@@ -39,16 +39,17 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pkg" } '
 -- | Represents a point in the delivery (either pickup or dropoff)
 data DostavistaPoint = 
      DostavistaPoint
-    { pointAddress       :: Text
+    { pointAddress               :: Text
      -- Dostavista also needs contact person info for each point
-    , pointContactPerson :: DostavistaContact
+    , pointContactPerson         :: DostavistaContact
      -- Other fields like 'latitude', 'longitude' might be needed
-    , pointLatitude      :: Text
-    , pointLongitude     :: Text
-    , pointPackages      :: [DostavistaPackage]
+    , pointLatitude              :: Text
+    , pointLongitude             :: Text
+    , pointRequiredStartDatetime :: Maybe Text
+    , pointPackages              :: [DostavistaPackage]
     } deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "point" } ''DostavistaPoint)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "point", omitNothingFields = True } ''DostavistaPoint)
 
 
 -- | The main request body for the /create-order endpoint

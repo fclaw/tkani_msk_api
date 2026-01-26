@@ -58,6 +58,10 @@ runDostavistaOrderStatusPoller = do
 timeout :: Int
 timeout = 30 * 1000000
 
+allotedTime :: Int
+allotedTime = 3600 -- 3600 = 1 hour
+
+
 pollerLogic :: TVar (DostavistaOrderStatus, UTCTime) -> Int64 -> AppM ()
 pollerLogic statusVar orderId = do
   (currentStatus, start) <- readTVarIO statusVar
@@ -65,11 +69,12 @@ pollerLogic statusVar orderId = do
 
   let timeElapsed = round $ diffUTCTime end start
 
-   -- if no courier is found within 4-hour window close the order
-  if timeElapsed > 2 * 3600 &&
+   -- if no courier is found within 1-hour window close the order
+  if timeElapsed > allotedTime &&
      (currentStatus == Available || 
      currentStatus == New)
   then do
+    cancelOrder orderId
     pool <- fmap _appDBPool ask
     void $ setDostavistaOrderStatus orderId Canceled pool
     $(logTM) InfoS $ "Dostavista order " <> ls (show orderId) <> " has been cancelled due to timeout."
@@ -143,14 +148,8 @@ pollerLogic statusVar orderId = do
                     pollerLogic statusVar orderId
                   Canceled -> do 
                     $(logTM) InfoS $ "Dostavista order hae been cancelled.."
-                    eDbRes <- setDostavistaOrderStatus orderId Canceled pool
-                    when (isLeft eDbRes) $ 
-                      $(logTM) ErrorS $ 
-                        "Failed to update order status \ 
-                        \ to Canceled in DB for order ID: " <> 
-                        ls (show orderId) <> 
-                        ". Error: " <> 
-                        ls (show eDbRes)
+                    cancelOrder orderId
+                    void $ setDostavistaOrderStatus orderId Canceled pool
                     msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Cancelled") $ HM.fromList [("orderId", tshow orderId)]
                     void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
                   -- Order was canceled. Revert and alert.

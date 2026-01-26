@@ -100,11 +100,11 @@ runDailyWeightTracker connInfo runAppM = do
       msg <- fmap escapeMarkdownV2 $ render ($currentModule <> loadedTmpl) templateData
       void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
-      -- on restarting determine whether there is enough weight to call a courier
-      callDostavistaCourier initialState stateVar
+      -- run poller 
+      let callPoller = runAppM $ callDostavistaCourier stateVar
 
       -- Worker A: Resets the 'courier called' flag at midnight
-      let midnightResetter = runAppM (resetCourierCalledFlag stateVar)
+      let midnightResetter = runAppM $ resetCourierCalledFlag stateVar
 
       -- Worker B: Listens for NEW weighed orders and adds weight
       let weightAccumulator = runAppM $ runWeightAccumulator stateVar connInfo runAppM
@@ -112,7 +112,7 @@ runDailyWeightTracker connInfo runAppM = do
       -- Worker C: Listens for status CHANGES and subtracts weight
       let statusChangeListener = runAppM $ runStatusChangeListener stateVar connInfo runAppM
 
-      let workers = [midnightResetter, weightAccumulator, statusChangeListener]
+      let workers = [callPoller, midnightResetter, weightAccumulator, statusChangeListener]
 
       -- 3. Run all three in parallel and wait for any of them to crash
       $(logTM) InfoS "Spawning all Daily Weight Tracker threads..."
@@ -266,97 +266,10 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
 
-  let totalWeight = wtsTotalWeightGrams updatedState
-  let weightExceeded = totalWeight >= weightThreshold
-  let courierNotCalled = not (wtsCourierCalled updatedState)
-  let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
-  let isWithinSchedulingWindow =
-       let hourBeforeCutoff = cutoffHour - 1
-       in currentHour >= hourBeforeCutoff &&
-          currentHour < cutoffHour
-
-  dayOfWeek <- liftIO isBusinessDay
-
-  when (not dayOfWeek) $ $(logTM) InfoS $ "Weekend. skip the courier call"
-
-  if dayOfWeek &&
-     weightExceeded && 
-     courierNotCalled && 
-     isWithinSchedulingWindow
-  then do
-    $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."           
-    -- Call the Dostavista Service
-    pool <- fmap _appDBPool ask
-    eDbRes <- fetchDostavistaPackages (wtsOrders updatedState) pool
-    when(isLeft eDbRes) $ do
-       $(logTM) ErrorS $ ls $ "ddb failure " <> tshow eDbRes
-       throwM err500
-    let Right dostavistaPackages = eDbRes
-    eDostavistaResult <- scheduleDostavistaPickup dostavistaPackages totalWeight
-    case eDostavistaResult of
-      Left apiErr -> $(logTM) ErrorS $ "Dostavista API call failed: " <> ls (show apiErr)
-      Right ord@DostavistaOrderResponse {..} ->
-        if isSuccessful then do
-          let Just Order {..} = order    
-          -- Dostavista call was successful. Now, update both the
-          -- in-memory TVar AND the database.
-          $(logTM) InfoS "Dostavista call successful. Persisting state."
-          $(logTM) DebugS $ "Dostavista order: " <> ls (show ord)          
-          -- Persist the "called" state to the database
-          -- Get the list of orders to include in this batch from the state
-          let ordersInBatch = wtsOrders updatedState
-
-          let courierPickupData = 
-               CourierPickupData 
-                { cpdDay                   = today 
-                , cpdProvider              = DOSTAVISTA
-                , cpdOrders                = ordersInBatch
-                , cpdDostavistaOrderId     = orderId
-                , cpdDostavistaOrderStatus = encodeToText status
-                , cpdCost                  = 
-                  fromMaybe (error "cannot extract paymentAmount") $
-                    textMoneyToDouble paymentAmount
-                , cpdOrderStatus           = encodeToText ScheduledForPickup   
-                }
-          let debugMsg = decodeUtf8 $ BL.toStrict $ encodePretty courierPickupData
-          $(logTM) InfoS $ "CourierPickupData: " <> ls debugMsg
-          eDbResult <- recordAndLinkPickup courierPickupData pool
-          for_ eDbResult $ const $ do
-            -- Update the in-memory flag immediately
-            modifyTVarIO stateVar $
-                \s -> s { wtsTotalWeightGrams = 0
-                        -- Still true for today, will be reset tomorrow
-                        , wtsCourierCalled = True
-                        -- Clear the list for the next batch
-                        , wtsOrders = [] }
-
-            -- delegate the tracking to Dostavista worker
-            appStateVar <- get
-            appState <- readTVarIO appStateVar
-            start <- currentTime
-            liftIO $ atomically $ writeTChan (_dostavistaChan appState) $ DostavistaJob orderId status start
-
-            -- Send a detailed notification to the admin channel
-            let templateData = 
-                  HM.fromList
-                  [ ("count", tshow (length ordersInBatch))
-                  , ("weight", tshow totalWeight)
-                  , ("order_list",  T.unlines (map ((<>) "• `" . (`T.append` "`")) ordersInBatch))
-                  ]
-            msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
-            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
-        else $(logTM) ErrorS "Dostativsta call has ended up in failure"        
-
-  else when (weightExceeded && 
-             courierNotCalled && 
-             not isWithinSchedulingWindow) $
-         -- The weight is high enough, but it's too late in the day.
-         $(logTM) WarningS "Weight threshold met, but it's too late to call a courier today. Manual action may be required."
-         -- Optionally, send an alert to the admin here.
-
-callDostavistaCourier :: WeightTrackerState -> TVar WeightTrackerState -> AppM ()
-callDostavistaCourier (WeightTrackerState {..}) stateVar = do 
+callDostavistaCourier :: TVar WeightTrackerState -> AppM ()
+callDostavistaCourier stateVar = forever $ do 
   $(logTM) InfoS "starting measuring weight for courier call..."
+  WeightTrackerState {..} <- readTVarIO stateVar
   cfg <- ask
   let weightThreshold = _courierWeightThreshold cfg
    -- Get current Moscow hour
@@ -375,7 +288,6 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
   dayOfWeek <- liftIO isBusinessDay
 
   when (not dayOfWeek) $ $(logTM) InfoS $ "Weekend. skip the courier call"
-
 
   when(dayOfWeek &&
        weightExceeded &&
@@ -444,4 +356,5 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
                   ]
             msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
             void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
-        else $(logTM) ErrorS "Dostativsta call has ended up in failure"  
+        else $(logTM) ErrorS "Dostativsta call has ended up in failure"
+  liftIO $ threadDelay (10 * 60 * 1000000) -- sleep 10 minutes before re-evaluating
