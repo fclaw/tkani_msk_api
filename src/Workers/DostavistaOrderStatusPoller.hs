@@ -66,7 +66,7 @@ pollerLogic statusVar orderId = do
   let timeElapsed = round $ diffUTCTime end start
 
    -- if no courier is found within 4-hour window close the order
-  if timeElapsed > 4 * 3600 &&
+  if timeElapsed > 2 * 3600 &&
      (currentStatus == Available || 
      currentStatus == New)
   then do
