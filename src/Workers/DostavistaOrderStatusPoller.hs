@@ -59,7 +59,7 @@ timeout :: Int
 timeout = 30 * 1000000
 
 allotedTime :: Int
-allotedTime = 3600 -- 3600 = 1 hour
+allotedTime = 1 -- 3600 = 1 hour
 
 
 pollerLogic :: TVar (DostavistaOrderStatus, UTCTime) -> Int64 -> AppM ()
@@ -147,7 +147,7 @@ pollerLogic statusVar orderId = do
                     liftIO $ threadDelay timeout
                     pollerLogic statusVar orderId
                   Canceled -> do 
-                    $(logTM) InfoS $ "Dostavista order hae been cancelled.."
+                    $(logTM) InfoS $ "Dostavista order has been cancelled.."
                     void $ setDostavistaOrderStatus orderId Canceled pool
                     msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Cancelled") $ HM.fromList [("orderId", tshow orderId)]
                     void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
