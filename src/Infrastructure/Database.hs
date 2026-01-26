@@ -101,6 +101,7 @@ import qualified Data.Vector as V
 import Data.Either (fromRight, either)
 import Data.Time (Day)
 import Data.Foldable (for_)
+import Control.Exception (throwIO)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
@@ -1767,39 +1768,48 @@ recordAndLinkPickup CourierPickupData {..} pool =
     runTransactionM pool Hasql.Write $ do
       
       -- STEP 1: Insert the new courier pickup record and get its primary key (id).
-      maybeCourierPickupId <-
+      courierPickupId <-
         Hasql.statement 
          ( cpdDay
          , encodeToText cpdProvider
          , cpdDostavistaOrderId
          , cpdCost
          , cpdDostavistaOrderStatus) $ 
-         [Hasql.maybeStatement|
-          INSERT INTO external_courier_pickups
-          (pickup_date, provider, order_id, cost, status)
-          VALUES (
-           $1 :: date,
-           CAST($2 :: text AS pickup_provider), 
-           $3 :: int8, 
-           CAST($4 :: float8 AS numeric), 
-           $5 :: text)
-          ON CONFLICT (pickup_date) DO NOTHING 
-          RETURNING id :: int8
+         [Hasql.singletonStatement|
+           INSERT INTO external_courier_pickups
+           (pickup_date, provider, order_id, cost, status)
+           VALUES 
+           ( $1 :: date
+           , CAST($2 :: text AS pickup_provider)
+           , $3 :: int8
+           , CAST($4 :: float8 AS numeric)
+           , $5 :: text)
+           ON CONFLICT (pickup_date) DO UPDATE
+           SET provider = EXCLUDED.provider,
+               order_id = EXCLUDED.order_id,
+               cost = EXCLUDED.cost,
+               status = EXCLUDED.status
+           WHERE external_courier_pickups.status = 'canceled'
+           RETURNING id :: int8
          |]
 
-      for_ maybeCourierPickupId $ 
-        \courierPickupId ->
-          -- STEP 2: Execute the bulk update
-          Hasql.statement
-           ( courierPickupId
-           , V.fromList cpdOrders
-           , cpdOrderStatus) $
-           [Hasql.resultlessStatement|
+      -- STEP 2: Execute the bulk update
+      rowsAffected <-
+        Hasql.statement
+          ( courierPickupId
+          , V.fromList cpdOrders
+          , cpdOrderStatus) $
+          [Hasql.rowsAffectedStatement|
             UPDATE orders
             SET courier_pickup_id = $1 :: int8,
                 status = CAST($3 :: text AS order_status)
             WHERE id = ANY($2 :: text[])
-           |]
+          |]
+      -- CRITICAL: Check that we actually updated one row.
+      when (fromIntegral rowsAffected /= length cpdOrders) $ do
+        -- If not, something is wrong. Abort the transaction.
+        error $ "Expected to update " <> show (length cpdOrders) <> " orders, but updated " ++ show rowsAffected
+
 
 fetchWeightTrackerStateInfo :: Day -> CourierService -> Hasql.Pool -> AppM (Either Text (Int, Bool, [Text]))
 fetchWeightTrackerStateInfo day service pool =
@@ -1842,29 +1852,48 @@ setDostavistaOrderStatus :: Int64 -> DostavistaOrderStatus -> Hasql.Pool -> AppM
 setDostavistaOrderStatus orderId status pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
-      Hasql.statement (orderId, encodeToText status)
-       [Hasql.resultlessStatement|
-        UPDATE external_courier_pickups
-        SET status = $2 :: text
-        WHERE order_id = $1 :: int8 
-       |]
+      ordersAffected :: V.Vector Text <- 
+        Hasql.statement (orderId, encodeToText status)
+         [Hasql.singletonStatement|
+          UPDATE external_courier_pickups
+          SET status = $2 :: text
+          WHERE order_id = $1 :: int8
+          RETURNING (
+            SELECT COALESCE(array_agg(id), '{}'::text[])
+            FROM orders
+            WHERE courier_pickup_id = 
+                  external_courier_pickups.id
+          ) :: text[]
+         |]
        -- revert all orders linked to this pickup
-      when(status == Canceled) $ 
-        Hasql.statement (orderId) $
-        [Hasql.resultlessStatement|
-         UPDATE orders
-         SET courier_pickup_id = NULL,
-             status = 'paid'
-         WHERE courier_pickup_id = $1 :: int8
-       |]
+      when(status == Canceled) $ do
+        rowsAffected <- 
+          Hasql.statement (ordersAffected) $
+           [Hasql.rowsAffectedStatement|
+            UPDATE orders
+            SET courier_pickup_id = NULL,
+                status = 'paid'
+            WHERE id = ANY($1 :: text[])
+           |]
 
-      when(status == Infrastructure.Services.Dostavista.Types.Enums.Completed) $ 
-        Hasql.statement (orderId) $
-        [Hasql.resultlessStatement|
-         UPDATE orders
-         SET status = 'on_route'
-         WHERE courier_pickup_id = $1 :: int8
-       |]
+        -- CRITICAL: Check that we actually updated one row.
+        when (fromIntegral rowsAffected /= length ordersAffected) $ do
+          -- If not, something is wrong. Abort the transaction.
+          error $ "Expected to update " <> show (length ordersAffected) <> " orders, but updated " ++ show rowsAffected
+
+
+      when(status == Infrastructure.Services.Dostavista.Types.Enums.Completed) $ do
+        rowsAffected <- 
+          Hasql.statement (ordersAffected) $
+           [Hasql.rowsAffectedStatement|
+            UPDATE orders
+            SET status = 'on_route'
+            WHERE id = ANY($1 :: text[])
+          |]
+        -- CRITICAL: Check that we actually updated one row.
+        when (fromIntegral rowsAffected /= length ordersAffected) $ do
+          -- If not, something is wrong. Abort the transaction.
+          error $ "Expected to update " <> show (length ordersAffected) <> " orders, but updated " ++ show rowsAffected
 
 setDostavistaPickupByCourierStatus :: Int64 -> DostavistaOrderStatus -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
 setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =

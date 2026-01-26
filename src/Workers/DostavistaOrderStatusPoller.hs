@@ -6,7 +6,8 @@ module Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller) wher
 
 import Katip
 import Data.Int (Int64)
-import Control.Monad (forever)
+import Data.Either (isLeft)
+import Control.Monad (forever, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent (threadDelay)
 import Control.Monad.Reader.Class (ask)
@@ -142,7 +143,14 @@ pollerLogic statusVar orderId = do
                     pollerLogic statusVar orderId
                   Canceled -> do 
                     $(logTM) InfoS $ "Dostavista order hae been cancelled.."
-                    void $ setDostavistaOrderStatus orderId Canceled pool
+                    eDbRes <- setDostavistaOrderStatus orderId Canceled pool
+                    when (isLeft eDbRes) $ 
+                      $(logTM) ErrorS $ 
+                        "Failed to update order status \ 
+                        \ to Canceled in DB for order ID: " <> 
+                        ls (show orderId) <> 
+                        ". Error: " <> 
+                        ls (show eDbRes)
                     msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Cancelled") $ HM.fromList [("orderId", tshow orderId)]
                     void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
                   -- Order was canceled. Revert and alert.

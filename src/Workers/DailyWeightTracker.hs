@@ -271,7 +271,7 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   let courierNotCalled = not (wtsCourierCalled updatedState)
   let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
   let isWithinSchedulingWindow =
-       let hourBeforeCutoff = cutoffHour - 3
+       let hourBeforeCutoff = cutoffHour - 1
        in currentHour >= hourBeforeCutoff &&
           currentHour < cutoffHour
 
@@ -368,7 +368,7 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
   let courierNotCalled = not wtsCourierCalled
   let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
   let isWithinSchedulingWindow =
-       let hourBeforeCutoff = cutoffHour - 3
+       let hourBeforeCutoff = cutoffHour - 1
        in currentHour >= hourBeforeCutoff &&
           currentHour < cutoffHour
 
