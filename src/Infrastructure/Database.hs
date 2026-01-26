@@ -2029,7 +2029,7 @@ fetchDostavistaPackages ordersId pool =
             'ware_code', o.id,
             'description', oi.description,
             'items_count', oi.length,
-            'item_payment_amount', CAST(ROUND(oi.price / oi.length) AS text)
+            'item_payment_amount', CAST(oi.price AS text)
           ) :: jsonb
         FROM orders AS o
         INNER JOIN (
