@@ -1,11 +1,12 @@
 -- We need a few language extensions for this.
-{-# LANGUAGE DeriveGeneric     #-} -- To automatically derive Generic
-{-# LANGUAGE DuplicateRecordFields #-} -- To allow fields like 'priceRub' in multiple records
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE DeriveGeneric              #-} -- To automatically derive Generic
+{-# LANGUAGE DuplicateRecordFields      #-} -- To allow fields like 'priceRub' in multiple records
+{-# LANGUAGE TypeSynonymInstances       #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module API.Types where
 
@@ -588,3 +589,33 @@ data SdekDeliveryPoint =
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "spd" } ''SdekDeliveryPoint)
+
+data ShelfRequest =
+     ShelfRequest
+     { srInitials :: Text
+     , srPhone    :: Text
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sr" } ''ShelfRequest)
+
+newtype ShelfIdResponse = ShelfIdResponse { selfId :: Int64 } deriving (Show, Eq, ToJSON)
+
+data ShelfItems =
+     ShelfItems
+     { siArticle    :: Text
+     , siName       :: Text
+     , siFabricType :: FabricType
+     , suQuantity    :: Double
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "si" } ''ShelfItems)
+
+
+data ShelfItemsResponse =
+     ShelfItemsResponse
+     { sirCapacity       :: Int 
+     , sirItems          :: [ShelfItems]
+     , sirLifeTimeInDays :: Maybe Int
+     } deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } ''ShelfItemsResponse)

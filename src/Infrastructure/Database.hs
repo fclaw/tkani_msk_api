@@ -75,6 +75,9 @@ module Infrastructure.Database
   , fetchSpecialPostDetails
   , insertNewSpecialPost
   , deleteSpecialPost
+    -- Shelf section
+  , initShelf
+  , fetchShelfItems
   ) where
 
 
@@ -2148,3 +2151,67 @@ deleteSpecialPost msgId pool =
         SET is_active = FALSE
         WHERE message_id = $1 :: int8
       |]
+
+
+initShelf :: Int64 -> ShelfRequest -> Hasql.Pool -> AppM (Either Text (Maybe Int64))
+initShelf userId shelfRequest pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (shelfRequest) $
+      lmap (consT userId . $(recordToTuple ''ShelfRequest))
+      [Hasql.maybeStatement|
+        INSERT INTO shelves
+        (telegram_user_id
+        , user_initials
+        , user_phone) 
+        VALUES ($1 :: int8, $2 :: text, $3 :: text)
+        ON CONFLICT (telegram_user_id) DO NOTHING
+        RETURNING id :: int8
+      |]
+
+fetchShelfItems :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe (Maybe UTCTime, [ShelfItems])))
+fetchShelfItems userId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (userId) $
+      rmap (fmap (second (map (extractADT . convertFromJson @ShelfItems) . V.toList)))
+      [Hasql.maybeStatement|
+        SELECT
+         s.first_item_added_at :: timestamptz?,
+         COALESCE(shelf_items.items, '{}' :: jsonb[]) :: jsonb[] AS items
+        FROM shelves AS s
+        LEFT JOIN (
+         SELECT
+         shelf_id,
+         array_agg(item_json) AS items
+         FROM (
+          SELECT
+           si.shelf_id,
+           jsonb_build_object(
+            'article', f.article,
+            'name', f.name,
+            'fabric_type',
+             CASE
+              WHEN si.pre_cut_id IS NOT NULL 
+              THEN 'pre_cut'
+              ELSE 'roll'
+             END,
+            'quantity', 
+             CASE 
+              WHEN pc.id IS NULL THEN
+              si.length_m
+              ELSE pc.length_m
+             END	
+           ) AS item_json
+          FROM shelf_items AS si
+          INNER JOIN fabrics AS f 
+          ON si.fabric_id = f.id
+          LEFT JOIN pre_cuts AS pc 
+          ON pc.fabric_id = f.id
+          ) AS item_details
+          GROUP BY shelf_id
+        ) AS shelf_items 
+        ON s.id = shelf_items.shelf_id
+        WHERE s.telegram_user_id = $1 :: int8
+      |]
+

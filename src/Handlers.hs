@@ -35,34 +35,42 @@ import qualified API.Handlers.TallyUpExpenses as TallyUpExpenses
 import qualified API.Handlers.SetOrderDimensions as SetOrderDimensions
 import qualified API.Handlers.SdekDeliveryPointUUID as SdekDeliveryPointUUID
 import qualified API.Handlers.GetCatalogSummary as GetCatalogSummary
+-- Shelf API
+import qualified API.Handlers.Shelf.InitShelf as InitShelf
+import qualified API.Handlers.Shelf.PatchShelfAccount as PatchShelfAccount
+import qualified API.Handlers.Shelf.FetchShelfItems as FetchShelfItems
 
 
 -- This is the implementation of our server.
 -- It's a record of handlers that matches the 'Routes' data type.
 apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
-  { _getFabricPreview         = GetFabricPreview.handler -- Assign the handler function to the field
-  , _putNewFabric             = PutNewFabric.handler
-  , _getDeliveryPoints        = GetDeliveryPoints.handler
-  , _getProviders             = GetProviders.handler
-  , _placeNewOrder            = PlaceNewOrder.handler
-  , _setTelegramMessage       = SetTelegramMessage.handler
-  , _trackOrder               = TrackOrder.handler
-  , _searchFabrics            = SearchFabrics.handler
-  , _searchFabricCard         = SearchFabricCard.handler
-  , _cancelOrder              = CancelOrder.handler
-  , _checkCartItem            = CheckCartItem.handler
-  , _addToCart                = AddToCart.handler
-  , _clearCart                = ClearCart.handler
-  , _viewCart                 = ViewCart.handler
-  , _patchFabric              = PatchFabric.handler
-  , _deleteFabric             = DeleteFabric.handler
-  , _measureOrder             = MeasureOrder.handler
-  , _placeYamlOrder           = PlaceYamlOrder.handler
-  , _reportDailySales         = ReportDailySales.handler
-  , _reportMonthlySales       = ReportMonthlySales.handler
-  , _tallyUpExpenses          = TallyUpExpenses.handler
-  , _setOrderDimensions       = SetOrderDimensions.handler
-  , _getSdekDeliveryPointUUID = SdekDeliveryPointUUID.handler
-  , _getCatalogSummary      = GetCatalogSummary.handler
+  { _getFabricPreview          = GetFabricPreview.handler -- Assign the handler function to the field
+  , _putNewFabric              = PutNewFabric.handler
+  , _getDeliveryPoints         = GetDeliveryPoints.handler
+  , _getProviders              = GetProviders.handler
+  , _placeNewOrder             = PlaceNewOrder.handler
+  , _setTelegramMessage        = SetTelegramMessage.handler
+  , _trackOrder                = TrackOrder.handler
+  , _searchFabrics             = SearchFabrics.handler
+  , _searchFabricCard          = SearchFabricCard.handler
+  , _cancelOrder               = CancelOrder.handler
+  , _checkCartItem             = CheckCartItem.handler
+  , _addToCart                 = AddToCart.handler
+  , _clearCart                 = ClearCart.handler
+  , _viewCart                  = ViewCart.handler
+  , _patchFabric               = PatchFabric.handler
+  , _deleteFabric              = DeleteFabric.handler
+  , _measureOrder              = MeasureOrder.handler
+  , _placeYamlOrder            = PlaceYamlOrder.handler
+  , _reportDailySales          = ReportDailySales.handler
+  , _reportMonthlySales        = ReportMonthlySales.handler
+  , _tallyUpExpenses           = TallyUpExpenses.handler
+  , _setOrderDimensions        = SetOrderDimensions.handler
+  , _getSdekDeliveryPointUUID  = SdekDeliveryPointUUID.handler
+  , _getCatalogSummary         = GetCatalogSummary.handler
+  -- Shelf API
+  , _initShelf                 = InitShelf.handler
+  , _patchShelfAccount         = PatchShelfAccount.handler
+  , _fetchShelfItems           = FetchShelfItems.handler
   }

@@ -201,7 +201,27 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "life-cycle" FabricLifecycle
        :> Get '[JSON] (ApiResponse CatalogSummary)
-
+     -- shelf API
+   , _initShelf 
+       :: route
+       :- "shelf"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> ReqBody '[JSON] (WithField "user_id" Int64 ShelfRequest)
+       :> Put '[JSON] (ApiResponse ShelfIdResponse)
+   , _patchShelfAccount 
+       :: route
+       :- "shelf"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Capture "user_id" Int64
+       :> ReqBody '[JSON] ShelfRequest
+       :> Patch '[JSON] (ApiResponse ())
+   , _fetchShelfItems
+       :: route
+       :- "shelf"
+       :> "items"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> QueryParam "user_id" Int64
+       :> Get '[JSON] (ApiResponse ShelfItemsResponse)
   } deriving (Generic)
 
 

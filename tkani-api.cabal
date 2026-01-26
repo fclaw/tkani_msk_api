@@ -59,6 +59,9 @@ library
       API.Handlers.SearchFabrics
       API.Handlers.SetOrderDimensions
       API.Handlers.SetTelegramMessage
+      API.Handlers.Shelf.FetchShelfItems
+      API.Handlers.Shelf.InitShelf
+      API.Handlers.Shelf.PatchShelfAccount
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder
       API.Handlers.ViewCart
