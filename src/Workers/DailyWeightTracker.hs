@@ -33,6 +33,8 @@ import qualified Data.HashMap.Strict as HM
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Control.Concurrent (threadDelay)
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.Text.Encoding (decodeUtf8)
 import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically, modifyTVar', TChan, writeTChan)
 import Data.Time (Day, UTCTime, getCurrentTime, utctDay)
 import qualified Database.PostgreSQL.Simple as PG
@@ -269,8 +271,8 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   let courierNotCalled = not (wtsCourierCalled updatedState)
   let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
   let isWithinSchedulingWindow =
-       let hourBeforeCutoff = cutoffHour - 1
-       in currentHour >= hourBeforeCutoff && 
+       let hourBeforeCutoff = cutoffHour - 3
+       in currentHour >= hourBeforeCutoff &&
           currentHour < cutoffHour
 
   dayOfWeek <- liftIO isBusinessDay
@@ -316,6 +318,8 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
                     textMoneyToDouble paymentAmount
                 , cpdOrderStatus           = encodeToText ScheduledForPickup   
                 }
+          let debugMsg = decodeUtf8 $ BL.toStrict $ encodePretty courierPickupData
+          $(logTM) InfoS $ "CourierPickupData: " <> ls debugMsg
           eDbResult <- recordAndLinkPickup courierPickupData pool
           for_ eDbResult $ const $ do
             -- Update the in-memory flag immediately
@@ -364,7 +368,7 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
   let courierNotCalled = not wtsCourierCalled
   let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
   let isWithinSchedulingWindow =
-       let hourBeforeCutoff = cutoffHour - 1
+       let hourBeforeCutoff = cutoffHour - 3
        in currentHour >= hourBeforeCutoff &&
           currentHour < cutoffHour
 
@@ -374,7 +378,7 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
 
 
   when(dayOfWeek &&
-       weightExceeded && 
+       weightExceeded &&
        courierNotCalled && 
        isWithinSchedulingWindow) $ do
     $(logTM) InfoS $ "Weight threshold exceeded within time window. Calling courier..."    
@@ -413,6 +417,8 @@ callDostavistaCourier (WeightTrackerState {..}) stateVar = do
                     textMoneyToDouble paymentAmount
                 , cpdOrderStatus           = encodeToText ScheduledForPickup   
                 }
+          let debugMsg = decodeUtf8 $ BL.toStrict $ encodePretty courierPickupData
+          $(logTM) InfoS $ "CourierPickupData: " <> ls debugMsg
           eDbResult <- recordAndLinkPickup courierPickupData pool
           for_ eDbResult $ const $ do
             -- Update the in-memory flag immediately
