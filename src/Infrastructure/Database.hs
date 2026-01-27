@@ -172,7 +172,7 @@ getFabricPreviewStatement :: Hasql.Statement (Int64, FabricType, Double) FabricP
 getFabricPreviewStatement =
   dimap (app1 fromIntegral . app2 encodeToText) (extractADT . convertFromJson @FabricPreview)
   [Hasql.singletonStatement|
-    WITH claimed_length AS (
+    WITH all_claimed_pieces AS (
       SELECT 
         ci.fabric_id, 
         SUM(ci.length_m) AS length
@@ -194,6 +194,13 @@ getFabricPreviewStatement =
       AND o.status = 'registered'
       AND o.created_at > NOW() - INTERVAL '30 minutes'
       GROUP BY ofb.fabric_id
+    ),
+    total_claimed_length AS (
+      SELECT
+        fabric_id,
+        SUM(length) as length
+      FROM all_claimed_pieces
+      GROUP BY fabric_id
     ),
     pre_cut_in_order AS (
       SELECT 1 AS in_order
@@ -228,7 +235,7 @@ getFabricPreviewStatement =
           END
       ) :: jsonb
     FROM fabrics AS f
-    LEFT JOIN claimed_length AS cl
+    LEFT JOIN total_claimed_length AS cl
     ON f.id = cl.fabric_id
     WHERE f.id = $1 :: int8 AND $2 :: text = 'roll'
 
@@ -699,7 +706,7 @@ searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Ma
 searchFabricCardStatement = 
   dimap (app1 encodeToText) (fmap (fromRight undefined . convertFromJson))
   [Hasql.maybeStatement|
-    WITH claimed_length AS (
+    WITH all_claimed_pieces AS (
       SELECT 
         ci.fabric_id, 
         SUM(ci.length_m) AS length
@@ -721,6 +728,13 @@ searchFabricCardStatement =
       AND o.status = 'registered'
       AND o.created_at > NOW() - INTERVAL '30 minutes'
       GROUP BY ofb.fabric_id
+    ),
+    total_claimed_length AS (
+      SELECT
+        fabric_id,
+        SUM(length) as length
+      FROM all_claimed_pieces
+      GROUP BY fabric_id
     ),
     item AS (
         SELECT
@@ -744,7 +758,7 @@ searchFabricCardStatement =
             'width', f.width
               ) :: jsonb AS item_json
         FROM fabrics AS f
-        LEFT JOIN claimed_length as cl
+        LEFT JOIN total_claimed_length as cl
         ON cl.fabric_id = f.id
         WHERE $1 :: text = 'roll' 
         AND f.id = $2 :: int8
