@@ -62,7 +62,25 @@ calculateAndFormatDropOffTime = do
   pure postFormatString
 
 
-mkMessage numPackages totalWeight = "Забрать " <> numPackages <> " упаковок с тканью (общий вес " <> totalWeight <> " кг) и доставить в ближайший пункт СДЭК"
+-- The main function, now with VehicleType
+mkMessage :: Int -> Double -> VehicleType -> Text
+mkMessage numPackages totalWeight vehicle =
+  let
+    numPackagesTxt = tshow numPackages
+    totalWeightTxt = tshow totalWeight
+
+    -- This helper translates our ADT into the correct Russian phrase.
+    vehicleDescription = case vehicle of
+      NoVehicleSpecified -> ""
+      PassengerCar       -> ", легковой автомобиль"
+      StationWagon       -> ", универсал/кроссовер"
+      CargoVan           -> ", потребуется грузовой фургон"
+    
+    -- Assemble the final string. The vehicle description is appended
+    -- inside the parentheses only if it's needed.
+    details = "(общий вес " <> totalWeightTxt <> " кг" <> vehicleDescription <> ")"
+  in
+    "Забрать " <> numPackagesTxt <> " упаковок с тканью " <> details <> " и доставить в ближайший пункт СДЭК."
 
 
 scheduleDostavistaPickup :: [DostavistaPackage] -> Int -> AppM (Either HttpError DostavistaOrderResponse)
@@ -94,11 +112,21 @@ scheduleDostavistaPickup packages totalWeightGrams = do
         (Cfg.longitude (Cfg.destination dostavistaCfg))
         Nothing
         []
+  let totalWeight = fromIntegral totalWeightGrams / 1000.0      
+   -- Logic to determine the required vehicle
+  let requiredVehicle =
+       if totalWeight <= 
+          totalWeight
+       then PassengerCar
+       else if totalWeight <= 
+               totalWeight
+       then StationWagon
+       else CargoVan     
   let orderReq = 
         defDostavistaOrderRequest 
-        { drTotalWeightKg   = fromIntegral totalWeightGrams / 1000
+        { drTotalWeightKg   = totalWeight
         , drPoints          = [start, end]
-        , drMatter          = mkMessage (tshow (length packages)) (tshow (fromIntegral totalWeightGrams / 1000))
+        , drMatter          = mkMessage (length packages) totalWeight requiredVehicle
         , drInsuranceAmount = tshow (sum $ map (fromMaybe 0 . textToInt . pkgItemPaymentAmount) packages) <> ".00" 
         }
   $(logTM) InfoS $ ls $ "orderReq: " <> encodePretty orderReq

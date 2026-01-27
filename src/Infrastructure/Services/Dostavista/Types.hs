@@ -17,6 +17,14 @@ import Infrastructure.Services.Dostavista.Types.Enums
 
 
 
+-- Put this in a types module or at the top of your worker file.
+data VehicleType
+  = NoVehicleSpecified
+  | PassengerCar    -- легковой автомобиль
+  | StationWagon    -- универсал / кроссовер
+  | CargoVan        -- грузовой фургон
+  deriving (Eq, Show)
+
 -- | Contact person details
 data DostavistaContact = 
      DostavistaContact
