@@ -605,7 +605,8 @@ data ShelfItems =
      { siArticle    :: Text
      , siName       :: Text
      , siFabricType :: FabricType
-     , suQuantity    :: Double
+     , siQuantity   :: Double
+     , siPrice      :: Int
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "si" } ''ShelfItems)

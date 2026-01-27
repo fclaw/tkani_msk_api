@@ -2238,8 +2238,15 @@ fetchShelfItems userId pool =
              CASE 
               WHEN pc.id IS NULL THEN
               si.length_m
-              ELSE pc.length_m
-             END	
+              ELSE 1.0
+             END,
+            'price',
+             CASE
+              WHEN pc.id IS NULL THEN
+               ROUND(f.price_per_meter * (1 - f.discount))
+              ELSE
+               ROUND(pc.price_rub * (1 - f.discount))
+             END
            ) AS item_json
           FROM shelf_items AS si
           INNER JOIN fabrics AS f 
