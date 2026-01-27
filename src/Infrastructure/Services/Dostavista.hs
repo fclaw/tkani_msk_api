@@ -8,6 +8,7 @@ import Katip
 import Data.Int (Int64)
 import qualified Data.Text as T
 import Data.Text (Text)
+import Data.Maybe (fromMaybe)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -16,7 +17,7 @@ import Data.Time.Clock (UTCTime, NominalDiffTime, addUTCTime, getCurrentTime)
 import Data.Time.LocalTime (TimeZone(..), ZonedTime(..), getZonedTime, utcToZonedTime)
 
 
-import Text (tshow)
+import Text (tshow, textToInt)
 import Infrastructure.Utils.Http (HttpError, postReq, getReq, Token (..))
 import Infrastructure.Services.Dostavista.Types
 import Infrastructure.Services.Dostavista.Types.Error
@@ -61,6 +62,8 @@ calculateAndFormatDropOffTime = do
   pure postFormatString
 
 
+mkMessage numPackages totalWeight = "Забрать " <> numPackages <> " упаковок с тканью (общий вес " <> totalWeight <> " кг) и доставить в ближайший пункт СДЭК"
+
 
 scheduleDostavistaPickup :: [DostavistaPackage] -> Int -> AppM (Either HttpError DostavistaOrderResponse)
 scheduleDostavistaPickup packages totalWeightGrams = do
@@ -93,8 +96,10 @@ scheduleDostavistaPickup packages totalWeightGrams = do
         []
   let orderReq = 
         defDostavistaOrderRequest 
-        { drTotalWeightKg = fromIntegral totalWeightGrams / 1000
-        , drPoints        = [start, end]
+        { drTotalWeightKg   = fromIntegral totalWeightGrams / 1000
+        , drPoints          = [start, end]
+        , drMatter          = mkMessage (tshow (length packages)) (tshow (fromIntegral totalWeightGrams / 1000))
+        , drInsuranceAmount = tshow (sum $ map (fromMaybe 0 . textToInt . pkgItemPaymentAmount) packages) <> ".00" 
         }
   $(logTM) InfoS $ ls $ "orderReq: " <> encodePretty orderReq
   let token = Token "X-DV-Auth-Token" (Cfg.token dostavistaCfg)

@@ -56,26 +56,28 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "point", 
 data DostavistaOrderRequest = 
      DostavistaOrderRequest
      { -- For your model, this will always be "courier"
-       drType          :: DostavistaOrderType
-     , drMatter        :: Text
-     , drVehicleTypeId :: Int
+       drType            :: DostavistaOrderType
+     , drMatter          :: Text
+     , drVehicleTypeId   :: Int
         -- Total weight in KG
-     , drTotalWeightKg :: Double
+     , drTotalWeightKg   :: Double
         -- List of points. First is pickup (your office), second is dropoff (customer)
-     , drPoints        :: [DostavistaPoint]
-     , drPaymentMethod :: DostavistaPayment
+     , drPoints          :: [DostavistaPoint]
+     , drPaymentMethod   :: DostavistaPayment
+     , drInsuranceAmount :: Text
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "dr" } ''DostavistaOrderRequest)
 
 defDostavistaOrderRequest = 
   DostavistaOrderRequest
-  { drType          = Standard
-  , drMatter        = "parcels of fabrics"
-  , drVehicleTypeId = 7
-  , drTotalWeightKg = 0.0
-  , drPoints        = []
-  , drPaymentMethod = BALANCE
+  { drType            = Standard
+  , drMatter          = mempty
+  , drVehicleTypeId   = 7
+  , drTotalWeightKg   = 0.0
+  , drPoints          = []
+  , drPaymentMethod   = BALANCE
+  , drInsuranceAmount = "5000.00"
   }
 
 data Courier =

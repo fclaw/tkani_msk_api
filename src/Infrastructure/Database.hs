@@ -1852,19 +1852,20 @@ setDostavistaOrderStatus :: Int64 -> DostavistaOrderStatus -> Hasql.Pool -> AppM
 setDostavistaOrderStatus orderId status pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
-      ordersAffected :: V.Vector Text <- 
-        Hasql.statement (orderId, encodeToText status)
-         [Hasql.singletonStatement|
-          UPDATE external_courier_pickups
-          SET status = $2 :: text
-          WHERE order_id = $1 :: int8
-          RETURNING (
+      ordersAffected <-
+        Hasql.statement @_ @(V.Vector Text)
+         (orderId, encodeToText status)
+          [Hasql.singletonStatement|
+           UPDATE external_courier_pickups
+           SET status = $2 :: text
+           WHERE order_id = $1 :: int8
+           RETURNING (
             SELECT COALESCE(array_agg(id), '{}'::text[])
             FROM orders
             WHERE courier_pickup_id = 
                   external_courier_pickups.id
-          ) :: text[]
-         |]
+           ) :: text[]
+          |]
        -- revert all orders linked to this pickup
       when(status == Canceled) $ do
         rowsAffected <- 
@@ -1877,9 +1878,13 @@ setDostavistaOrderStatus orderId status pool =
            |]
 
         -- CRITICAL: Check that we actually updated one row.
-        when (fromIntegral rowsAffected /= length ordersAffected) $ do
+        when (fromIntegral rowsAffected /= 
+              length ordersAffected) $ do
           -- If not, something is wrong. Abort the transaction.
-          error $ "Expected to update " <> show (length ordersAffected) <> " orders, but updated " ++ show rowsAffected
+          error $ "Expected to update " <> 
+                   show (length ordersAffected) <> 
+                   " orders, but updated " <> 
+                   show rowsAffected
 
 
       when(status == Infrastructure.Services.Dostavista.Types.Enums.Completed) $ do
@@ -1891,9 +1896,13 @@ setDostavistaOrderStatus orderId status pool =
             WHERE id = ANY($1 :: text[])
           |]
         -- CRITICAL: Check that we actually updated one row.
-        when (fromIntegral rowsAffected /= length ordersAffected) $ do
+        when (fromIntegral rowsAffected /= 
+              length ordersAffected) $ do
           -- If not, something is wrong. Abort the transaction.
-          error $ "Expected to update " <> show (length ordersAffected) <> " orders, but updated " ++ show rowsAffected
+          error $ "Expected to update " <> 
+                   show (length ordersAffected) <> 
+                   " orders, but updated " <> 
+                   show rowsAffected
 
 setDostavistaPickupByCourierStatus :: Int64 -> DostavistaOrderStatus -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
 setDostavistaPickupByCourierStatus orderId dostavistaStatus orderStatus pool =

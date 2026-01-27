@@ -59,7 +59,7 @@ timeout :: Int
 timeout = 30 * 1000000
 
 allotedTime :: Int
-allotedTime = 1 -- 3600 = 1 hour
+allotedTime = 3600 -- 3600 = 1 hour
 
 
 pollerLogic :: TVar (DostavistaOrderStatus, UTCTime) -> Int64 -> AppM ()
