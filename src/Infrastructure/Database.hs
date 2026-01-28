@@ -75,6 +75,8 @@ module Infrastructure.Database
   , fetchSpecialPostDetails
   , insertNewSpecialPost
   , deleteSpecialPost
+  , saveTemporaryNotificationMessage
+  , sweepTemporaryNotificationMessages
     -- Shelf section
   , initShelf
   , fetchShelfItems
@@ -2206,6 +2208,30 @@ deleteSpecialPost msgId pool =
         WHERE message_id = $1 :: int8
       |]
 
+
+saveTemporaryNotificationMessage :: Int64 -> Int64 -> Hasql.Pool -> AppM (Either Text ())
+saveTemporaryNotificationMessage channelId msgId pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (channelId, msgId) $
+      [Hasql.resultlessStatement|
+        INSERT INTO temporary_notification_messages 
+        (channel_id, message_id) 
+        VALUES ($1 :: int8, $2 :: int8)
+        ON CONFLICT (channel_id, message_id) DO NOTHING
+      |]
+
+sweepTemporaryNotificationMessages :: Hasql.Pool -> AppM (Either Text [Int64])
+sweepTemporaryNotificationMessages pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $
+      Hasql.statement () $
+       rmap (V.toList) $
+       [Hasql.vectorStatement|
+         DELETE FROM temporary_notification_messages
+         WHERE created_at < NOW() - INTERVAL '1 day'
+         RETURNING message_id :: int8
+       |]
 
 initShelf :: Int64 -> ShelfRequest -> Hasql.Pool -> AppM (Either Text (Maybe Int64))
 initShelf userId shelfRequest pool =

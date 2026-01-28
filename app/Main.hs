@@ -77,6 +77,8 @@ import Workers.DailyWeightTracker (runDailyWeightTracker)
 import Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller)
 import Workers.SpecialPostManager (runSpecialPostManager)
 import Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler)
+import Workers.FabricLifecycleObserver (runFabricLifecycleObserver)
+import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJanitor)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -102,23 +104,27 @@ data Workers =
       | DostavistaOrderStatusPoller
       | SpecialPostManager
       | SdekOrderCancellationHandler
+      | FabricLifecycleObserver
+      | DailyCleanupNotificationsJanitor
 
 instance Show Workers where
-  show WebServer                    = "Web Server"
-  show SdekOrderStatusPoller        = "SDEK Order Status Poller"
-  show Tinkoff                      = "Tinkoff Poller"
-  show CollageMaker                 = "Collage Maker"
-  show CartsCleaner                 = "Carts Cleaner"
-  show SdekPickUpScheduler          = "SDEK Pickup Scheduler"
-  show PickupStatusPoller           = "SDEK Pickup Status Poller"
-  show SdekStatusPoller             = "SDEK Status Poller"
-  show SdekPriceCalculator          = "SDEK Price Calculator"
-  show SdekGenerateReceipt          = "SDEK Generate Receipt"
-  show OrderDeliveryScheduler       = "Order Delivery Scheduler"
-  show DailyWeightTracker           = "Daily Weight Tracker"
-  show DostavistaOrderStatusPoller  = "Dostavista Order Status Poller"
-  show SpecialPostManager           = "Special Post Manager"
-  show SdekOrderCancellationHandler = "SDEK Order Cancellation Handler"
+  show WebServer                        = "Web Server"
+  show SdekOrderStatusPoller            = "SDEK Order Status Poller"
+  show Tinkoff                          = "Tinkoff Poller"
+  show CollageMaker                     = "Collage Maker"
+  show CartsCleaner                     = "Carts Cleaner"
+  show SdekPickUpScheduler              = "SDEK Pickup Scheduler"
+  show PickupStatusPoller               = "SDEK Pickup Status Poller"
+  show SdekStatusPoller                 = "SDEK Status Poller"
+  show SdekPriceCalculator              = "SDEK Price Calculator"
+  show SdekGenerateReceipt              = "SDEK Generate Receipt"
+  show OrderDeliveryScheduler           = "Order Delivery Scheduler"
+  show DailyWeightTracker               = "Daily Weight Tracker"
+  show DostavistaOrderStatusPoller      = "Dostavista Order Status Poller"
+  show SpecialPostManager               = "Special Post Manager"
+  show SdekOrderCancellationHandler     = "SDEK Order Cancellation Handler"
+  show FabricLifecycleObserver          = "Fabric Lifecycle Observer"
+  show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
 
 
 
@@ -323,13 +329,13 @@ main = do
       initialState <- newTVarIO state
   
       -- Create the runner function that bridges AppM and IO.
-      let runInIO :: forall a. AppM a -> IO (Either ServerError a)
-          runInIO = runAppM appConfig initialState
+      let appMToHandler :: forall a. AppM a -> IO (Either ServerError a)
+          appMToHandler = runAppM appConfig initialState
 
       when(not isMetroMode) $
         putStrLn "--> Running in NO-METRO mode. Metro data will not be loaded."
 
-      eAllMetros <- if not isMetroMode then return (Right []) else runInIO fetchAllRussianMetros
+      eAllMetros <- if not isMetroMode then return (Right []) else appMToHandler fetchAllRussianMetros
       for_ eAllMetros $ \allMetros -> do
         liftIO $ atomically $ modifyTVar' initialState $
           \s -> s { _metroStations = allMetros }
@@ -356,68 +362,77 @@ main = do
               [ (WebServer, server)
               , (SdekOrderStatusPoller, 
                  runForever 5 $
-                   runInIO runSdekOrderStatusPoller
+                   appMToHandler runSdekOrderStatusPoller
                      >>= showErrorInWorker 
                            SdekOrderStatusPoller)
               , (Tinkoff, 
-                 runInIO runTinkoffPaymentStatusPoller 
+                 appMToHandler runTinkoffPaymentStatusPoller 
                    >>= showErrorInWorker 
                         Tinkoff)
               , (CartsCleaner,
                  runForever 1 $
-                   runInIO runCartsCleaner 
+                   appMToHandler runCartsCleaner 
                      >>= showErrorInWorker 
                            CartsCleaner)
               , (SdekPickUpScheduler, do
                  -- Initialize the lock variable
                  lastRunVar <- newTVarIO Nothing
                  runForever 10 $
-                   runInIO (runSdekPickUpScheduler lastRunVar)
+                   appMToHandler (runSdekPickUpScheduler lastRunVar)
                      >>= showErrorInWorker 
                            SdekPickUpScheduler)
               , (PickupStatusPoller,
                  runForever 5 $
-                   runInIO runSdekPickupStatusPoller 
+                   appMToHandler runSdekPickupStatusPoller 
                      >>= showErrorInWorker 
                            PickupStatusPoller)
               , (SdekStatusPoller,
-                 runInIO runSdekStatusPoller 
+                 appMToHandler runSdekStatusPoller 
                    >>= showErrorInWorker 
                         SdekStatusPoller)
               , (SdekPriceCalculator,
-                  runInIO (runSdekPriceCalculator connInfo runInIO)
+                  appMToHandler (runSdekPriceCalculator connInfo appMToHandler)
                    >>= showErrorInWorker
                         SdekPriceCalculator)
               , (SdekGenerateReceipt, 
-                  runInIO (runSdekGenerateReceipt connInfo runInIO)
+                  appMToHandler (runSdekGenerateReceipt connInfo appMToHandler)
                    >>= showErrorInWorker
                         SdekGenerateReceipt)
               , (OrderDeliveryScheduler, do
                  -- Initialize the lock variable
                  lastRunVar <- newTVarIO Nothing
                  runForever 10 $
-                   runInIO (runOrderDeliveryScheduler lastRunVar)
+                   appMToHandler (runOrderDeliveryScheduler lastRunVar)
                      >>= showErrorInWorker 
                            OrderDeliveryScheduler)
               , (DostavistaOrderStatusPoller,
-                 runInIO runDostavistaOrderStatusPoller 
+                 appMToHandler runDostavistaOrderStatusPoller 
                    >>= showErrorInWorker 
                         DostavistaOrderStatusPoller)
               , (SpecialPostManager,
-                 runInIO (runSpecialPostManager)
+                 appMToHandler (runSpecialPostManager)
                    >>= showErrorInWorker
                         SpecialPostManager)
               , (SdekOrderCancellationHandler,
-                 runInIO (runSdekOrderCancellationHandler connInfo runInIO)
+                 appMToHandler (runSdekOrderCancellationHandler connInfo appMToHandler)
                    >>= showErrorInWorker
                         SdekOrderCancellationHandler)
+              , (FabricLifecycleObserver,
+                 appMToHandler (runFabricLifecycleObserver connInfo appMToHandler)
+                   >>= showErrorInWorker
+                        FabricLifecycleObserver)
+              , (DailyCleanupNotificationsJanitor,
+                 runForever 1440 $ -- once a day
+                   appMToHandler (runDailyCleanupNotificationsJanitor)
+                     >>= showErrorInWorker
+                           DailyCleanupNotificationsJanitor)
               ]
 
         let extTasks 
               | configIsCourierNeeded =
                 let weightTrackerWorker =
                      (DailyWeightTracker,
-                      runInIO (runDailyWeightTracker connInfo runInIO)
+                      appMToHandler (runDailyWeightTracker connInfo appMToHandler)
                         >>= showErrorInWorker
                              DailyWeightTracker)
                 in weightTrackerWorker : tasks

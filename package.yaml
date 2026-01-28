@@ -27,6 +27,8 @@ library:
     - Workers.DostavistaOrderStatusPoller
     - Workers.SpecialPostManager
     - Workers.SdekOrderCancellationHandler
+    - Workers.FabricLifecycleObserver
+    - Workers.DailyCleanupNotificationsJanitor
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

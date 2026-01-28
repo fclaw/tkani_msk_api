@@ -70,7 +70,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PriceJob)
 
 
 runSdekPriceCalculator :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
-runSdekPriceCalculator connInfo runAppM = do 
+runSdekPriceCalculator connInfo appMToHandler = do 
   $(logTM) InfoS "SDEK Price Calculation Listener started."
   liftIO $ PG.withConnect connInfo $ \conn -> do
     -- 1. Subscribe to the channel. This must be done on the connection.
@@ -86,9 +86,9 @@ runSdekPriceCalculator connInfo runAppM = do
       -- Fork a new, lightweight thread to do the heavy lifting.
       -- The 'forever' loop can immediately continue to the next 'getNotification'.
       void $ async $
-        -- We still run the main logic inside 'runAppM' to get the AppM context,
+        -- We still run the main logic inside 'appMToHandler' to get the AppM context,
         -- but now it's happening in the background.
-        void $ runAppM $ runJobWithCleanup (processSingleJob ePayload)
+        void $ appMToHandler $ runJobWithCleanup (processSingleJob ePayload)
 
 processSingleJob :: Either String PriceJob -> AppM ()
 processSingleJob (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (PriceJob), error: " <> err

@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Workers.SpecialPostManager (runSpecialPostManager) where
+module Workers.SpecialPostManager (runSpecialPostManager, buttonTextForLifecycle) where
 
 import Katip
 import Data.Int (Int64)

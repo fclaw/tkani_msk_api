@@ -59,7 +59,7 @@ data ReceiptJob =
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''ReceiptJob)
 
 runSdekGenerateReceipt :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
-runSdekGenerateReceipt connInfo runAppM = do
+runSdekGenerateReceipt connInfo appMToHandler = do
   $(logTM) InfoS "SDEK Generate Receipt Listener started."
   liftIO $ PG.withConnect connInfo $ \conn -> do
     -- 1. Subscribe to the channel. This must be done on the connection.
@@ -72,9 +72,9 @@ runSdekGenerateReceipt connInfo runAppM = do
       putStrLn $ "Received notification: " <> show payload
       let ePayload = eitherDecode @ReceiptJob $ BL.fromStrict payload
       void $ async $
-        -- We still run the main logic inside 'runAppM' to get the AppM context,
+        -- We still run the main logic inside 'appMToHandler' to get the AppM context,
         -- but now it's happening in the background.
-        void $ runAppM $ runJobWithCleanup (processSingleJob ePayload)
+        void $ appMToHandler $ runJobWithCleanup (processSingleJob ePayload)
 
 processSingleJob :: Either String ReceiptJob -> AppM ()
 processSingleJob (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (ReceiptJob), error: " <> err
