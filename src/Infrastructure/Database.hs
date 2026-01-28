@@ -1692,11 +1692,13 @@ fetchOrderDeliveryItem day pool =
         [Hasql.singletonStatement|
           SELECT
 		      (SELECT
-		       message_id :: int
-		       FROM order_delivery_posts AS odp
-		       WHERE odp.created_at :: date + interval '1 day' < $1 :: date
-           ORDER BY odp.created_at DESC
-				   LIMIT 1
+           odp.message_id
+           FROM order_delivery_posts AS odp
+           WHERE odp.created_at >= 
+                 ($1 :: date - interval '1 day') 
+           AND odp.created_at < $1 :: date
+           ORDER BY odp.created_at DESC 
+           LIMIT 1
           ) :: int?,
           COALESCE(array_agg(
            jsonb_build_object(
