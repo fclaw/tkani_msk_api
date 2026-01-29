@@ -81,6 +81,7 @@ module Infrastructure.Database
   , initShelf
   , fetchShelfItems
   , getPutOnDShelfDetails
+  , finalizeShelfCheckout
   ) where
 
 
@@ -96,7 +97,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
 import Control.Monad (join, void, forM_, when)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del7)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -114,7 +115,7 @@ import qualified Data.Text.Encoding as TE
 
 
 
-import App (AppM)
+import App (AppM, PaymentFlow)
 import Utils.Sql (splitSql)
 import API.Types -- Your data types
 import TH.RecordToTuple (recordToTuple, tupleToRecord)
@@ -640,7 +641,8 @@ insertNewPaymentRecordStatement =
       amount,
       payment_url, 
       error,
-      token
+      token,
+      payment_flow
     ) VALUES (
       $1 :: text,
       cast($2 :: text as payment_provider),
@@ -648,7 +650,8 @@ insertNewPaymentRecordStatement =
       $4 :: int8,
       $5 :: text,
       $6 :: text?,
-      $7 :: text
+      $7 :: text,
+      CAST(LOWER($8 :: text) as payment_flow_types)
     )
     RETURNING id :: int8
   |]
@@ -661,20 +664,21 @@ insertNewPaymentRecord paymentRecord pool =
       insertNewPaymentRecordStatement
 
 
-fetchPendingPaymentsStatement :: Hasql.Statement Status [(Text, Text)]
+fetchPendingPaymentsStatement :: Hasql.Statement Status [(PaymentFlow, Text, Text)]
 fetchPendingPaymentsStatement =
-  dimap encodeToText V.toList $
+  dimap encodeToText (map (app1 (extractADT . convertFromJson @PaymentFlow)) . V.toList) $
   [Hasql.vectorStatement|
     SELECT
+      to_jsonb(CAST(payment_flow AS text)) :: jsonb,
       order_id :: text,
       provider_payment_id::text
     FROM payments
     WHERE status = CAST(LOWER($1 :: text) as payment_status)
   |]
 
-fetchPendingPayments :: Hasql.Pool -> AppM (Either Text [(Text, Text)])
+fetchPendingPayments :: Hasql.Pool -> AppM (Either Text [(PaymentFlow, Text, Text)])
 fetchPendingPayments pool = 
-  fmap (first (pack . show)) $ 
+  fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $ 
       PENDING `Hasql.statement` fetchPendingPaymentsStatement
 
@@ -2215,7 +2219,7 @@ saveTemporaryNotificationMessage channelId msgId pool =
     runTransactionM pool Hasql.Write $
       Hasql.statement (channelId, msgId) $
       [Hasql.resultlessStatement|
-        INSERT INTO temporary_notification_messages 
+        INSERT INTO temporary_notifications 
         (channel_id, message_id) 
         VALUES ($1 :: int8, $2 :: int8)
         ON CONFLICT (channel_id, message_id) DO NOTHING
@@ -2228,7 +2232,7 @@ sweepTemporaryNotificationMessages pool =
       Hasql.statement () $
        rmap (V.toList) $
        [Hasql.vectorStatement|
-         DELETE FROM temporary_notification_messages
+         DELETE FROM temporary_notifications
          WHERE created_at < NOW() - INTERVAL '1 day'
          RETURNING message_id :: int8
        |]
@@ -2367,3 +2371,24 @@ getPutOnDShelfDetailsStatement =
     ) AS ci
     ON s.telegram_user_id = ci.telegram_user_id
   |]
+
+
+finalizeShelfCheckout :: Int64 -> Text -> [OrderItem] -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
+finalizeShelfCheckout userId orderId orderItems paymentRecord pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+      -- Step 1: Create the main shelf_order record.
+     let toRow = app3 encodeToText . del7 . $(recordToTuple ''OrderItem)
+     Hasql.statement (userId, orderId, V.fromList (map toRow orderItems)) $
+       createShelfOrderStatement userId orderId orderItems
+     -- Step 2: Create the associated payment record.
+     Hasql.statement paymentRecord $
+       insertNewPaymentRecordStatement
+     -- Step 3: Clear the user's cart.
+     Hasql.statement userId $ clearCartStatement
+
+type OrderItemRaw = (Text, Text, Text, Maybe Double, Double, Maybe Double)
+
+createShelfOrderStatement :: Int64 -> Text -> [OrderItem] -> Hasql.Statement (Int64, Text, V.Vector OrderItemRaw) ()
+createShelfOrderStatement userId orderId orderItems = undefined
+     

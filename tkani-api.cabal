@@ -63,7 +63,9 @@ library
       API.Handlers.SetTelegramMessage
       API.Handlers.Shelf.FetchShelfItems
       API.Handlers.Shelf.InitShelf
+      API.Handlers.Shelf.OrderShelf
       API.Handlers.Shelf.PatchShelfAccount
+      API.Handlers.Shelf.PutOnShelf
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder
       API.Handlers.ViewCart

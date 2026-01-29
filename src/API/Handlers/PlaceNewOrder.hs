@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TupleSections  #-}
 
-module API.Handlers.PlaceNewOrder(handler) where
+module API.Handlers.PlaceNewOrder(handler, mkInitRequest) where
 
 import Katip
 import Control.Monad.IO.Class (liftIO)
@@ -41,7 +41,7 @@ import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, SdekJob (..), currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig, _appSdekChan)
+import App (AppM, SdekJob (..), PaymentFlow (ShipNow), currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig, _appSdekChan)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -90,7 +90,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let sdekConfig = _sdekConfig cfg
   let tariffCodes = Sdek.tariffs sdekConfig
   let senderLocation = Sdek.senderLocation sdekConfig
-  let fromLocation = 
+  let fromLocation =
         Sdek.defSdekFromLocation
         { Sdek.sflAddress = Sdek.address senderLocation
         , Sdek.sflCode = Sdek.cityCode senderLocation
@@ -182,6 +182,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , nprPaymentUrl = paymentLink
         , nprError = Nothing
         , nprToken = Tinkoff.irToken initReq
+        , nprPaymentFlow = encodeToText ShipNow
         }
   void $ wrap (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed
 
@@ -198,7 +199,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
         , gsrqIP = Nothing
         }
-  liftIO $ atomically $ readTVar st >>= ((`writeTChan` (orderId, getStateRequest)) . _tinkoffPaymentChan)
+  liftIO $ atomically $ readTVar st >>= ((`writeTChan` (ShipNow, orderId, getStateRequest)) . _tinkoffPaymentChan)
 
   -- clear out the cart
   void $ wrap (clearCart orTelegramUserId pool) DatabaseFailed

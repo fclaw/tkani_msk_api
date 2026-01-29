@@ -160,7 +160,7 @@ data FabricPreview = FabricPreview
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricPreview)
 
 
-data Providers = SDEK | NONE
+data Providers = SDEK | OZON | NONE
   deriving (Show, Eq, Read)
 
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''Providers)
@@ -171,6 +171,7 @@ instance FromHttpApiData Providers where
     -- We'll make it case-insensitive for robustness
     case T.toLower text of
       "sdek"     -> Right SDEK
+      "ozon"     -> Right OZON
       _          -> Left "Unknown provider"
 
 -- Convert from our Providers type TO a URL path segment
@@ -178,6 +179,7 @@ instance ToHttpApiData Providers where
   toUrlPiece provider =
     case provider of
       SDEK     -> "sdek"
+      OZON     -> "ozon"
 
 data DeliveryPoint = DeliveryPoint
   {   dpCode            :: Text
@@ -629,8 +631,19 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } '
 data PutOnShelfPaymentOptions = 
      PutOnShelfPaymentOptions
      { paymentLink      :: Text
-     , amount           :: Double
+     , totalPrice       :: Double
      , linkToQr         :: Maybe Text
     } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PutOnShelfPaymentOptions)
+
+
+data ShelfOrderDetails =
+     ShelfOrderDetails
+      { sodOrderId          :: Text
+        -- | The delivery tracking number provided by the delivery service.
+      , sodTrackingNumber   :: Text
+      , sodDeliveryProvider :: Providers
+      } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sod" } ''ShelfOrderDetails)

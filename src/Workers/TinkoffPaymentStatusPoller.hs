@@ -47,6 +47,7 @@ import App
   , _appDBPool
   , currentTime
   , ChatKey (..)
+  , PaymentFlow (..)
   , render
   , _tinkoffCred
   , tinkoffTerminalKey
@@ -92,7 +93,7 @@ runTinkoffPaymentStatusPoller = do
   ePendingPayments <- fetchPendingPayments pool
   for_ ePendingPayments $ \xs -> do
     tinkoffCred <- fmap _tinkoffCred ask
-    for_ xs $ \(orderId, paymentId) -> do
+    for_ xs $ \(flow, orderId, paymentId) -> do
       let getStateRequest = 
             GetStateRequest
             { gsrqPaymentId = paymentId
@@ -105,7 +106,7 @@ runTinkoffPaymentStatusPoller = do
             , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
             , gsrqIP = Nothing
             }
-      liftIO $ STM.atomically $ STM.writeTChan chan (orderId, getStateRequest)
+      liftIO $ STM.atomically $ STM.writeTChan chan (flow, orderId, getStateRequest)
       $(logTM) InfoS $ ls $ "enqueued pending payment for Order " <> orderId
 
   when(isLeft ePendingPayments) $ do
@@ -114,24 +115,30 @@ runTinkoffPaymentStatusPoller = do
 
   -- Loop forever, dispatching a new worker for each job that arrives.
   forever $ do
-    job <- readTChan chan
-    $(logTM) InfoS $ ls $ "Dispatching worker for Order " <> fst job
+    job@(_, orderId, _) <- readTChan chan
+    $(logTM) InfoS $ ls $ "Dispatching worker for Order " <> orderId
     void $ async $ workerLogic job
 
 -- | The logic for a single worker thread. It polls one payment until a final status is reached.
-workerLogic :: (Text, GetStateRequest) -> AppM ()
-workerLogic job@(orderId, _) =
-    -- Wrap the entire worker in an exception handler to prevent silent crashes.
-    catch (processJob job) (handleWorkerError job)
+workerLogic :: (PaymentFlow, Text, GetStateRequest) -> AppM ()
+workerLogic (flow, orderId, req) =
+  -- Wrap the entire worker in an exception handler to prevent silent crashes.
+  case flow of
+    PutOnShelf -> 
+      processPutOnShelfJob (orderId, req) 
+        `catch` (handleWorkerError orderId)
+    ShipNow ->
+      processShipNowJob (orderId, req) 
+        `catch` (handleWorkerError orderId)
 
 -- | Global exception handler for the worker thread.
-handleWorkerError :: (Text, GetStateRequest) -> SomeException -> AppM ()
-handleWorkerError (orderId, _) e = do
+handleWorkerError :: Text -> SomeException -> AppM ()
+handleWorkerError orderId e = do
     $(logTM) ErrorS $ ls $ "CRITICAL: Worker for Order " <> orderId <> " crashed. Exception: " <> pack (show e)
     currentTime >>= finalizeTelegram orderId "Error" -- Notify user of a system error
 
-processJob :: (Text, GetStateRequest) -> AppM ()
-processJob (orderId, getStateReq) = do
+processShipNowJob :: (Text, GetStateRequest) -> AppM ()
+processShipNowJob (orderId, getStateReq) = do
   -- 1. Log start
   $(logTM) InfoS $ ls $ "Worker started for Order " <> orderId
   startTime <- currentTime
@@ -356,3 +363,9 @@ deleteFabric msgId = do
                 -- It's a different, more serious error.
                 $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText
       _ ->  $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
+
+
+-- Process put on shelf job
+processPutOnShelfJob :: (Text, GetStateRequest) -> AppM ()
+processPutOnShelfJob (orderId, getStateReq) = undefined
+

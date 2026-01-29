@@ -150,7 +150,7 @@ loadConfig = do
   -- telegram error messages 
   let configMessageCannotBeDeleted = (Map.!) env "MESSAGE_CANNOT_BE_DELETED"
   let configMessageNotFound = (Map.!) env "MESSAGE_NOT_FOUND"
-
+  
    -- courier
   let configIsCourierNeeded = textToBool $ (Map.!) env "IS_COURIER_NEEDED"
   let configCourierWeightThreshold = fromIntegral $ extractNumber "COURIER_WEIGHT_THRESHOLD" $ textToInt $ (Map.!) env "COURIER_WEIGHT_THRESHOLD"

@@ -27,6 +27,7 @@ module App
     SdekPvzInfo (..),
     SdekCity (..),
     DostavistaJob (..),
+    PaymentFlow (..),
     currentTime,
     render,
     runAppM,
@@ -74,7 +75,7 @@ import Katip
 import Data.Aeson (Value, FromJSON, parseJSON, withObject, (.:))
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
-import Text (recordLabelModifier)
+import Text (recordLabelModifier, camelToSnake)
 import API.Types (ProviderInfo, DeliveryPoint)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
@@ -176,6 +177,11 @@ data DostavistaJob =
      , doJobAStart      :: UTCTime
      }
 
+
+data PaymentFlow = PutOnShelf | ShipNow
+  deriving (Show, Eq)
+
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
@@ -183,7 +189,7 @@ data State = State
   , _pointCache         :: PointCache
   , _cityCodeByPVZCache :: CityCodeByPVZCache
   , _sdekPromises       :: SdekPromiseMap
-  , _tinkoffPaymentChan :: TChan (Text, GetStateRequest)
+  , _tinkoffPaymentChan :: TChan (PaymentFlow, Text, GetStateRequest)
   , _appSdekChan        :: TChan SdekJob
   , _metroStations      :: [MetroStation]
   , _dostavistaChan     :: TChan DostavistaJob
@@ -336,3 +342,6 @@ extractFromMaybe Nothing _ = $(logTM) ErrorS $ "empty value"
 extractFromEither :: Show e => Either e a -> (a -> AppM ()) -> AppM ()
 extractFromEither (Right r) app = app r 
 extractFromEither (Left e) _ = $(logTM) ErrorS $ ls $ "either has resulted in error: " <> show e
+
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''PaymentFlow)

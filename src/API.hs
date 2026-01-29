@@ -222,6 +222,21 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfItemsResponse)
+    , _putOnShelf
+       :: route
+       :- "shelf"
+       :> "checkout"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Capture "user_id" Int64
+       :> Post '[JSON] (ApiResponse PutOnShelfPaymentOptions)
+    , _orderShelf
+       :: route
+       :- "shelf"
+       :> "order"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Capture "user_id" Int64
+       :> QueryParam "provider" Providers
+       :> Get '[JSON] (ApiResponse ShelfOrderDetails)
   } deriving (Generic)
 
 

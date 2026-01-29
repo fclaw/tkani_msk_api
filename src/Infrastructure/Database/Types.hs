@@ -80,6 +80,7 @@ data NewPaymentRecord =
     , nprPaymentUrl         :: Text
     , nprError              :: Maybe Text
     , nprToken              :: Text
+    , nprPaymentFlow        :: Text
     }
 
 
@@ -109,6 +110,13 @@ data OrderItem =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''OrderItem)
 
+data PutOnShelfDetails =
+     PutOnShelfDetails
+     { posdPhone :: Text
+     , posdItems :: [OrderItem]
+     }    
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "posd" } ''PutOnShelfDetails)
 
 data PatchedFabric = 
      PatchedFabric
@@ -313,3 +321,8 @@ data SpecialPostDetails =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier mempty } ''SpecialPostDetails)
+
+
+data ShelfOderStatus = Registered | Paid | Cancelled
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''ShelfOderStatus)
