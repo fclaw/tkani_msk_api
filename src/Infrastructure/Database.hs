@@ -28,7 +28,7 @@ module Infrastructure.Database
   , fetchOrderStatus
   , getOrdersInTransit
   , markOrderAsInvalid
-  , fetchCatalogSummaryItemV2
+  , fetchCatalogSummaryItem
   , checkFabricPreCuts
   , insertNewPaymentRecord
   , fetchPendingPayments
@@ -80,6 +80,7 @@ module Infrastructure.Database
     -- Shelf section
   , initShelf
   , fetchShelfItems
+  , getPutOnDShelfDetails
   ) where
 
 
@@ -329,7 +330,6 @@ getOrderItemsStatement =
     INNER JOIN fabrics AS f
     ON f.id = pc.fabric_id
     WHERE c.telegram_user_id = $1 :: int8
-
   |]
 
 -- | Fetches the final, calculated price for a fabric order item.
@@ -1961,8 +1961,8 @@ setOrderDimensions orderId dimensions pool =
        |]
 
 
-fetchCatalogSummaryItemV2 :: FabricLifecycle -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text [CatalogSummaryItemExt])
-fetchCatalogSummaryItemV2 lifeCycle chatId threshold pool = 
+fetchCatalogSummaryItem :: FabricLifecycle -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text [CatalogSummaryItemExt])
+fetchCatalogSummaryItem lifeCycle chatId threshold pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
       Hasql.statement (encodeToText lifeCycle, chatId, threshold) $
@@ -2302,3 +2302,68 @@ fetchShelfItems userId pool =
         WHERE s.telegram_user_id = $1 :: int8
       |]
 
+getPutOnDShelfDetails ::  Int64 -> Hasql.Pool -> AppM (Either Text (Maybe PutOnShelfDetails))
+getPutOnDShelfDetails userId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $ 
+      userId `Hasql.statement` getPutOnDShelfDetailsStatement
+
+getPutOnDShelfDetailsStatement :: Hasql.Statement Int64 (Maybe PutOnShelfDetails)
+getPutOnDShelfDetailsStatement =
+  rmap (fmap (extractADT . convertFromJson @PutOnShelfDetails))
+  [Hasql.maybeStatement|
+    WITH cart_items AS (
+      SELECT
+        c.telegram_user_id,
+        jsonb_build_object(
+          'name', f.name,
+          'article', f.article,
+          'total_price', ROUND(f.price_per_meter * (1 - f.discount) * ci.length_m),
+          'fabric_type', ci.item_type,
+          'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
+          'length_m', ci.length_m,
+          'telegram_url', ci.telegram_url
+        ) :: jsonb AS item
+      FROM carts AS c
+      INNER JOIN cart_items AS ci
+      ON c.id = ci.cart_id
+      INNER JOIN fabrics AS f
+      ON f.id = ci.fabric_id
+      WHERE c.telegram_user_id = $1 :: int8
+
+      UNION ALL
+
+      SELECT
+        c.telegram_user_id,
+        jsonb_build_object(
+          'name', f.name,
+          'article', f.article,
+          'total_price', ROUND(pc.price_rub * (1 - f.discount)),
+          'fabric_type', ci.item_type,
+          'price_per_metre', null,
+          'length_m', null,
+          'telegram_url', ci.telegram_url
+        ) :: jsonb AS item
+      FROM carts AS c
+      INNER JOIN cart_items AS ci
+      ON c.id = ci.cart_id
+      INNER JOIN pre_cuts AS pc
+      ON pc.id = ci.pre_cut_id
+      INNER JOIN fabrics AS f
+      ON f.id = pc.fabric_id
+      WHERE c.telegram_user_id = $1 :: int8)
+    SELECT
+     jsonb_build_object(
+      'phone', s.user_phone,
+      'items', ci.items
+     ) :: jsonb
+    FROM shelves AS s
+    INNER JOIN (
+      SELECT
+        telegram_user_id,
+        array_agg(item) AS items
+      FROM cart_items
+      GROUP BY telegram_user_id
+    ) AS ci
+    ON s.telegram_user_id = ci.telegram_user_id
+  |]
