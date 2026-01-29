@@ -1891,7 +1891,7 @@ setDostavistaOrderStatus orderId status pool =
            [Hasql.rowsAffectedStatement|
             UPDATE orders
             SET courier_pickup_id = NULL,
-                status = 'paid'
+                status = 'pickup_failed'
             WHERE id = ANY($1 :: text[])
            |]
 

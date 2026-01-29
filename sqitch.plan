@@ -48,3 +48,4 @@
 00045.cancel_order 2026-01-24T10:59:12Z System Administrator <root@Sonny.local> # cancel order event
 00046.shelf 2026-01-25T09:59:55Z System Administrator <root@Sonny.local> # the intorduction of shelf
 00047.fabric_life_cycle_change 2026-01-28T07:53:16Z System Administrator <root@Sonny.local> # fabrcis: life cycle change
+00048.order_status_pickuo_failure 2026-01-29T05:27:04Z System Administrator <root@Sonny.local> # order status

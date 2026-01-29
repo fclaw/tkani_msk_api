@@ -254,6 +254,7 @@ data OrderStatus
   | Cancelled
   | PickedUpByCourier     -- the order has been picked up by the courier
   | ScheduledForPickup    -- the batch is scheduled for a pick-up
+  | PickupFailed          -- the courier attempted pickup but failed 
   deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''OrderStatus)
@@ -268,6 +269,7 @@ statusToSQL s = case s of
     Cancelled          -> "cancelled"
     PickedUpByCourier  -> "picked_up_by_courier"
     ScheduledForPickup -> "scheduled_for_pickup"
+    PickupFailed       -> "pickup_failed"
     -- etc...
 
 -- | Converts an OrderStatus into a human-readable, formatted Russian Text
@@ -299,6 +301,9 @@ formatStatus status = case status of
 
   -- The courier has picked up the package from our warehouse.
   PickedUpByCourier  -> "📬 ЗАБРАН КУРЬЕРОМ"
+
+  -- The courier attempted to pick up the package but failed (e.g., wrong address, no one home).
+  PickupFailed       -> "⚠️ НЕУДАЧНАЯ ПОПЫТКА ЗАБОРА ПАКЕТА"
 
 
 -- A record to hold all the necessary information for the final confirmation.
@@ -620,3 +625,12 @@ data ShelfItemsResponse =
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } ''ShelfItemsResponse)
+
+data PutOnShelfPaymentOptions = 
+     PutOnShelfPaymentOptions
+     { paymentLink      :: Text
+     , amount           :: Double
+     , linkToQr         :: Maybe Text
+    } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PutOnShelfPaymentOptions)

@@ -72,7 +72,7 @@ pollerLogic statusVar orderId = do
    -- if no courier is found within 1-hour window close the order
   if timeElapsed > allotedTime &&
      (currentStatus == Available || 
-     currentStatus == New)
+      currentStatus == New)
   then do
     cancelOrder orderId
     pool <- fmap _appDBPool ask
