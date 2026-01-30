@@ -46,7 +46,7 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS shelf_order_id TEXT;
 
 -- Add the CHECK constraint only if a constraint with this name doesn't exist.
 -- Direct support for IF NOT EXISTS on ADD CONSTRAINT.
-ALTER TABLE payments ADD CONSTRAINT IF NOT EXISTS payments_has_at_least_one_order_id
+ALTER TABLE payments ADD CONSTRAINT payments_has_at_least_one_order_id
 CHECK (order_id IS NOT NULL OR shelf_order_id IS NOT NULL);
 
 -- Add the 'payment_flow' column if it doesn't exist.
@@ -82,7 +82,7 @@ END $$;
 -- NOTE: If your PK has a different name, you must change it above!
 
 -- Add the CHECK constraint only if it doesn't exist.
-ALTER TABLE order_telegram_bindings ADD CONSTRAINT IF NOT EXISTS order_telegram_bindings_has_at_least_one_order_id
+ALTER TABLE order_telegram_bindings ADD CONSTRAINT order_telegram_bindings_has_at_least_one_order_id
 CHECK (order_id IS NOT NULL OR shelf_order_id IS NOT NULL);
 
 -- Create index on the new column if it doesn't exist.
