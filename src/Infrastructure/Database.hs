@@ -421,8 +421,8 @@ setTelegramMessageStatement =
    lmap $(recordToTuple ''SetTelegramMessageRequest)
    [Hasql.rowsAffectedStatement| 
      INSERT INTO order_telegram_bindings 
-     (order_id, chat_id, message_id) 
-     VALUES ($1 :: text, $2 :: int8, $3 :: int8) |]
+     (order_id, shelf_order_id, chat_id, message_id) 
+     VALUES ($1 :: text?, $2 :: text?, $3 :: int8, $4 :: int8)|]
 
 setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> AppM (Either Text Int64)
 setTelegramMessage message pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
@@ -432,9 +432,10 @@ getChatDetailsStatement =
   [Hasql.maybeStatement| 
     SELECT 
       chat_id :: int8, 
-      message_id :: int8 
+      message_id :: int8
     FROM order_telegram_bindings 
-    WHERE order_id = $1 :: text |]
+    WHERE order_id = $1 :: text 
+    OR shelf_order_id = $1 :: text |]
 
 getChatDetails :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, Int64)))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
@@ -642,16 +643,18 @@ insertNewPaymentRecordStatement =
       payment_url, 
       error,
       token,
-      payment_flow
+      payment_flow,
+      shelf_order_id
     ) VALUES (
-      $1 :: text,
+      $1 :: text?,
       cast($2 :: text as payment_provider),
       $3 :: text,
       $4 :: int8,
       $5 :: text,
       $6 :: text?,
       $7 :: text,
-      CAST(LOWER($8 :: text) as payment_flow_types)
+      CAST(LOWER($8 :: text) as payment_flow_types),
+      $9 :: text?
     )
     RETURNING id :: int8
   |]
@@ -664,19 +667,20 @@ insertNewPaymentRecord paymentRecord pool =
       insertNewPaymentRecordStatement
 
 
-fetchPendingPaymentsStatement :: Hasql.Statement Status [(PaymentFlow, Text, Text)]
+fetchPendingPaymentsStatement :: Hasql.Statement Status [(PaymentFlow, Maybe Text, Maybe Text, Text)]
 fetchPendingPaymentsStatement =
   dimap encodeToText (map (app1 (extractADT . convertFromJson @PaymentFlow)) . V.toList) $
   [Hasql.vectorStatement|
     SELECT
       to_jsonb(CAST(payment_flow AS text)) :: jsonb,
-      order_id :: text,
+      order_id :: text?,
+      shelf_order_id :: text?,
       provider_payment_id::text
     FROM payments
     WHERE status = CAST(LOWER($1 :: text) as payment_status)
   |]
 
-fetchPendingPayments :: Hasql.Pool -> AppM (Either Text [(PaymentFlow, Text, Text)])
+fetchPendingPayments :: Hasql.Pool -> AppM (Either Text [(PaymentFlow, Maybe Text, Maybe Text, Text)])
 fetchPendingPayments pool = 
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $ 
@@ -1848,7 +1852,8 @@ fetchWeightTrackerStateInfo day service pool =
          AND status != 'canceled') :: bool,
          COALESCE(array_agg(o.id), '{}'::text[]) :: text[]
        FROM orders AS o
-       WHERE o.status = 'paid'
+       WHERE o.status = 'paid' 
+       AND o.receipt_ready = TRUE
        AND o.courier_pickup_id IS NULL
       |]
 
@@ -2219,7 +2224,7 @@ saveTemporaryNotificationMessage channelId msgId pool =
     runTransactionM pool Hasql.Write $
       Hasql.statement (channelId, msgId) $
       [Hasql.resultlessStatement|
-        INSERT INTO temporary_notifications 
+        INSERT INTO temporary_notification_messages 
         (channel_id, message_id) 
         VALUES ($1 :: int8, $2 :: int8)
         ON CONFLICT (channel_id, message_id) DO NOTHING
@@ -2232,7 +2237,7 @@ sweepTemporaryNotificationMessages pool =
       Hasql.statement () $
        rmap (V.toList) $
        [Hasql.vectorStatement|
-         DELETE FROM temporary_notifications
+         DELETE FROM temporary_notification_messages
          WHERE created_at < NOW() - INTERVAL '1 day'
          RETURNING message_id :: int8
        |]
@@ -2373,14 +2378,13 @@ getPutOnDShelfDetailsStatement =
   |]
 
 
-finalizeShelfCheckout :: Int64 -> Text -> [OrderItem] -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
-finalizeShelfCheckout userId orderId orderItems paymentRecord pool =
+finalizeShelfCheckout :: Int64 -> Text-> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
+finalizeShelfCheckout userId orderId paymentRecord pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
       -- Step 1: Create the main shelf_order record.
-     let toRow = app3 encodeToText . del7 . $(recordToTuple ''OrderItem)
-     Hasql.statement (userId, orderId, V.fromList (map toRow orderItems)) $
-       createShelfOrderStatement userId orderId orderItems
+     Hasql.statement (userId, orderId) $
+       createShelfOrderStatement userId orderId
      -- Step 2: Create the associated payment record.
      Hasql.statement paymentRecord $
        insertNewPaymentRecordStatement
@@ -2389,6 +2393,30 @@ finalizeShelfCheckout userId orderId orderItems paymentRecord pool =
 
 type OrderItemRaw = (Text, Text, Text, Maybe Double, Double, Maybe Double)
 
-createShelfOrderStatement :: Int64 -> Text -> [OrderItem] -> Hasql.Statement (Int64, Text, V.Vector OrderItemRaw) ()
-createShelfOrderStatement userId orderId orderItems = undefined
-     
+createShelfOrderStatement :: Int64 -> Text -> Hasql.Statement (Int64, Text) ()
+createShelfOrderStatement userId orderId =
+    [Hasql.resultlessStatement|
+      WITH new_order AS (
+        INSERT INTO shelf_orders
+        (order_id, shelf_id, status)
+        SELECT 
+        $2 :: text, 
+        id :: int8, 
+        'registered' :: shelf_order_status
+        FROM shelves WHERE telegram_user_id = $1 :: int8
+        RETURNING id :: int8
+      )
+      INSERT INTO shelf_order_items
+      (shelf_order_id, fabric_id, pre_cut_id, length_m)
+      SELECT
+      (SELECT id FROM new_order) :: int8,
+      COALESCE(ci.fabric_id, pc.fabric_id),
+      ci.pre_cut_id,
+      ci.length_m
+      FROM carts AS c
+      INNER JOIN cart_items AS ci
+      ON c.id = ci.cart_id
+      LEFT JOIN pre_cuts AS pc
+      ON pc.id = ci.pre_cut_id
+      WHERE c.telegram_user_id = $1 :: int8 
+    |]
