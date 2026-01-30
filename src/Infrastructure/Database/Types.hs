@@ -73,7 +73,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "af" } ''
 
 data NewPaymentRecord = 
     NewPaymentRecord
-    { nprOrderId            :: Text
+    { nprOrderId            :: Maybe Text
     , nprProvider           :: PaymentProvider
     , nprProviderPaymentId  :: Text
     , nprAmountKopecks      :: Int64
@@ -81,6 +81,7 @@ data NewPaymentRecord =
     , nprError              :: Maybe Text
     , nprToken              :: Text
     , nprPaymentFlow        :: Text
+    , nprShelfOrderId       :: Maybe Text
     }
 
 

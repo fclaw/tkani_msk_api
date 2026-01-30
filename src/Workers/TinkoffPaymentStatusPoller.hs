@@ -20,7 +20,8 @@ import Control.Concurrent (threadDelay)
 import Data.Time.Clock (UTCTime, diffUTCTime, NominalDiffTime)
 import System.Timeout.Lifted (timeout)
 import Data.Function (fix)
-import Data.Maybe (isNothing)
+import Data.Maybe (isNothing, fromMaybe)
+import Control.Applicative ((<|>))
 import Data.Either (isLeft, fromLeft)
 import qualified Data.HashMap.Strict as HM
 import Data.Time (formatTime, defaultTimeLocale)
@@ -93,7 +94,7 @@ runTinkoffPaymentStatusPoller = do
   ePendingPayments <- fetchPendingPayments pool
   for_ ePendingPayments $ \xs -> do
     tinkoffCred <- fmap _tinkoffCred ask
-    for_ xs $ \(flow, orderId, paymentId) -> do
+    for_ xs $ \(flow, orderId, shelfOrderId, paymentId) -> do
       let getStateRequest = 
             GetStateRequest
             { gsrqPaymentId = paymentId
@@ -106,8 +107,9 @@ runTinkoffPaymentStatusPoller = do
             , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
             , gsrqIP = Nothing
             }
-      liftIO $ STM.atomically $ STM.writeTChan chan (flow, orderId, getStateRequest)
-      $(logTM) InfoS $ ls $ "enqueued pending payment for Order " <> orderId
+      let order = fromMaybe (error "order id not found") $ orderId <|> shelfOrderId
+      liftIO $ STM.atomically $ STM.writeTChan chan (flow, order, getStateRequest)
+      $(logTM) InfoS $ ls $ "enqueued pending payment for Order " <> order
 
   when(isLeft ePendingPayments) $ do
     $(logTM) ErrorS $ ls $ "error while fetching pending payments: " <> pack (show (fromLeft undefined ePendingPayments))

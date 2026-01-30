@@ -120,18 +120,20 @@ putOnShelf userId = do
   when (isNothing linkToQr) $
     except $ Left $ TinkoffQrCodeFailed "Tinkoff Get QR API did not return a QR code link."
 
-  let totalPrice = sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
+  let amount = sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
+  let totalPrice = amount / 100.0
 
   let newPaymentRecord =
         NewPaymentRecord
-        { nprOrderId = orderId
-        , nprProvider = Tinkoff
+        { nprOrderId           = Nothing
+        , nprProvider          = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks = round totalPrice
-        , nprPaymentUrl = paymentLink
-        , nprError = Nothing
-        , nprToken = Tinkoff.irToken initReq
-        , nprPaymentFlow = encodeToText PutOnShelf
+        , nprAmountKopecks     = round amount
+        , nprPaymentUrl        = paymentLink
+        , nprError             = Nothing
+        , nprToken             = Tinkoff.irToken initReq
+        , nprPaymentFlow       = encodeToText PutOnShelf
+        , nprShelfOrderId      = Just orderId
         }
   
   -- Finalize the entire "put on shelf" checkout process within a single database transaction.
@@ -142,7 +144,7 @@ putOnShelf userId = do
   -- The entire block is transactional: if any step fails, all previous steps are rolled back,
   -- ensuring the database remains in a consistent state. 'wrap' handles any database
   -- exception by converting it into our application-specific 'DatabaseFailed' error.
-  void $ wrap (finalizeShelfCheckout userId orderId posdItems newPaymentRecord pool) DatabaseFailed
+  void $ wrap (finalizeShelfCheckout userId orderId newPaymentRecord pool) DatabaseFailed
 
   let getStateRequest = 
         Tinkoff.GetStateRequest

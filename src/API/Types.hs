@@ -321,9 +321,10 @@ $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirm
 -- | Request payload to link a sent Telegram message ID to an Order
 data SetTelegramMessageRequest = 
   SetTelegramMessageRequest
-  { setOrderId   :: Text    -- Matches "order_id"
-  , setChatId    :: Int64   -- Matches "chat_id" (Must be Int64)
-  , setMessageId :: Int64   -- Matches "message_id"
+  { setOrderId      :: Maybe Text    -- Matches "order_id"
+  , setShelfOrderId :: Maybe Text  -- Matches "shelf_order_id"
+  , setChatId       :: Int64   -- Matches "chat_id" (Must be Int64)
+  , setMessageId    :: Int64   -- Matches "message_id"
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "set" } ''SetTelegramMessageRequest)
@@ -633,13 +634,14 @@ data PutOnShelfPaymentOptions =
      { paymentLink      :: Text
      , totalPrice       :: Double
      , linkToQr         :: Maybe Text
+     , orderId          :: Text  
     } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PutOnShelfPaymentOptions)
 
 
 data ShelfOrderDetails =
-     ShelfOrderDetails
+      ShelfOrderDetails
       { sodOrderId          :: Text
         -- | The delivery tracking number provided by the delivery service.
       , sodTrackingNumber   :: Text

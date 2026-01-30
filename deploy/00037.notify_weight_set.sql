@@ -6,29 +6,16 @@ BEGIN;
 CREATE OR REPLACE FUNCTION notify_weight_set()
 RETURNS TRIGGER AS $$
 BEGIN
-     -- === CASE 1: A NEW order is created and ALREADY has a weight ===
-    IF TG_OP = 'INSERT' AND NEW.actual_weight_grams IS NOT NULL 
-       AND NEW.is_bot = FALSE THEN
-        
-        -- Send a notification on the 'price_calculation_jobs' channel.
-        -- The payload is a simple JSON with the order_id.
-        PERFORM pg_notify(
-            'order_weighed_events', -- Use a descriptive channel name
-            jsonb_build_object(
-                'order_id', NEW.id,
-                'weight_grams', NEW.actual_weight_grams
-            )::text
-        );
-        
-    END IF;
-    
-    -- === EVENT 2: A BOT order has its status UPDATED to 'paid' ===
-    -- TG_OP is 'UPDATE', is_bot is TRUE, and the status has just changed to 'paid'.
-    -- The weight has also been pre-calculated and is available in the NEW record.
-    IF (TG_OP = 'UPDATE' AND NEW.is_bot = TRUE AND 
-        NEW.status = 'paid' AND OLD.status <> 'paid' AND
-        NEW.actual_weight_grams IS NOT NULL) THEN
-
+    -- This single block covers both bot and non-bot orders.
+    -- It fires only on the specific state transition we care about.
+    IF (TG_OP = 'UPDATE' AND
+        NEW.status = 'paid' AND
+        OLD.status <> 'paid' AND -- Ensures this fires only once when the status changes to 'paid'
+        NEW.actual_weight_grams IS NOT NULL AND
+        NEW.receipt_ready = TRUE) -- The new condition
+    THEN
+        -- Send a notification on the 'order_weighed_events' channel.
+        -- The payload is a simple JSON with the order_id and its weight.
         PERFORM pg_notify(
             'order_weighed_events',
             jsonb_build_object(
@@ -38,6 +25,7 @@ BEGIN
         );
     END IF;
 
+    -- Always return the new record in an UPDATE trigger
     RETURN NEW;
 
 END;

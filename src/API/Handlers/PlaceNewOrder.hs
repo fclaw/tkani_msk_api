@@ -174,15 +174,17 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   void $ wrap (placeNewOrder dbOrder pool) $ DatabaseFailed
 
   let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
-  let newPaymentRecord = NewPaymentRecord
-        { nprOrderId = orderId
-        , nprProvider = Tinkoff
+  let newPaymentRecord = 
+        NewPaymentRecord
+        { nprOrderId           = Just orderId
+        , nprProvider          = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks = round totalPrice
-        , nprPaymentUrl = paymentLink
-        , nprError = Nothing
-        , nprToken = Tinkoff.irToken initReq
-        , nprPaymentFlow = encodeToText ShipNow
+        , nprAmountKopecks     = round totalPrice
+        , nprPaymentUrl        = paymentLink
+        , nprError             = Nothing
+        , nprToken             = Tinkoff.irToken initReq
+        , nprPaymentFlow       = encodeToText ShipNow
+        , nprShelfOrderId       = Nothing
         }
   void $ wrap (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed
 

@@ -37,7 +37,7 @@ AFTER UPDATE OF lifecycle ON fabrics
 FOR EACH ROW
 EXECUTE FUNCTION notify_fabric_lifecycle_change();
 
-CREATE TABLE temporary_notifications (
+ CREATE TABLE temporary_notification_messages (
     id SERIAL PRIMARY KEY,
     -- The ID of the channel where the notification was posted.
     channel_id BIGINT NOT NULL,
@@ -50,6 +50,6 @@ CREATE TABLE temporary_notifications (
 );
 
 -- An index to make the janitor's cleanup query fast.
-CREATE INDEX idx_temporary_notifications_created_at ON temporary_notifications (created_at);
+CREATE INDEX idx_temporary_notifications_messages_created_at ON temporary_notification_messages (created_at);
 
 COMMIT;
