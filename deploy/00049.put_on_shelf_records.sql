@@ -14,7 +14,7 @@ CHECK (order_id IS NOT NULL OR shelf_order_id IS NOT NULL);
 
 
 ALTER TABLE order_telegram_bindings ADD COLUMN shelf_order_id TEXT;
-ALTER TABLE order_telegram_bindings DROP CONSTRAINT order_telegram_bindings_order_id_fkey;
+ALTER TABLE order_telegram_bindings DROP CONSTRAINT order_telegram_bindings_pkey;
 ALTER TABLE order_telegram_bindings ALTER COLUMN order_id DROP NOT NULL;
 
 ALTER TABLE order_telegram_bindings
