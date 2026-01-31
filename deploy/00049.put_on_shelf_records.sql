@@ -23,6 +23,7 @@ CREATE TABLE shelf_orders (
     order_id TEXT NOT NULL,
     shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
     status shelf_order_status NOT NULL,
+    internal_notification_message_id BIGINT, -- Changed to BIGINT for safety
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -129,6 +130,7 @@ CREATE TABLE IF NOT EXISTS shelf_orders (
     order_id TEXT NOT NULL,
     shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
     status shelf_order_status NOT NULL,
+    internal_notification_message_id BIGINT, -- Changed to BIGINT for safety
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

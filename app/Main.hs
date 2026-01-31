@@ -276,7 +276,8 @@ main = do
                    (ORDER, (configOrderBotToken, configOrderChatId)),
                    (WAREHOUSE, (configWarehouseBotToken, configWarehouseChatId)),
                    (MAIN, (configConciergeBotToken, configMainChatId)),
-                   (YAML_ORDER, (configWarehouseBotToken, configYamlOrderChatId))
+                   (YAML_ORDER, (configWarehouseBotToken, configYamlOrderChatId)),
+                   (SHELF, (configConciergeBotToken, configShelfChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap

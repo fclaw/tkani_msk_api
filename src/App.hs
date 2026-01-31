@@ -38,23 +38,23 @@ module App
     writeTChanIO,
     -- extractors
     extractFromMaybe,
-    extractFromEither
+    extractFromEither,
+    -- forkAppM
+    forkAppM
   ) where
 
-import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
+
+import Data.Int (Int64)
+import Control.Monad (void)
 import Servant (Handler, ServerError)
-import Control.Monad.Except (MonadError, ExceptT)
 import Hasql.Pool (Pool)
 import Data.Text (Text, pack)
-import Control.Concurrent.STM (TVar, TChan, readTVar, modifyTVar', atomically, readTChan, writeTChan)
-import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
 import Control.Lens
 import GHC.Generics (Generic)
 import Data.Aeson.TH
 import Control.Monad.Catch
 import Control.Monad.Time
 import Network.HTTP.Client (Manager)
-import Language.Haskell.TH (loc_module, location)
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
@@ -67,8 +67,15 @@ import Data.Time (UTCTime)
 import qualified Data.HashSet as HS
 import Control.Concurrent (MVar)
 import Data.UUID (UUID)
+import Control.Monad.Reader.Class (ask)
+import Control.Monad.State.Class (get)
+import Control.Concurrent (forkIO)
 import Control.Concurrent.STM.TMVar (TMVar)
-import Data.Int (Int64)
+import Control.Monad.Except (MonadError, ExceptT)
+import Language.Haskell.TH (loc_module, location)
+import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
+import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
+import Control.Concurrent.STM (TVar, TChan, readTVar, modifyTVar', atomically, readTChan, writeTChan)
 
 -- Katip imports
 import Katip
@@ -203,6 +210,7 @@ data ChatKey =
       | WAREHOUSE
       | MAIN
       | YAML_ORDER
+      | SHELF
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int64)
@@ -345,3 +353,25 @@ extractFromEither (Left e) _ = $(logTM) ErrorS $ ls $ "either has resulted in er
 
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''PaymentFlow)
+
+
+
+-- | Forks an AppM action into a separate thread. This is for "fire-and-forget"
+--   tasks where we do not need the result. It ensures any exceptions in the
+--   background thread are caught and logged, preventing them from crashing the server.
+forkAppM :: AppM () -> AppM ()
+forkAppM action = do
+  -- We need the application's config/environment to run the action in the new thread.
+  config <- ask
+  state <- get
+  liftIO $ void $ forkIO $ do
+    -- 'try' will catch any synchronous exception.
+    eResult <- try (runAppM config state action) -- 'runAppM' is your function to execute AppM in IO.
+    case eResult of
+      Right (Right _) -> pure () -- Success
+      Right (Left serverErr) ->
+        -- The AppM action resulted in a business logic error. Log it.
+        putStrLn $ "Error in forked thread (AppM): " ++ show serverErr
+      Left (ex :: SomeException) ->
+        -- The IO action itself threw a raw exception. Log it.
+        putStrLn $ "Exception in forked thread (IO): " ++ show ex

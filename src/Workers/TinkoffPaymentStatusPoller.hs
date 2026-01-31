@@ -123,15 +123,27 @@ runTinkoffPaymentStatusPoller = do
 
 -- | The logic for a single worker thread. It polls one payment until a final status is reached.
 workerLogic :: (PaymentFlow, Text, GetStateRequest) -> AppM ()
-workerLogic (flow, orderId, req) =
-  -- Wrap the entire worker in an exception handler to prevent silent crashes.
-  case flow of
-    PutOnShelf -> 
-      processPutOnShelfJob (orderId, req) 
-        `catch` (handleWorkerError orderId)
-    ShipNow ->
-      processShipNowJob (orderId, req) 
-        `catch` (handleWorkerError orderId)
+workerLogic (flow, orderId, req) = processJob orderId flow req (onSuccess flow) `catch` (handleWorkerError orderId)
+
+onSuccess :: PaymentFlow -> Text -> AppM ()
+onSuccess  flow orderId = do  
+  -- Update Telegram: Send "Green" template
+  currentTime >>= finalizeTelegram orderId "Success"
+  eInventoryResult <- adjustInventoryForOrder orderId
+  let channel | flow == PutOnShelf = SHELF
+              | otherwise          = ORDER 
+  for_ eInventoryResult $ \case
+    StockOK msgId -> replyToOrderDetails msgId channel
+    FabricSoldOutOrPrecut msgId xs -> do
+      replyToOrderDetails msgId channel
+      for_ xs $ \case
+        RollBranch maybeMsgId renderMessage -> do
+          msg <- renderMessage
+          notifyMessage $ escapeMarkdownV2 msg
+          for_ maybeMsgId $ deleteFabric
+        PrecutBranch msgId -> deleteFabric msgId
+  when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
+
 
 -- | Global exception handler for the worker thread.
 handleWorkerError :: Text -> SomeException -> AppM ()
@@ -139,10 +151,10 @@ handleWorkerError orderId e = do
     $(logTM) ErrorS $ ls $ "CRITICAL: Worker for Order " <> orderId <> " crashed. Exception: " <> pack (show e)
     currentTime >>= finalizeTelegram orderId "Error" -- Notify user of a system error
 
-processShipNowJob :: (Text, GetStateRequest) -> AppM ()
-processShipNowJob (orderId, getStateReq) = do
+processJob :: Text ->  PaymentFlow -> GetStateRequest -> (Text -> AppM ()) -> AppM ()
+processJob orderId flow getStateReq onSuccess = do
   -- 1. Log start
-  $(logTM) InfoS $ ls $ "Worker started for Order " <> orderId
+  $(logTM) InfoS $ ls $ "Worker started for Order " <> orderId <> " (flow: " <> pack (show flow) <> ")"
   startTime <- currentTime
   -- 3. Set the hard limit (20 minutes = 1200 seconds)
   -- Using timeout to kill this specific thread if it runs too long
@@ -164,22 +176,7 @@ processShipNowJob (orderId, getStateReq) = do
         ------------------------------------------------------------
         -- 1. SUCCESS STATES (Stop Polling)
         ------------------------------------------------------------
-        s | s `elem` [CONFIRMED, AUTHORIZED] -> do
-          $(logTM) InfoS $ ls $ "Order " <>  orderId <> " PAID (" <> pack (show s) <> ")."    
-          -- Update Telegram: Send "Green" template
-          currentTime >>= finalizeTelegram orderId "Success"
-          eInventoryResult <- adjustInventoryForOrder orderId
-          for_ eInventoryResult $ \case
-            StockOK msgId -> replyMessage msgId
-            FabricSoldOutOrPrecut msgId xs -> do
-              replyMessage msgId
-              for_ xs $ \case
-                RollBranch maybeMsgId renderMessage -> do
-                  msg <- renderMessage
-                  notifyMessage $ escapeMarkdownV2 msg
-                  for_ maybeMsgId $ deleteFabric
-                PrecutBranch msgId -> deleteFabric msgId
-          when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
+        s | s `elem` [CONFIRMED, AUTHORIZED] -> onSuccess orderId
           -- EXIT LOOP
         ------------------------------------------------------------
         -- 2. HARD FAILURE (Card Declined / Reversed) (Stop Polling)
@@ -189,7 +186,7 @@ processShipNowJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Red" template
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- updatePaymentStatus orderId REJECTED Cancelled pool
+          eRes <- updatePaymentStatus orderId REJECTED pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -204,7 +201,7 @@ processShipNowJob (orderId, getStateReq) = do
           -- Update Telegram: Send "Yellow/Timeout" template
           currentTime >>= finalizeTelegram orderId "Timeout"
           pool <- fmap _appDBPool ask
-          eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
+          eRes <- updatePaymentStatus orderId CANCELLED pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -219,7 +216,7 @@ processShipNowJob (orderId, getStateReq) = do
           -- Reuse Timeout or Failed template, or make a specific "Gray" one
           currentTime >>= finalizeTelegram orderId "Declined"
           pool <- fmap _appDBPool ask
-          eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
+          eRes <- updatePaymentStatus orderId CANCELLED pool
           when(isLeft eRes) $ 
             $(logTM) ErrorS $ ls $ 
               "error while updating payment status for Order " <> 
@@ -258,9 +255,11 @@ processShipNowJob (orderId, getStateReq) = do
               "‼️ tinkoff cancel order failed. \
               \ manual intervention is urgently required!! " <>
               decodeUtf8 (BL.toStrict (encodePretty makeCancelReq))
-        void $ sendOrEditTelegramMessage mempty errorMsg ORDER Nothing Nothing Nothing
+        let channel | flow == PutOnShelf = SHELF
+                    | otherwise          = ORDER      
+        void $ sendOrEditTelegramMessage mempty errorMsg channel Nothing Nothing Nothing
     pool <- fmap _appDBPool ask
-    eRes <- updatePaymentStatus orderId CANCELLED Cancelled pool
+    eRes <- updatePaymentStatus orderId CANCELLED pool
     when(isLeft eRes) $ 
       $(logTM) ErrorS $ ls $
         "error while updating payment status for Order " <> 
@@ -316,10 +315,10 @@ finalizeTelegram orderId suffix tm = do
 notifyMessage :: Text -> AppM ()
 notifyMessage message = void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing Nothing
 
-replyMessage :: Int64 -> AppM ()
-replyMessage msgId = do 
+replyToOrderDetails :: Int64 -> ChatKey -> AppM ()
+replyToOrderDetails msgId chatKey = do 
   message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Paid") mempty
-  void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing
+  void $ sendOrEditTelegramMessage mempty message chatKey Nothing (Just msgId) Nothing
 
 replyPrecutBought :: Int64 -> Text -> AppM ()
 replyPrecutBought msgId message = void $ sendOrEditTelegramMessage mempty message WAREHOUSE Nothing (Just msgId) Nothing
@@ -365,9 +364,4 @@ deleteFabric msgId = do
                 -- It's a different, more serious error.
                 $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText
       _ ->  $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
-
-
--- Process put on shelf job
-processPutOnShelfJob :: (Text, GetStateRequest) -> AppM ()
-processPutOnShelfJob (orderId, getStateReq) = undefined
 

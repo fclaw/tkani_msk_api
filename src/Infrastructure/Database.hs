@@ -22,6 +22,7 @@ module Infrastructure.Database
   , setTelegramMessage
   , getChatDetails
   , updateOrderStatusStatement
+  , updateShelfOrderStatusStatement
   , updateOrderStatus
   , adjustFabric
   , runTransaction
@@ -82,37 +83,38 @@ module Infrastructure.Database
   , fetchShelfItems
   , getPutOnDShelfDetails
   , finalizeShelfCheckout
+  , moveItemsToShelfStatement
   ) where
 
 
-import qualified Hasql.Pool as Hasql
-import qualified Hasql.Transaction as Hasql
-import qualified Hasql.Transaction.Sessions as Hasql
-import qualified Hasql.Statement as Hasql
 import qualified Hasql.TH as Hasql
 import qualified Hasql.Encoders as HE
 import qualified Hasql.Decoders as HD
-import Data.Profunctor.Unsafe (dimap, lmap, rmap)
-import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Text (Text, pack)
 import Data.Bifunctor (first, second)
-import Control.Monad (join, void, forM_, when)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del7)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import qualified Data.Vector as V
 import Data.Either (fromRight, either)
 import Data.Time (Day)
+import Control.Applicative ((<|>))
 import Data.Foldable (for_)
 import Control.Exception (throwIO)
-import Control.Monad.IO.Class (liftIO, MonadIO)
-import Data.Time.Calendar.Month (Month)
 import qualified Data.Text as T
 import Data.Time (UTCTime)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text.Encoding as TE
-
+import qualified Hasql.Pool as Hasql
+import qualified Hasql.Transaction as Hasql
+import qualified Hasql.Transaction.Sessions as Hasql
+import qualified Hasql.Statement as Hasql
+import Data.Time.Calendar.Month (Month)
+import Control.Monad.IO.Class (liftIO, MonadIO)
+import Control.Monad (join, void, forM_, when)
+import Data.Profunctor.Unsafe (dimap, lmap, rmap)
+import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del7)
 
 
 import App (AppM, PaymentFlow)
@@ -160,10 +162,10 @@ execCmd cmd = Hasql.statement () $ Hasql.Statement (TE.encodeUtf8 cmd) HE.noPara
 
 ---- Statements ------
 
-updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) Int64
+updateOrderStatusStatement :: Hasql.Statement (Text, OrderStatus) (Maybe Int64)
 updateOrderStatusStatement = 
-  dimap (second statusToSQL) fromIntegral
-  [Hasql.singletonStatement| 
+  lmap (second statusToSQL) $
+  [Hasql.maybeStatement| 
     UPDATE orders 
     SET status = CAST($2 :: text AS order_status) 
     WHERE id = $1 :: text 
@@ -692,25 +694,26 @@ updatePaymentStatusStatement =
   [Hasql.rowsAffectedStatement|
     UPDATE payments
     SET status = CAST(LOWER($2 :: text) as payment_status)
-    WHERE 
-      status = CAST(LOWER($3 :: text) as payment_status) 
-    AND
-      order_id = $1 :: text
+    WHERE status = CAST(LOWER($3 :: text) as payment_status) 
+    AND (order_id = $1 :: text OR 
+         shelf_order_id = $1 :: text)
   |]
 
-updatePaymentStatus :: Text -> Status -> OrderStatus -> Hasql.Pool -> AppM (Either Text Int64)
-updatePaymentStatus orderId paymentStatus orderStatus pool = 
+updatePaymentStatus :: Text -> Status -> Hasql.Pool -> AppM (Either Text Int64)
+updatePaymentStatus orderId paymentStatus pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
       void $ (orderId, paymentStatus, PENDING) `Hasql.statement` updatePaymentStatusStatement
-      Hasql.statement (orderId, orderStatus) $
-        dimap (second statusToSQL) fromIntegral
-        [Hasql.singletonStatement|
-          UPDATE orders 
-          SET status = CAST($2 :: text AS order_status)  
-          WHERE id = $1 :: text
-          RETURNING COALESCE(internal_notification_message_id, 0) :: int8
-        |]
+      maybeOrderMessageId <- 
+        Hasql.statement (orderId, API.Types.Cancelled) $
+          updateOrderStatusStatement
+      
+      maybeShelfOrderMessageId <- 
+        Hasql.statement (orderId, Types.Cancelled) $
+          updateShelfOrderStatusStatement
+      
+      return $ fromMaybe undefined $ maybeOrderMessageId <|> maybeShelfOrderMessageId
+
 
 searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Maybe CatalogSummaryItem)
 searchFabricCardStatement = 
@@ -1118,11 +1121,22 @@ getOrderItemsForAdjustStatement =
   rmap V.toList
   [Hasql.vectorStatement|
     SELECT
-      fabric_id :: int8,
-      pre_cut_id :: int8?,
-      length_m :: float8?
+    fabric_id :: int8,
+    pre_cut_id :: int8?,
+    length_m :: float8?
     FROM order_fabric_bindings
     WHERE order_id = $1 :: text
+
+    UNION ALL
+
+    SELECT
+    fabric_id :: int8,
+    pre_cut_id :: int8?,
+    length_m :: float8?
+    FROM shelf_order_items AS soi
+    INNER JOIN shelf_orders AS so
+    ON soi.shelf_order_id = so.id
+    WHERE so.order_id = $1 :: text
   |]
 
 
@@ -2363,6 +2377,8 @@ getPutOnDShelfDetailsStatement =
       WHERE c.telegram_user_id = $1 :: int8)
     SELECT
      jsonb_build_object(
+      'shelf_id', s.id,
+      'user_initials', s.user_initials,
       'phone', s.user_phone,
       'items', ci.items
      ) :: jsonb
@@ -2378,13 +2394,13 @@ getPutOnDShelfDetailsStatement =
   |]
 
 
-finalizeShelfCheckout :: Int64 -> Text-> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
-finalizeShelfCheckout userId orderId paymentRecord pool =
+finalizeShelfCheckout :: Int64 -> Text -> Int64 -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
+finalizeShelfCheckout userId orderId notificationId paymentRecord pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
       -- Step 1: Create the main shelf_order record.
-     Hasql.statement (userId, orderId) $
-       createShelfOrderStatement userId orderId
+     Hasql.statement (userId, orderId, notificationId) $
+       createShelfOrderStatement userId orderId notificationId
      -- Step 2: Create the associated payment record.
      Hasql.statement paymentRecord $
        insertNewPaymentRecordStatement
@@ -2393,16 +2409,17 @@ finalizeShelfCheckout userId orderId paymentRecord pool =
 
 type OrderItemRaw = (Text, Text, Text, Maybe Double, Double, Maybe Double)
 
-createShelfOrderStatement :: Int64 -> Text -> Hasql.Statement (Int64, Text) ()
-createShelfOrderStatement userId orderId =
+createShelfOrderStatement :: Int64 -> Text -> Int64 -> Hasql.Statement (Int64, Text, Int64) ()
+createShelfOrderStatement userId orderId notifcationId =
     [Hasql.resultlessStatement|
       WITH new_order AS (
         INSERT INTO shelf_orders
-        (order_id, shelf_id, status)
+        (order_id, shelf_id, status, internal_notification_message_id)
         SELECT 
         $2 :: text, 
         id :: int8, 
-        'registered' :: shelf_order_status
+        'registered' :: shelf_order_status,
+        $3 :: int8
         FROM shelves WHERE telegram_user_id = $1 :: int8
         RETURNING id :: int8
       )
@@ -2420,3 +2437,43 @@ createShelfOrderStatement userId orderId =
       ON pc.id = ci.pre_cut_id
       WHERE c.telegram_user_id = $1 :: int8 
     |]
+
+updateShelfOrderStatusStatement :: Hasql.Statement (Text, ShelfOderStatus) (Maybe Int64)
+updateShelfOrderStatusStatement =
+  lmap (second encodeToText) $
+  [Hasql.maybeStatement|
+    UPDATE shelf_orders
+    SET status = CAST($2 :: text AS shelf_order_status)
+    WHERE order_id = $1 :: text
+    RETURNING COALESCE(internal_notification_message_id, 0) :: int8
+  |]
+
+moveItemsToShelfStatement :: Hasql.Statement Text ()
+moveItemsToShelfStatement =
+  [Hasql.resultlessStatement|
+    WITH shelf_info AS (
+      SELECT
+        so.shelf_id,
+        so.id AS shelf_order_id
+      FROM shelf_orders AS so
+      WHERE so.order_id = $1 :: text
+    ),
+    items_to_move AS (
+      SELECT
+        soi.fabric_id,
+        soi.pre_cut_id,
+        soi.length_m
+      FROM shelf_order_items AS soi
+      INNER JOIN shelf_info AS si
+      ON soi.shelf_order_id = si.shelf_order_id
+    )
+    INSERT INTO shelf_items
+    (shelf_id, fabric_id, pre_cut_id, length_m)
+    SELECT
+      si.shelf_id,
+      itm.fabric_id,
+      itm.pre_cut_id,
+      itm.length_m
+    FROM items_to_move AS itm
+    INNER JOIN shelf_info AS si ON TRUE
+  |]

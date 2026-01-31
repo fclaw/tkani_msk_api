@@ -10,32 +10,41 @@ module API.Handlers.Shelf.PutOnShelf (handler) where
 
 import Katip
 import Data.Int (Int64)
-import Data.Text (Text)
+import Data.Text (Text, unlines)
 import Control.Monad (when, void)
-import Data.Text as T (unpack)
+import Data.Either (fromRight)
+import qualified Data.Text as T
+import Data.Text as T (unpack, pack)
 import Data.Maybe (isNothing, fromJust)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
+import Data.Time (formatTime, defaultTimeLocale)
+import qualified Data.HashMap.Strict as HM
+import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Control.Monad.State.Class (get)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Control.Monad.Trans.Except (withExceptT, ExceptT (..), runExceptT, except)
 
+import App
+import Infrastructure.Database
 import Text (tshow, encodeToText)
-import App (AppM, _appDBPool, _tinkoffCred, TinkoffCredentials (..), PaymentFlow (PutOnShelf), readTVarIO, _tinkoffPaymentChan)
+import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError)
 import API.Handlers.PlaceNewOrder(mkInitRequest)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
+import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
+import API.Handlers.PlaceNewOrder(formatOrderItemLine)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, message_id)
 import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError)
 import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.GetState as Tinkoff
-import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
-import Infrastructure.Database (getPutOnDShelfDetails, PutOnShelfDetails (..), oiTotalPrice, finalizeShelfCheckout, NewPaymentRecord (..))
 
 
 data PutOnShelfError
@@ -136,6 +145,27 @@ putOnShelf userId = do
         , nprShelfOrderId      = Just orderId
         }
   
+  -- Generate a notification message ID placeholder (could be from Telegram)
+  tz <- liftIO getCurrentTimeZone
+  tm <- currentTime
+  let localTime = utcToLocalTime tz tm
+  let timeStr = pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" localTime
+  let itemLines = map formatOrderItemLine posdItems
+  let itemsBlock = T.unlines itemLines
+  let templateData = 
+       HM.fromList 
+       [ ("orderId", orderId)
+       , ("timestamp", timeStr)
+       , ("shelfId", tshow posdShelfId)
+       , ("customerName", posdUserInitials)
+       , ("customerPhone", posdPhone)
+       , ("itemCount", tshow (length posdItems))
+       , ("itemsBlock", itemsBlock)
+       ]
+  message <- fmap escapeMarkdownV2 $ render $currentModule templateData
+  eTelResp <- lift $ sendOrEditTelegramMessage mempty message SHELF Nothing Nothing Nothing
+  let notificationId = fromRight 0 $ fmap message_id eTelResp
+
   -- Finalize the entire "put on shelf" checkout process within a single database transaction.
   -- This involves three critical steps:
   --   1. Create the 'shelf_order' record.
@@ -144,7 +174,7 @@ putOnShelf userId = do
   -- The entire block is transactional: if any step fails, all previous steps are rolled back,
   -- ensuring the database remains in a consistent state. 'wrap' handles any database
   -- exception by converting it into our application-specific 'DatabaseFailed' error.
-  void $ wrap (finalizeShelfCheckout userId orderId newPaymentRecord pool) DatabaseFailed
+  void $ wrap (finalizeShelfCheckout userId orderId notificationId newPaymentRecord pool) DatabaseFailed
 
   let getStateRequest = 
         Tinkoff.GetStateRequest

@@ -8,16 +8,18 @@ module Domain.Inventory (adjustInventoryForOrder, InventoryResult(..), Template 
 
 
 import Data.Text (Text, pack)
-import Control.Monad.IO.Class (liftIO)
-import Hasql.Transaction.Sessions (Mode (..))
 import Data.Bifunctor (first)
-import qualified Hasql.Transaction as Hasql
 import Data.Traversable (for)
 import Data.Aeson (Result (..))
 import Control.Monad (join, void)
 import Data.Either (lefts)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromMaybe)
 import Data.Int (Int64)
+import Data.Foldable (for_)
+import Control.Applicative ((<|>))
+import Control.Monad.IO.Class (liftIO)
+import qualified Hasql.Transaction as Hasql
+import Hasql.Transaction.Sessions (Mode (..))
 
 
 import App (AppM, _appDBPool, _thresholdMetres, render, _cutTolerance)
@@ -28,7 +30,10 @@ import Infrastructure.Database
        , updatePaymentStatusStatement
        , adjustFabric
        , getOrderItemsForAdjustStatement
+       , updateShelfOrderStatusStatement
+       , moveItemsToShelfStatement
        , AdjustFabric (..))
+import qualified Infrastructure.Database as DB
 import API.Types (OrderStatus (Paid))
 import TH.Location (currentModule)
 import qualified Data.HashMap.Strict as HM
@@ -93,7 +98,19 @@ adjustInventoryForOrder orderId = do
 
 statements orderId thresholdMetres cutTolerance = do
   -- update order to paid
-  mId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
+  maybeOrderMessageId <- (orderId, Paid) `Hasql.statement` updateOrderStatusStatement
+  -- update shelf order to paid
+  maybeShelfOrderMessageId <- (orderId, DB.Paid) `Hasql.statement` updateShelfOrderStatusStatement
+
+  -- update payment status to paid
+  Hasql.statement (orderId, CONFIRMED, PENDING) updatePaymentStatusStatement
+
+  -- move items to shelf
+  for_ maybeShelfOrderMessageId $ const $ do 
+    Hasql.statement orderId moveItemsToShelfStatement
+
+  let messageId = fromMaybe undefined $ maybeOrderMessageId <|> maybeShelfOrderMessageId 
+
   -- adjust fabric, orderId
   items <- orderId `Hasql.statement` getOrderItemsForAdjustStatement
   adjFabrics <- for items $ \(fId, prId, length) -> do
@@ -101,7 +118,5 @@ statements orderId thresholdMetres cutTolerance = do
     let ft | isJust prId = PreCut
            | otherwise = Roll
     fmap (fmap (ft,)) $ (fId, prId, lengthWithTolerance, thresholdMetres) `Hasql.statement` adjustFabric
-  -- update payment status to paid
-  void $ (orderId, CONFIRMED, PENDING) `Hasql.statement` updatePaymentStatusStatement
 
-  return $ fmap (mId,) $ sequence adjFabrics
+  return $ fmap (messageId,) $ sequence adjFabrics

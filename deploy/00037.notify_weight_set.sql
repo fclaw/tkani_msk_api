@@ -6,16 +6,15 @@ BEGIN;
 CREATE OR REPLACE FUNCTION notify_weight_set()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- This single block covers both bot and non-bot orders.
-    -- It fires only on the specific state transition we care about.
+    -- This trigger handles the case where an order is already paid,
+    -- and the receipt_ready flag is the final piece of information to arrive.
     IF (TG_OP = 'UPDATE' AND
         NEW.status = 'paid' AND
-        OLD.status <> 'paid' AND -- Ensures this fires only once when the status changes to 'paid'
-        NEW.actual_weight_grams IS NOT NULL AND
-        NEW.receipt_ready = TRUE) -- The new condition
+        OLD.status = 'paid' AND -- The status has NOT changed
+        NEW.receipt_ready = TRUE AND
+        OLD.receipt_ready IS DISTINCT FROM TRUE AND -- Crucially, the flag just CHANGED to TRUE
+        NEW.actual_weight_grams IS NOT NULL)
     THEN
-        -- Send a notification on the 'order_weighed_events' channel.
-        -- The payload is a simple JSON with the order_id and its weight.
         PERFORM pg_notify(
             'order_weighed_events',
             jsonb_build_object(
@@ -25,7 +24,6 @@ BEGIN
         );
     END IF;
 
-    -- Always return the new record in an UPDATE trigger
     RETURN NEW;
 
 END;

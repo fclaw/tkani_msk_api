@@ -75,6 +75,7 @@ data Config = Config
   , configRateLimitAllowedUsers  :: [Int64]
   , configPostLifeDetails        :: [(FabricLifecycle, (Int, Int))]
   , configConciergeBotUrl        :: Text
+  , configShelfChatId            :: Int64
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -135,6 +136,8 @@ loadConfig = do
   let configOrderChatId = fromIntegral $ extractNumber "ORDER_CHAT_ID" $ textToInt $ (Map.!) env "ORDER_CHAT_ID"
   let configYamlOrderChatId = fromIntegral $ extractNumber "YAML_ORDER_CHAT_ID" $ textToInt $ (Map.!) env "YAML_ORDER_CHAT_ID"
   let configThresholdMetres = extractNumber "METRES_THRESHOLD" $ textToDouble $ (Map.!) env "METRES_THRESHOLD"
+
+  let configShelfChatId = fromIntegral $ extractNumber "SHELF_CHAT_ID" $ textToInt $ (Map.!) env "SHELF_CHAT_ID"
 
   let configTinkoffTerminalKey = (Map.!) env "TINKOFF_TERMINAL_KEY"
   let configTinkoffSecret = (Map.!) env "TINKOFF_SECRET"
