@@ -113,11 +113,12 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''
 
 data PutOnShelfDetails =
      PutOnShelfDetails
-     { posdShelfId      :: Int64
-     , posdUserInitials :: Text
-     , posdPhone        :: Text
-     , posdItems        :: [OrderItem]
-     }    
+     { posdShelfId           :: Int64
+     , posdUserInitials      :: Text
+     , posdPhone             :: Text
+     , posdItems             :: [OrderItem]
+     , posdItemsOnShelfCount :: Int32
+     }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "posd" } ''PutOnShelfDetails)
 

@@ -305,6 +305,7 @@ main = do
             , _geocodeUrl = configGeocodeUrl
             , _postsCfgs = configPostLifeDetails
             , _conciergeBotUrl = configConciergeBotUrl
+            , _shelfCapacity = configShelfCapacity
             }
 
       tinkoffPaymentChan <- newTChanIO

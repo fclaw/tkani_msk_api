@@ -2380,9 +2380,13 @@ getPutOnDShelfDetailsStatement =
       'shelf_id', s.id,
       'user_initials', s.user_initials,
       'phone', s.user_phone,
-      'items', ci.items
+      'items', ci.items,
+      'items_on_shelf_count', 
+       COALESCE(COUNT(si.id), 0)
      ) :: jsonb
     FROM shelves AS s
+    LEFT JOIN shelf_items AS si
+    ON s.id = si.shelf_id
     INNER JOIN (
       SELECT
         telegram_user_id,
@@ -2391,6 +2395,7 @@ getPutOnDShelfDetailsStatement =
       GROUP BY telegram_user_id
     ) AS ci
     ON s.telegram_user_id = ci.telegram_user_id
+    GROUP BY s.id, s.user_initials, s.user_phone, ci.items
   |]
 
 

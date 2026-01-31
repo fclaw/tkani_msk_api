@@ -622,7 +622,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "si" } ''
 
 data ShelfItemsResponse =
      ShelfItemsResponse
-     { sirCapacity       :: Int 
+     { sirCapacity       :: Int32
      , sirItems          :: [ShelfItems]
      , sirLifeTimeInDays :: Maybe Int
      } deriving (Show, Eq)

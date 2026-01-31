@@ -44,7 +44,7 @@ module App
   ) where
 
 
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Control.Monad (void)
 import Servant (Handler, ServerError)
 import Hasql.Pool (Pool)
@@ -244,6 +244,7 @@ data Config = Config
   , _geocodeUrl             :: Text
   , _postsCfgs              :: [(FabricLifecycle, PostCfg)]
   , _conciergeBotUrl        :: Text
+  , _shelfCapacity          :: Int32
   }
 
 -- A helper type for parsing the YAML

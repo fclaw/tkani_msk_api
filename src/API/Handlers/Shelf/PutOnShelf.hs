@@ -52,7 +52,8 @@ data PutOnShelfError
   | TinkoffPaymentLinkFailed Text    -- Failed to create a payment link with a textual error
   | TinkoffQrCodeFailed Text         -- Failed to generate QR code
   | DatabaseFailed Text              -- General DB error
-  | CartEmpty
+  | CapacityExceeded                 -- Shelf capacity exceeded
+  | CartEmpty                        -- No items in the cart to put on shelf
   deriving (Show)
 
 
@@ -71,10 +72,18 @@ handler userId = do
       return $ Right options
     -- THE FAILURE CASES
     Left err -> do
-      -- Log the specific internal error
-      $(logTM) ErrorS $ "Failed to obtain payment options: " <> ls (show err)
-      -- Return a user-friendly, generic failure response
-      return $ Left $ mkError "Failed to obtain payment options. See server logs for details."  
+      case err of
+        CapacityExceeded -> do
+          $(logTM) ErrorS $ "Shelf capacity exceeded for userId: " <> ls (tshow userId)
+          return $ Left $ mkError "Shelf capacity exceeded."
+        CartEmpty -> do
+          $(logTM) ErrorS $ "Cart is empty for userId: " <> ls (tshow userId)
+          return $ Left $ mkError "No items in the cart to put on shelf."
+        _ -> do
+         -- Log the specific internal error
+         $(logTM) ErrorS $ "Failed to obtain payment options: " <> ls (show err)
+         -- Return a user-friendly, generic failure response
+         return $ Left $ mkError "Failed to obtain payment options. See server logs for details."  
 
 putOnShelf :: Int64 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
 putOnShelf userId = do
@@ -85,6 +94,13 @@ putOnShelf userId = do
 
   when (isNothing maybeDetails) $ except $ Left CartEmpty
   let PutOnShelfDetails {..} = fromJust maybeDetails
+
+
+  -- check capacity overflow
+  let totalCount = length posdItems + fromIntegral posdItemsOnShelfCount
+  when(totalCount > fromIntegral (_shelfCapacity cfg)) $
+    except $ Left $ CapacityExceeded
+
 
   orderId <- fmap ((<>) "SHELF-") $ liftIO generateOrderId
   -- prepare Tinkoff init request
@@ -130,7 +146,7 @@ putOnShelf userId = do
     except $ Left $ TinkoffQrCodeFailed "Tinkoff Get QR API did not return a QR code link."
 
   let amount = sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
-  let totalPrice = amount / 100.0
+  let totalPrice = amount
 
   let newPaymentRecord =
         NewPaymentRecord

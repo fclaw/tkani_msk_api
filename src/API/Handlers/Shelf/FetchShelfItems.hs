@@ -12,13 +12,10 @@ import Control.Monad.Reader.Class (ask)
 import Data.Time.Clock (diffUTCTime, nominalDay)
 
 import Text (tshow)
-import App (AppM, _appDBPool, currentTime)
+import App (AppM, _appDBPool, currentTime, _shelfCapacity)
 import Infrastructure.Database (fetchShelfItems)
 import API.Types(ApiResponse, ShelfItemsResponse (..), ApiError (..), wrongParamsErrorCode, mkError)
 
-
-capacity :: Int
-capacity = 10
 
 handler :: Maybe Int64 -> AppM (ApiResponse ShelfItemsResponse)
 handler Nothing = do
@@ -37,4 +34,5 @@ handler (Just userId) = do
     Right Nothing -> pure $ Left (mkError "shelf not found")
     Right (Just (maybeTm, items)) -> do
       curr <- currentTime
+      capacity <- fmap _shelfCapacity ask
       pure $ Right $ ShelfItemsResponse capacity items $ maybeTm <&> \tm -> floor (diffUTCTime curr tm / nominalDay)

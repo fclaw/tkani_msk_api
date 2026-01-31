@@ -25,7 +25,7 @@ import Control.Monad (join, when)
 import qualified Data.Map as Map
 import Control.Exception (catch, IOException)
 import Database.PostgreSQL.Simple (ConnectInfo (..), defaultConnectInfo)
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Text.Printf (printf)
 import GHC.Generics (Generic)
 import qualified Data.ByteString.Lazy.Char8 as LBS
@@ -76,6 +76,7 @@ data Config = Config
   , configPostLifeDetails        :: [(FabricLifecycle, (Int, Int))]
   , configConciergeBotUrl        :: Text
   , configShelfChatId            :: Int64
+  , configShelfCapacity          :: Int32
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -197,6 +198,8 @@ loadConfig = do
         , connectPassword = T.unpack dbPass
         , connectDatabase = T.unpack dbName
         }
+
+  let configShelfCapacity = fromIntegral $ extractNumber "SHELF_CAPACITY" $ textToInt $ (Map.!) env "SHELF_CAPACITY"
 
   -- 5. Return the final Config record
   pure $ Config {..}
