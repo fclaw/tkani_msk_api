@@ -197,8 +197,8 @@ runWeightAccumulator stateVar connInfo runAppM =
       void $ async $ void $ runAppM $ runJobWithCleanup (processWeightEvent stateVar ePayload)
 
 
--- This is an IO action that returns a Bool.
-isBusinessDay :: IO Bool
+-- This is an IO action that returns a (Bool, Bool).
+isBusinessDay :: IO (Bool, Bool)
 isBusinessDay = do
   -- 1. Get the current time in UTC
   nowUTC <- getCurrentTime
@@ -216,7 +216,7 @@ isBusinessDay = do
   let businessDays = [Monday, Tuesday, Wednesday, Thursday, Friday]
   
   -- 6. Check if today is in the list and return the result
-  return (today `elem` businessDays)
+  return (today `elem` businessDays, today == Monday)
 
 
 -- The logic for processing a single event
@@ -279,13 +279,15 @@ callDostavistaCourier stateVar = forever $ do
   let (TimeOfDay currentHour _ _) = localTimeOfDay mskTime
   let weightExceeded = wtsTotalWeightGrams >= weightThreshold
   let courierNotCalled = not wtsCourierCalled
-  let cutoffHour = (courierCallCutoffHour . _dostavistaConfig) cfg
+
+  (dayOfWeek, isMonday) <- liftIO isBusinessDay
+  let cutoffHour | isMonday = 3 + (courierCallCutoffHour . _dostavistaConfig) cfg
+                 | otherwise = (courierCallCutoffHour . _dostavistaConfig) cfg
+
   let isWithinSchedulingWindow =
        let hourBeforeCutoff = cutoffHour - 1
        in currentHour >= hourBeforeCutoff &&
           currentHour < cutoffHour
-
-  dayOfWeek <- liftIO isBusinessDay
 
   when (not dayOfWeek) $ $(logTM) InfoS $ "Weekend. skip the courier call"
 
