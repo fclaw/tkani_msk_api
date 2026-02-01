@@ -5,4 +5,4 @@
 • **Пользователь:** {{user_initials}}
 • **Telegram ID:** `{{telegram_user_id}}`
 • **Телефон:** `{{user_phone}}`
-• **shelfId:** `{{shelf_id}}`
+• **ID Полки:** `{{shelf_id}}`

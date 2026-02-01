@@ -50,3 +50,4 @@
 00047.fabric_life_cycle_change 2026-01-28T07:53:16Z System Administrator <root@Sonny.local> # fabrcis: life cycle change
 00048.order_status_pickuo_failure 2026-01-29T05:27:04Z System Administrator <root@Sonny.local> # order status
 00049.put_on_shelf_records 2026-01-29T08:08:10Z System Administrator <root@Sonny.local> # put in shelf records
+00049.shelf_items_main_order 2026-01-31T18:25:09Z System Administrator <root@Sonny.local> # shelf_items: parent order

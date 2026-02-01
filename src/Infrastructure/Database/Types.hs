@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Infrastructure.Database.Types where
 
@@ -330,3 +330,14 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier mempty } 
 data ShelfOderStatus = Registered | Paid | Cancelled
 
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''ShelfOderStatus)
+
+
+data ShelfItemsForShipment = 
+     ShelfItemsForShipment
+     { sifsShelfId      :: Int64
+     , sifsUserInitials :: Text
+     , sifsPhone        :: Text
+     , sifsItems        :: [OrderItem]
+     }
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sifs" } ''ShelfItemsForShipment)

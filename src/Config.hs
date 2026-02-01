@@ -77,6 +77,7 @@ data Config = Config
   , configConciergeBotUrl        :: Text
   , configShelfChatId            :: Int64
   , configShelfCapacity          :: Int32
+  , configTotalShelves           :: Int32
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -200,6 +201,8 @@ loadConfig = do
         }
 
   let configShelfCapacity = fromIntegral $ extractNumber "SHELF_CAPACITY" $ textToInt $ (Map.!) env "SHELF_CAPACITY"
+
+  let configTotalShelves = fromIntegral $ extractNumber "TOTAL_SHELVES" $ textToInt $ (Map.!) env "TOTAL_SHELVES"
 
   -- 5. Return the final Config record
   pure $ Config {..}

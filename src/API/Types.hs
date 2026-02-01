@@ -606,7 +606,19 @@ data ShelfRequest =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sr" } ''ShelfRequest)
 
-newtype ShelfIdResponse = ShelfIdResponse { selfId :: Int64 } deriving (Show, Eq, ToJSON)
+data ShelfIdResponseStatus = Ok | Already | CapacityExceeded
+  deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''ShelfIdResponseStatus)
+
+data ShelfIdResponse = 
+     ShelfIdResponse 
+     { sirId     :: Maybe Int64
+     , sirStatus :: ShelfIdResponseStatus
+     } 
+     deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } ''ShelfIdResponse)
 
 data ShelfItems =
      ShelfItems
@@ -640,12 +652,21 @@ data PutOnShelfPaymentOptions =
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PutOnShelfPaymentOptions)
 
 
-data ShelfOrderDetails =
-      ShelfOrderDetails
-      { sodOrderId          :: Text
-        -- | The delivery tracking number provided by the delivery service.
-      , sodTrackingNumber   :: Text
-      , sodDeliveryProvider :: Providers
-      } deriving (Show, Generic)
+data InitiateShelfShipment =
+     InitiateShelfShipment
+     { issProvider :: Providers
+     , issPointId  :: Text
+     } deriving (Show, Generic)
+      
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sod" } ''ShelfOrderDetails)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "iss" } ''InitiateShelfShipment)
+
+data ShelfShipmentDetails =
+     ShelfShipmentDetails
+     { ssdOrderId          :: Text
+      -- | The delivery tracking number provided by the delivery service.
+     , ssdTrackingNumber   :: Text
+     , ssdDeliveryProvider :: Providers
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ssd" } ''ShelfShipmentDetails)

@@ -229,14 +229,14 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Post '[JSON] (ApiResponse PutOnShelfPaymentOptions)
-    , _orderShelf
+    , _initiateShipment
        :: route
        :- "shelf"
-       :> "order"
+       :> "ship"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
-       :> QueryParam "provider" Providers
-       :> Get '[JSON] (ApiResponse ShelfOrderDetails)
+       :> ReqBody '[JSON] InitiateShelfShipment
+       :> Post '[JSON] (ApiResponse ShelfShipmentDetails)
   } deriving (Generic)
 
 

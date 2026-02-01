@@ -40,7 +40,7 @@ import qualified API.Handlers.Shelf.InitShelf as InitShelf
 import qualified API.Handlers.Shelf.PatchShelfAccount as PatchShelfAccount
 import qualified API.Handlers.Shelf.FetchShelfItems as FetchShelfItems
 import qualified API.Handlers.Shelf.PutOnShelf as PutOnShelf
-import qualified API.Handlers.Shelf.OrderShelf as OrderShelf
+import qualified API.Handlers.Shelf.InitiateShipment as InitiateShipment
 
 
 -- This is the implementation of our server.
@@ -76,5 +76,5 @@ apiHandlers = Routes
   , _patchShelfAccount         = PatchShelfAccount.handler
   , _fetchShelfItems           = FetchShelfItems.handler
   , _putOnShelf                = PutOnShelf.handler
-  , _orderShelf                = OrderShelf.handler
+  , _initiateShipment          = InitiateShipment.handler
   }

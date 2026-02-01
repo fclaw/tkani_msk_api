@@ -245,6 +245,7 @@ data Config = Config
   , _postsCfgs              :: [(FabricLifecycle, PostCfg)]
   , _conciergeBotUrl        :: Text
   , _shelfCapacity          :: Int32
+  , _totalShelves           :: Int32
   }
 
 -- A helper type for parsing the YAML

@@ -306,6 +306,7 @@ main = do
             , _postsCfgs = configPostLifeDetails
             , _conciergeBotUrl = configConciergeBotUrl
             , _shelfCapacity = configShelfCapacity
+            , _totalShelves = configTotalShelves
             }
 
       tinkoffPaymentChan <- newTChanIO

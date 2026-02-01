@@ -14,6 +14,7 @@ module Infrastructure.Services.Sdek
        , makeMinimalOrderRequestData
        , buildMinimalOderRequest
        , makeMinimalYamlOrderRequestData
+       , makeMinimalShelfRequestData
        , getOrderStatus
        , getOrdersInTransit
        , scheduleSingleOrderCourier
@@ -153,6 +154,19 @@ makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation ship
   , mordShipmentPoint = shipmentPoint
   , mordItems = items
   }
+
+makeMinimalShelfRequestData :: Text -> Text -> Text -> Int -> [OrderItem] -> SdekFromLocation -> MinimalOrderRequestData
+makeMinimalShelfRequestData fullName phone deliverPoint tariffCode items fromLocation =
+  MinimalOrderRequestData 
+  { mordName = fullName
+  , mordPhone = phone
+  , mordDeliveryPointCode = deliverPoint
+  , mordTariffCode = tariffCode
+  , mordFromLocation = Just fromLocation
+  , mordShipmentPoint = Nothing
+  , mordItems = items
+  }
+
 
 makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Maybe SdekFromLocation -> Maybe Text -> MinimalOrderRequestData
 makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation shipmentPoint =

@@ -80,10 +80,13 @@ module Infrastructure.Database
   , sweepTemporaryNotificationMessages
     -- Shelf section
   , initShelf
+  , InitShelf (..)
   , fetchShelfItems
   , getPutOnDShelfDetails
   , finalizeShelfCheckout
   , moveItemsToShelfStatement
+  , fetchShelfItemsForShipment
+  , placeNewShelfOrder
   ) where
 
 
@@ -200,6 +203,19 @@ getFabricPreviewStatement =
       AND o.status = 'registered'
       AND o.created_at > NOW() - INTERVAL '30 minutes'
       GROUP BY ofb.fabric_id
+
+      UNION ALL
+
+      SELECT
+        soi.fabric_id,
+        SUM(soi.length_m) AS length
+      FROM shelf_order_items soi
+      JOIN shelf_orders so
+      ON soi.shelf_order_id = so.id
+      WHERE soi.pre_cut_id IS NULL
+      AND so.status = 'registered'
+      AND so.created_at > NOW() - INTERVAL '30 minutes'
+      GROUP BY soi.fabric_id
     ),
     total_claimed_length AS (
       SELECT
@@ -215,8 +231,17 @@ getFabricPreviewStatement =
       ON ofb.order_id = o.id
       WHERE ofb.pre_cut_id = $1 :: int8
       AND o.status = 'registered'
-      AND o.created_at > 
-          NOW() - INTERVAL '30 minutes'
+      AND o.created_at > NOW() - INTERVAL '30 minutes'
+
+      UNION
+
+      SELECT 1
+      FROM shelf_order_items soi
+      JOIN shelf_orders so 
+      ON soi.shelf_order_id = so.id
+      WHERE soi.pre_cut_id = $1 :: int8
+      AND so.status = 'registered'
+      AND so.created_at > NOW() - INTERVAL '30 minutes'
     )
     SELECT
       jsonb_build_object(
@@ -741,6 +766,19 @@ searchFabricCardStatement =
       AND o.status = 'registered'
       AND o.created_at > NOW() - INTERVAL '30 minutes'
       GROUP BY ofb.fabric_id
+
+      UNION ALL
+
+      SELECT
+        soi.fabric_id,
+        SUM(soi.length_m) AS length
+      FROM shelf_order_items soi
+      JOIN shelf_orders so
+      ON soi.shelf_order_id = so.id
+      WHERE soi.pre_cut_id IS NULL
+      AND so.status = 'registered'
+      AND so.created_at > NOW() - INTERVAL '30 minutes'
+      GROUP BY soi.fabric_id
     ),
     total_claimed_length AS (
       SELECT
@@ -809,7 +847,19 @@ searchFabricCardStatement =
           WHERE ofb.pre_cut_id = $2 :: int8
           AND o.status = 'registered'
           AND o.created_at >
-              NOW() - INTERVAL '30 minutes')
+              NOW() - INTERVAL '30 minutes'
+              
+          UNION
+          
+          SELECT 1
+          FROM shelf_order_items soi
+          JOIN shelf_orders so
+          ON soi.shelf_order_id = so.id
+          WHERE soi.pre_cut_id = $2 :: int8
+          AND so.status = 'registered'
+          AND so.created_at >
+              NOW() - INTERVAL '30 minutes'
+        )
     )
     SELECT item_json :: jsonb FROM item
   |]
@@ -950,6 +1000,19 @@ isRollAvailableStatement =
           AND ofb.pre_cut_id IS NULL
           AND o.status = 'registered'
           AND o.created_at > NOW() - INTERVAL '30 minutes'
+
+        UNION ALL
+
+        SELECT 
+          COALESCE(SUM(soi.length_m), 0.0) AS total
+        FROM shelf_order_items soi
+        JOIN shelf_orders so
+        ON soi.shelf_order_id = so.id
+        WHERE 
+          soi.fabric_id = $1 :: int8
+          AND soi.pre_cut_id IS NULL
+          AND so.status = 'registered'
+          AND so.created_at > NOW() - INTERVAL '30 minutes'
     ),   
     total_claimed AS (
       SELECT SUM(total) as length
@@ -982,7 +1045,18 @@ isPreCutAvailableStatement =
       WHERE ofb.pre_cut_id = pc.id
       AND o.status = 'registered'
       AND o.created_at >
-          NOW() - INTERVAL '30 minutes')
+          NOW() - INTERVAL '30 minutes'
+
+      UNION
+      SELECT 1
+      FROM shelf_order_items soi
+      JOIN shelf_orders so
+      ON soi.shelf_order_id = so.id
+      WHERE soi.pre_cut_id = pc.id
+      AND so.status = 'registered'
+      AND so.created_at >
+          NOW() - INTERVAL '30 minutes'
+      )
      FOR UPDATE
   |]
 
@@ -1527,20 +1601,20 @@ getOrderDetailsForPricing orderId pool =
               'items', r.items) :: jsonb
           FROM    
           (SELECT 
-            TRIM(REGEXP_REPLACE(delivery_point_id, 'sdek_', '')) AS pick_up_point,
-            tariff,
+            TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
+            o.tariff,
             array_agg(
              jsonb_build_object(
               'density', f.density,
               'width', f.width,
-                'length', COALESCE(ofb.length_m, pc.length_m),
-                'weight_per_metre', f.weight_per_metre,
-                'price',
-                 CASE
-                   WHEN ofb.pre_cut_id IS NULL
-                   THEN ROUND(ofb.length_m * f.price_per_meter * (1 - f.discount))
-                   ELSE ROUND(pc.price_rub * (1 - f.discount))
-                 END          
+              'length', COALESCE(ofb.length_m, pc.length_m),
+              'weight_per_metre', f.weight_per_metre,
+              'price',
+                CASE
+                 WHEN ofb.pre_cut_id IS NULL
+                 THEN ROUND(ofb.length_m * f.price_per_meter * (1 - f.discount))
+                 ELSE ROUND(pc.price_rub * (1 - f.discount))
+                END          
               )) :: jsonb[] AS items
           FROM orders AS o
           INNER JOIN order_fabric_bindings AS ofb
@@ -1550,7 +1624,36 @@ getOrderDetailsForPricing orderId pool =
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff) AS r
+          GROUP BY o.delivery_point_id, o.tariff
+          
+          UNION ALL
+          
+          SELECT
+            TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
+            o.tariff,
+            array_agg(
+             jsonb_build_object(
+              'density', f.density,
+              'width', f.width,
+              'length', COALESCE(si.length_m, pc.length_m),
+              'weight_per_metre', f.weight_per_metre,
+              'price',
+               CASE
+                 WHEN si.pre_cut_id IS NULL
+                 THEN ROUND(si.length_m * f.price_per_meter * (1 - f.discount))
+                 ELSE ROUND(pc.price_rub * (1 - f.discount))
+                END 
+              )) :: jsonb[] AS items
+          FROM orders AS o
+          INNER JOIN shelf_items AS si
+          ON si.main_order_id = o.id
+          LEFT JOIN fabrics AS f
+          ON f.id = si.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON si.pre_cut_id = pc.id
+          WHERE o.id = $1 :: text
+          GROUP BY o.delivery_point_id, o.tariff          
+          ) AS r
         |]
         
 
@@ -1561,6 +1664,69 @@ getPatchedOrderDetails orderId pool =
       Hasql.statement orderId $
         rmap (extractADT . convertFromJson @PatchedOrderDetails)
         [Hasql.singletonStatement|
+          WITH all_items_for_order AS (
+           SELECT
+           ofb.order_id,
+           CASE
+            WHEN ofb.length_m IS NOT NULL
+            THEN f.name
+            ELSE pcf.name 
+           END AS name,
+           CASE
+            WHEN ofb.length_m IS NOT NULL
+            THEN f.article
+            ELSE pcf.article
+            END AS article,
+           CASE
+            WHEN ofb.length_m IS NOT NULL
+            THEN ROUND(f.weight_per_metre * ofb.length_m)
+            ELSE ROUND(f.weight_per_metre * pc.length_m)
+           END AS weight,
+           CASE
+            WHEN ofb.length_m IS NOT NULL
+            THEN ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
+            ELSE ROUND(pc.price_rub * (1 - f.discount))
+           END AS total_price
+          FROM order_fabric_bindings AS ofb
+          LEFT JOIN fabrics AS f
+          ON f.id = ofb.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON ofb.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS pcf
+          ON pc.fabric_id = pcf.id
+          
+          UNION ALL
+
+          SELECT 
+           si.main_order_id AS order_id,
+           CASE
+            WHEN si.length_m IS NOT NULL
+            THEN f.name
+            ELSE pcf.name
+           END AS name,
+           CASE
+            WHEN si.length_m IS NOT NULL
+            THEN f.article
+            ELSE pcf.article
+           END AS article,
+           CASE
+            WHEN si.length_m IS NOT NULL
+            THEN ROUND(f.weight_per_metre * si.length_m)
+            ELSE ROUND(f.weight_per_metre * pc.length_m)
+           END AS weight,
+           CASE
+            WHEN si.length_m IS NOT NULL
+            THEN ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
+            ELSE ROUND(pc.price_rub * (1 - f.discount))
+           END AS total_price
+          FROM shelf_items AS si
+          LEFT JOIN fabrics AS f
+          ON f.id = si.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON si.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS pcf
+          ON pc.fabric_id = pcf.id 
+          )
           SELECT 
             jsonb_build_object(
              'sdek_uuid', o.sdek_request_uuid,
@@ -1581,45 +1747,19 @@ getPatchedOrderDetails orderId pool =
           UNION
 
           SELECT 
-            jsonb_build_object(
-             'sdek_uuid', o.sdek_request_uuid,
-             'items', array_agg(
-               jsonb_build_object(
-                'name', 
-                  CASE
-                    WHEN ofb.length_m IS NOT NULL
-                    THEN f.name
-                    ELSE pcf.name 
-                  END,
-                'article', 
-                  CASE
-                    WHEN ofb.length_m IS NOT NULL
-                    THEN f.article
-                    ELSE pcf.article
-                  END,
-                'weight',
-                  CASE
-                    WHEN ofb.length_m IS NOT NULL
-                    THEN ROUND(f.weight_per_metre * ofb.length_m)
-                    ELSE ROUND(f.weight_per_metre * pc.length_m)
-                  END,
-                'cost',
-                  CASE
-                    WHEN ofb.length_m IS NOT NULL
-                    THEN ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
-                    ELSE ROUND(pc.price_rub * (1 - f.discount))
-                  END
-               ) ORDER BY COALESCE(f.article, pcf.article))
-            ) :: jsonb
+          jsonb_build_object(
+           'sdek_uuid', o.sdek_request_uuid,
+           'items', array_agg(
+             jsonb_build_object(
+              'name', items.name,
+              'article', items.article,
+              'weight', items.weight,
+              'cost', items.total_price
+             ) ORDER BY items.article)
+          ) :: jsonb
           FROM orders AS o
-          INNER JOIN order_fabric_bindings AS ofb
-          ON o.id = ofb.order_id 
-          LEFT JOIN fabrics AS f
-          ON f.id = ofb.fabric_id
-          LEFT JOIN pre_cuts AS pc
-          ON ofb.pre_cut_id = pc.id
-          LEFT JOIN fabrics AS pcf
-          ON pc.fabric_id = pcf.id
+          INNER JOIN all_items_for_order AS items
+          ON o.id = items.order_id
           WHERE o.id = $1 :: text
           GROUP BY o.sdek_request_uuid
         |]
@@ -2000,6 +2140,17 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
             AND o.status = 'registered'
             AND o.created_at > 
                 NOW() - INTERVAL '30 minutes'
+
+            UNION
+            
+            SELECT soi.pre_cut_id as pre_cut_id
+            FROM shelf_order_items soi
+            JOIN shelf_orders so
+            ON soi.shelf_order_id = so.id
+            WHERE soi.pre_cut_id IS NOT NULL
+            AND so.status = 'registered'
+            AND so.created_at > 
+                NOW() - INTERVAL '30 minutes'
           )
           SELECT item_json :: jsonb
             FROM (
@@ -2052,7 +2203,22 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     AND ofb.pre_cut_id IS NULL
                     AND o.status = 'registered'
                     AND o.created_at > NOW() - INTERVAL '30 minutes'
-                  GROUP BY ofb.fabric_id 
+                  GROUP BY ofb.fabric_id
+
+                  UNION ALL
+
+                  SELECT
+                    soi.fabric_id,
+                    COALESCE(SUM(soi.length_m), 0.0) AS total_locked
+                  FROM shelf_order_items soi
+                  JOIN shelf_orders so 
+                  ON soi.shelf_order_id = so.id
+                  WHERE 
+                    soi.fabric_id IS NOT NULL
+                    AND soi.pre_cut_id IS NULL
+                    AND so.status = 'registered'
+                    AND so.created_at > NOW() - INTERVAL '30 minutes'
+                  GROUP BY soi.fabric_id
                 ) AS locked_stock
                 ON f.id = locked_stock.fabric_id
                 WHERE f.is_sold = FALSE
@@ -2256,21 +2422,40 @@ sweepTemporaryNotificationMessages pool =
          RETURNING message_id :: int8
        |]
 
-initShelf :: Int64 -> ShelfRequest -> Hasql.Pool -> AppM (Either Text (Maybe Int64))
-initShelf userId shelfRequest pool =
+
+data InitShelf = ShelfSuccess Int64 | ShelfAlready | ShelfCapacityExceeded
+ deriving Show
+
+
+initShelf :: Int64 -> Int32 -> ShelfRequest -> Hasql.Pool -> AppM (Either Text InitShelf)
+initShelf userId totalShelves shelfRequest pool =
   fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $
-      Hasql.statement (shelfRequest) $
-      lmap (consT userId . $(recordToTuple ''ShelfRequest))
-      [Hasql.maybeStatement|
-        INSERT INTO shelves
-        (telegram_user_id
-        , user_initials
-        , user_phone) 
-        VALUES ($1 :: int8, $2 :: text, $3 :: text)
-        ON CONFLICT (telegram_user_id) DO NOTHING
-        RETURNING id :: int8
-      |]
+    runTransactionM pool Hasql.Write $ do
+
+      isShelfAvailable <-
+        Hasql.statement (totalShelves) $
+         [Hasql.singletonStatement|
+          SELECT (COUNT(*) < $1 :: int4) :: bool
+          FROM shelves|]
+      
+      let handleInit Nothing = ShelfAlready
+          handleInit (Just shelfId) = ShelfSuccess shelfId
+
+      if isShelfAvailable then
+        Hasql.statement (shelfRequest) $
+         dimap (consT userId . $(recordToTuple ''ShelfRequest)) handleInit
+         [Hasql.maybeStatement|
+          INSERT INTO shelves
+          (telegram_user_id
+          , user_initials
+          , user_phone) 
+          VALUES ($1 :: int8, $2 :: text, $3 :: text)
+          ON CONFLICT (telegram_user_id) DO NOTHING
+          RETURNING id :: int8
+         |]
+      else Hasql.statement () $ 
+             rmap (const ShelfCapacityExceeded) $ 
+               [Hasql.singletonStatement|SELECT 1 :: int4|]
 
 fetchShelfItems :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe (Maybe UTCTime, [ShelfItems])))
 fetchShelfItems userId pool =
@@ -2318,6 +2503,7 @@ fetchShelfItems userId pool =
           ON si.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc 
           ON pc.fabric_id = f.id
+          WHERE si.status = 'ON_SHELF'
           ) AS item_details
           GROUP BY shelf_id
         ) AS shelf_items 
@@ -2481,4 +2667,152 @@ moveItemsToShelfStatement =
       itm.length_m
     FROM items_to_move AS itm
     INNER JOIN shelf_info AS si ON TRUE
+  |]
+
+
+fetchShelfItemsForShipment :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe ShelfItemsForShipment))
+fetchShelfItemsForShipment userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $ 
+      userId `Hasql.statement` fetchShelfItemsForShipmentStatement
+
+fetchShelfItemsForShipmentStatement :: Hasql.Statement Int64 (Maybe ShelfItemsForShipment)
+fetchShelfItemsForShipmentStatement =
+  rmap (fmap (extractADT . convertFromJson @ShelfItemsForShipment))
+  [Hasql.maybeStatement|
+    SELECT
+     jsonb_build_object(
+      'shelf_id', s.id,
+      'user_initials', s.user_initials,
+      'phone', s.user_phone,
+      'items', ci.items) :: jsonb
+    FROM shelves AS s
+    INNER JOIN (
+      SELECT
+       shelf_id,
+       array_agg(
+        jsonb_build_object(
+         'id', si.id,
+         'name', f.name,
+         'article', f.article,
+         'total_price', 
+          CASE 
+           WHEN pc.id IS NULL THEN
+            ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
+           ELSE
+            ROUND(pc.price_rub * (1 - f.discount))
+          END,
+         'fabric_type',
+          CASE 
+           WHEN pc.id IS NULL THEN
+            'roll'
+           ELSE
+            'pre_cut'
+           END,
+          'price_per_metre',
+           CASE 
+            WHEN pc.id IS NULL THEN
+             ROUND(f.price_per_meter * (1 - f.discount))
+            ELSE
+             NULL
+           END,
+          'length_m', si.length_m,
+          'telegram_url', ''
+          )) AS items
+      FROM shelf_items AS si
+      INNER JOIN fabrics AS f
+      ON si.fabric_id = f.id
+      LEFT JOIN pre_cuts AS pc
+      ON pc.fabric_id = f.id
+      WHERE si.status = 'ON_SHELF'
+      GROUP BY shelf_id
+    ) AS ci
+    ON s.id = ci.shelf_id
+    WHERE s.telegram_user_id = $1 :: int8
+  |]
+
+
+placeNewShelfOrder :: Order -> Hasql.Pool -> AppM (Either Text ())
+placeNewShelfOrder order pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+      shelfItemIds <- Hasql.statement order placeNewShelfOrderStatement
+      Hasql.statement (_orderId order, shelfItemIds) setShelfItemShippedStatememt
+      Hasql.statement (_orderTelegramUserId order) resetFirstItemAddedAtStatememt
+
+
+placeNewShelfOrderStatement :: Hasql.Statement Order (V.Vector Int64)
+placeNewShelfOrderStatement =
+ lmap $(recordToTuple ''Order)
+  [Hasql.singletonStatement|
+    INSERT INTO orders (
+     id,
+     customer_full_name,
+     customer_phone,
+     delivery_provider_id,
+     delivery_point_id,
+     sdek_request_uuid,
+     sdek_tracking_number,
+     internal_notification_message_id,
+     tariff,
+     created_at,
+     updated_at,
+     status,
+     is_bot,
+     actual_weight_grams
+    ) VALUES (
+       $1 :: text,
+       $2 :: text,
+       $3 :: text,
+       $4 :: text,
+       $5 :: text,
+       $6 :: uuid,
+       $7 :: text,
+       $8 :: int8,
+       $10 :: int4,
+       now(),
+       now(),
+       'paid',
+       true,
+       (SELECT
+         SUM(ROUND(
+         COALESCE(si.length_m, pc.length_m) *
+         COALESCE(f.weight_per_metre, pcf.weight_per_metre)))
+       FROM shelves AS s
+       INNER JOIN shelf_items AS si
+       ON si.shelf_id = s.id
+       LEFT JOIN fabrics AS f
+       ON f.id = si.fabric_id
+       LEFT JOIN pre_cuts AS pc
+       ON pc.id = si.pre_cut_id
+       LEFT JOIN fabrics AS pcf
+       ON pcf.id = pc.fabric_id
+       WHERE s.telegram_user_id = $9 :: int8
+       AND si.status = 'ON_SHELF'
+       ))
+       RETURNING (
+        SELECT array_agg(si.id)
+        FROM shelves AS s
+        INNER JOIN shelf_items AS si
+        ON si.shelf_id = s.id
+        WHERE s.telegram_user_id = $9 :: int8
+        AND si.status = 'ON_SHELF'
+       ) :: int8[]
+  |]
+
+setShelfItemShippedStatememt :: Hasql.Statement (Text, V.Vector Int64) ()
+setShelfItemShippedStatememt =
+  [Hasql.resultlessStatement|
+    UPDATE shelf_items
+    SET status = 'SHIPPED',
+        main_order_id = $1 :: text
+    WHERE id = ANY($2 :: int8[])
+  |]
+
+resetFirstItemAddedAtStatememt :: Hasql.Statement Int64 ()
+resetFirstItemAddedAtStatememt =
+  [Hasql.resultlessStatement|
+    UPDATE shelves
+    SET first_item_added_at = NULL
+    WHERE telegram_user_id = $1 :: int8
   |]

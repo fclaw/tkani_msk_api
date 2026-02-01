@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TupleSections  #-}
 
-module API.Handlers.PlaceNewOrder(handler, mkInitRequest, formatOrderItemLine) where
+module API.Handlers.PlaceNewOrder(handler, mkInitRequest, formatOrderItemLine, fetchOrderPollerRes, PlaceOrderError (..)) where
 
 import Katip
 import Control.Monad.IO.Class (liftIO)

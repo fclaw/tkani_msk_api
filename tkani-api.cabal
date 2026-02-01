@@ -62,8 +62,8 @@ library
       API.Handlers.SetOrderDimensions
       API.Handlers.SetTelegramMessage
       API.Handlers.Shelf.FetchShelfItems
+      API.Handlers.Shelf.InitiateShipment
       API.Handlers.Shelf.InitShelf
-      API.Handlers.Shelf.OrderShelf
       API.Handlers.Shelf.PatchShelfAccount
       API.Handlers.Shelf.PutOnShelf
       API.Handlers.TallyUpExpenses
