@@ -79,6 +79,7 @@ import Workers.SpecialPostManager (runSpecialPostManager)
 import Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler)
 import Workers.FabricLifecycleObserver (runFabricLifecycleObserver)
 import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJanitor)
+import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -106,6 +107,7 @@ data Workers =
       | SdekOrderCancellationHandler
       | FabricLifecycleObserver
       | DailyCleanupNotificationsJanitor
+      | ShelfSubmissionObserver
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -125,6 +127,7 @@ instance Show Workers where
   show SdekOrderCancellationHandler     = "SDEK Order Cancellation Handler"
   show FabricLifecycleObserver          = "Fabric Lifecycle Observer"
   show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
+  show ShelfSubmissionObserver          = "Shelf Submission Observer"
 
 
 
@@ -429,6 +432,10 @@ main = do
                    appMToHandler (runDailyCleanupNotificationsJanitor)
                      >>= showErrorInWorker
                            DailyCleanupNotificationsJanitor)
+              , (ShelfSubmissionObserver,
+                 appMToHandler (runShelfSubmissionObserver connInfo appMToHandler)
+                   >>= showErrorInWorker
+                        ShelfSubmissionObserver)
               ]
 
         let extTasks 

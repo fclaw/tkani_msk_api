@@ -33,6 +33,7 @@ library
       Workers.SdekOrderCancellationHandler
       Workers.FabricLifecycleObserver
       Workers.DailyCleanupNotificationsJanitor
+      Workers.ShelfSubmissionObserver
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -67,6 +68,7 @@ library
       API.Handlers.Shelf.PatchShelfAccount
       API.Handlers.Shelf.PutOnShelf
       API.Handlers.Shelf.RequestShelfStatus
+      API.Handlers.Shelf.SaveShelfSubmissionInfo
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder
       API.Handlers.ViewCart

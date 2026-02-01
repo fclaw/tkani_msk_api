@@ -29,6 +29,7 @@ library:
     - Workers.SdekOrderCancellationHandler
     - Workers.FabricLifecycleObserver
     - Workers.DailyCleanupNotificationsJanitor
+    - Workers.ShelfSubmissionObserver
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

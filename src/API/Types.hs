@@ -679,3 +679,12 @@ $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding
 
 newtype ShelfStatusResponse = ShelfStatusResponse { shelf_status :: ShelfStatus }
   deriving (Show, Generic, ToJSON)
+
+data ShelfSubmissionChatDetails =
+      ShelfSubmissionChatDetails
+      { sscdUserId    :: Int64
+      , sscdChatId    :: Int64
+      , sscdMessageId :: Int64
+      } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sscd" } ''ShelfSubmissionChatDetails)

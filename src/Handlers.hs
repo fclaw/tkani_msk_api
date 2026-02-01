@@ -42,6 +42,7 @@ import qualified API.Handlers.Shelf.FetchShelfItems as FetchShelfItems
 import qualified API.Handlers.Shelf.PutOnShelf as PutOnShelf
 import qualified API.Handlers.Shelf.InitiateShipment as InitiateShipment
 import qualified API.Handlers.Shelf.RequestShelfStatus as RequestShelfStatus
+import qualified API.Handlers.Shelf.SaveShelfSubmissionInfo as SaveShelfSubmissionInfo
 
 
 
@@ -80,4 +81,5 @@ apiHandlers = Routes
   , _putOnShelf                = PutOnShelf.handler
   , _initiateShipment          = InitiateShipment.handler
   , _requestShelfStatus        = RequestShelfStatus.handler
+  , _saveShelfSubmissionInfo   = SaveShelfSubmissionInfo.handler
   }

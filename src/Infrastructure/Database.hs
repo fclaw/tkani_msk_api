@@ -88,6 +88,7 @@ module Infrastructure.Database
   , fetchShelfItemsForShipment
   , placeNewShelfOrder
   , getShelfStatus
+  , saveShelfSubmissionInfo
   ) where
 
 
@@ -2829,4 +2830,17 @@ getShelfStatus userId pool =
         to_jsonb(status) :: jsonb
         FROM shelves 
         WHERE telegram_user_id = $1 :: int8
+       |]
+
+saveShelfSubmissionInfo :: ShelfSubmissionChatDetails -> Hasql.Pool -> AppM (Either Text ())
+saveShelfSubmissionInfo submission pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement submission $
+       lmap $(recordToTuple ''ShelfSubmissionChatDetails)
+       [Hasql.resultlessStatement|
+        INSERT INTO shelf_submissions
+        (telegram_user_id, chat_id, message_id)
+        VALUES ($1 :: int8, $2 :: int8, $3 :: int8)
+        ON CONFLICT (chat_id, message_id) DO NOTHING
        |]

@@ -243,6 +243,13 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfStatusResponse)
+    , _saveShelfSubmissionInfo
+       :: route
+       :- "shelf"
+       :> "submission"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> ReqBody '[JSON] ShelfSubmissionChatDetails
+       :> Post '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 
