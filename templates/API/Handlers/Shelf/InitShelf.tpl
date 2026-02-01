@@ -3,6 +3,7 @@
 Пользователь только что создал свою первую виртуальную полку.
 
 • **Пользователь:** {{user_initials}}
-• **Telegram ID:** `{{telegram_user_id}}`
 • **Телефон:** `{{user_phone}}`
+• **Регион:** `{{region}}`
+• **Telegram ID:** `{{telegram_user_id}}`
 • **ID Полки:** `{{shelf_id}}`

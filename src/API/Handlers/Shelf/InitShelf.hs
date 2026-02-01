@@ -48,6 +48,7 @@ handler (WithField userId shelfRequest) = do
                 , ("telegram_user_id", tshow userId)
                 , ("user_phone", srPhone shelfRequest)
                 , ("user_initials", srInitials shelfRequest)
+                , ("region", srRegion shelfRequest)
                 ]
           shelfMessage <- fmap escapeMarkdownV2 $ render $currentModule placeholders
           void $ sendOrEditTelegramMessage mempty shelfMessage SHELF Nothing Nothing Nothing

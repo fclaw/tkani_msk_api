@@ -87,6 +87,7 @@ module Infrastructure.Database
   , moveItemsToShelfStatement
   , fetchShelfItemsForShipment
   , placeNewShelfOrder
+  , getShelfStatus
   ) where
 
 
@@ -117,12 +118,12 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad (join, void, forM_, when)
 import Data.Profunctor.Unsafe (dimap, lmap, rmap)
 import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
-import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del7)
+import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del3, del7)
 
 
 import App (AppM, PaymentFlow)
 import Utils.Sql (splitSql)
-import API.Types -- Your data types
+import API.Types hiding (Active) -- Your data types
 import TH.RecordToTuple (recordToTuple, tupleToRecord)
 import API.WithField (WithField)
 import qualified Infrastructure.Database.Types as Types
@@ -2443,7 +2444,7 @@ initShelf userId totalShelves shelfRequest pool =
 
       if isShelfAvailable then
         Hasql.statement (shelfRequest) $
-         dimap (consT userId . $(recordToTuple ''ShelfRequest)) handleInit
+         dimap (consT userId . del3 . $(recordToTuple ''ShelfRequest)) handleInit
          [Hasql.maybeStatement|
           INSERT INTO shelves
           (telegram_user_id
@@ -2816,3 +2817,16 @@ resetFirstItemAddedAtStatememt =
     SET first_item_added_at = NULL
     WHERE telegram_user_id = $1 :: int8
   |]
+
+getShelfStatus :: Int64 -> Hasql.Pool -> AppM (Either Text ShelfStatus)
+getShelfStatus userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (userId) $
+       rmap (fromMaybe Absent . (fmap (extractADT . convertFromJson @ShelfStatus)))
+       [Hasql.maybeStatement|
+        SELECT
+        to_jsonb(status) :: jsonb
+        FROM shelves 
+        WHERE telegram_user_id = $1 :: int8
+       |]

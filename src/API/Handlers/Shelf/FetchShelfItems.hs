@@ -17,11 +17,8 @@ import Infrastructure.Database (fetchShelfItems)
 import API.Types(ApiResponse, ShelfItemsResponse (..), ApiError (..), wrongParamsErrorCode, mkError)
 
 
-handler :: Maybe Int64 -> AppM (ApiResponse ShelfItemsResponse)
-handler Nothing = do
-  $(logTM) ErrorS $ "no param in Handlers.Shelf.FetchShelfItems. expected int64"
-  return $ Left $ ApiError wrongParamsErrorCode mempty
-handler (Just userId) = do
+handler :: Int64 -> AppM (ApiResponse ShelfItemsResponse)
+handler userId = do
   pool <- fmap _appDBPool ask
   dbRes <- fetchShelfItems userId pool
   case dbRes of

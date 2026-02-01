@@ -218,9 +218,8 @@ data Routes route = Routes
    , _fetchShelfItems
        :: route
        :- "shelf"
-       :> "items"
        :> RateLimitPerUser (Second 1) 'Nothing
-       :> QueryParam "user_id" Int64
+       :> Capture "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfItemsResponse)
     , _putOnShelf
        :: route
@@ -237,6 +236,13 @@ data Routes route = Routes
        :> Capture "user_id" Int64
        :> ReqBody '[JSON] InitiateShelfShipment
        :> Post '[JSON] (ApiResponse ShelfShipmentDetails)
+    , _requestShelfStatus
+       :: route
+       :- "shelf"
+       :> "status"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Capture "user_id" Int64
+       :> Get '[JSON] (ApiResponse ShelfStatusResponse)
   } deriving (Generic)
 
 

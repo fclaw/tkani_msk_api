@@ -7,4 +7,6 @@ ALTER TABLE shelf_items ADD COLUMN main_order_id TEXT;
 
 CREATE INDEX idx_shelf_items_main_order_id ON shelf_items(main_order_id);
 
+ALTER TABLE shelves ADD status TEXT NOT NULL DEFAULT 'requested';
+
 COMMIT;

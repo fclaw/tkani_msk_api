@@ -66,6 +66,7 @@ library
       API.Handlers.Shelf.InitShelf
       API.Handlers.Shelf.PatchShelfAccount
       API.Handlers.Shelf.PutOnShelf
+      API.Handlers.Shelf.RequestShelfStatus
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder
       API.Handlers.ViewCart

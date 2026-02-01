@@ -602,6 +602,7 @@ data ShelfRequest =
      ShelfRequest
      { srInitials :: Text
      , srPhone    :: Text
+     , srRegion   :: Text
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sr" } ''ShelfRequest)
@@ -670,3 +671,11 @@ data ShelfShipmentDetails =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ssd" } ''ShelfShipmentDetails)
+
+data ShelfStatus = Requested | Waitlisted | Active | Absent
+  deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''ShelfStatus)
+
+newtype ShelfStatusResponse = ShelfStatusResponse { shelf_status :: ShelfStatus }
+  deriving (Show, Generic, ToJSON)
