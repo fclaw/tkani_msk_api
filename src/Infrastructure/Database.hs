@@ -2322,7 +2322,7 @@ fetchDostavistaPackages ordersId pool =
           ON soi.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc
           ON soi.pre_cut_id = pc.id
-          LEFT JOIN fabric AS pfc
+          LEFT JOIN fabrics AS pfc
           ON pc.fabric_id = pfc.id
           GROUP BY soi.shelf_order_id
         ) AS oi
