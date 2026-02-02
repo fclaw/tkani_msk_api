@@ -2309,8 +2309,8 @@ fetchDostavistaPackages ordersId pool =
           UNION
 
           SELECT
-            soi.shelf_order_id AS order_id,
-            STRING_AGG(COALESCE(f.name, pcf.name), ', ') AS description,
+            so.order_id AS order_id,
+            STRING_AGG(COALESCE(f.name, fpc.name), ', ') AS description,
             SUM(COALESCE(soi.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pc.id IS NULL THEN
@@ -2318,13 +2318,15 @@ fetchDostavistaPackages ordersId pool =
              ELSE ROUND(pc.price_rub * (1 - f.discount))
             END) AS price
           FROM shelf_order_items AS soi
+          INNER JOIN shelf_orders AS so
+          ON soi.shelf_order_id = so.id
           LEFT JOIN fabrics AS f
           ON soi.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc
           ON soi.pre_cut_id = pc.id
-          LEFT JOIN fabrics AS pfc
-          ON pc.fabric_id = pfc.id
-          GROUP BY soi.shelf_order_id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
+          GROUP BY so.order_id
         ) AS oi
         ON o.id = oi.order_id
         WHERE o.id = ANY($1 :: text[])
