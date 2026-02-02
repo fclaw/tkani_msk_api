@@ -1948,16 +1948,17 @@ recordAndLinkPickup :: CourierPickupData -> Hasql.Pool -> AppM (Either Text ())
 recordAndLinkPickup CourierPickupData {..} pool = 
  fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
-      
-      -- STEP 1: Insert the new courier pickup record and get its primary key (id).
-      courierPickupId <-
-        Hasql.statement 
-         ( cpdDay
-         , encodeToText cpdProvider
-         , cpdDostavistaOrderId
-         , cpdCost
-         , cpdDostavistaOrderStatus) $ 
-         [Hasql.singletonStatement|
+      Hasql.statement 
+       ( cpdDay
+       , encodeToText cpdProvider
+       , cpdDostavistaOrderId
+       , cpdCost
+       , cpdDostavistaOrderStatus
+       , V.fromList cpdOrders
+       , cpdOrderStatus) $
+         rmap (const ()) $
+         [Hasql.rowsAffectedStatement|
+          WITH new_pickup AS (
            INSERT INTO external_courier_pickups
            (pickup_date, provider, order_id, cost, status)
            VALUES 
@@ -1972,25 +1973,12 @@ recordAndLinkPickup CourierPickupData {..} pool =
                cost = EXCLUDED.cost,
                status = EXCLUDED.status
            WHERE external_courier_pickups.status = 'canceled'
-           RETURNING id :: int8
+           RETURNING id :: int8)
+          UPDATE orders
+          SET courier_pickup_id = (SELECT id FROM new_pickup),
+              status = CAST($7 :: text AS order_status)
+          WHERE id = ANY($6 :: text[])
          |]
-
-      -- STEP 2: Execute the bulk update
-      rowsAffected <-
-        Hasql.statement
-          ( courierPickupId
-          , V.fromList cpdOrders
-          , cpdOrderStatus) $
-          [Hasql.rowsAffectedStatement|
-            UPDATE orders
-            SET courier_pickup_id = $1 :: int8,
-                status = CAST($3 :: text AS order_status)
-            WHERE id = ANY($2 :: text[])
-          |]
-      -- CRITICAL: Check that we actually updated one row.
-      when (fromIntegral rowsAffected /= length cpdOrders) $ do
-        -- If not, something is wrong. Abort the transaction.
-        error $ "Expected to update " <> show (length cpdOrders) <> " orders, but updated " ++ show rowsAffected
 
 
 fetchWeightTrackerStateInfo :: Day -> CourierService -> Hasql.Pool -> AppM (Either Text (Int, Bool, [Text]))
@@ -2008,7 +1996,7 @@ fetchWeightTrackerStateInfo day service pool =
          AND status != 'canceled') :: bool,
          COALESCE(array_agg(o.id), '{}'::text[]) :: text[]
        FROM orders AS o
-       WHERE o.status = 'paid' 
+       WHERE o.status = 'added_to_pickup_queue'
        AND o.receipt_ready = TRUE
        AND o.courier_pickup_id IS NULL
       |]

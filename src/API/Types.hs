@@ -257,6 +257,7 @@ data OrderStatus
   | PickedUpByCourier     -- the order has been picked up by the courier
   | ScheduledForPickup    -- the batch is scheduled for a pick-up
   | PickupFailed          -- the courier attempted pickup but failed 
+  | AddedToPickupQueue    -- 
   deriving (Show, Eq, Ord, Read, Bounded, Enum, Generic)
 
 $(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''OrderStatus)
@@ -272,6 +273,7 @@ statusToSQL s = case s of
     PickedUpByCourier  -> "picked_up_by_courier"
     ScheduledForPickup -> "scheduled_for_pickup"
     PickupFailed       -> "pickup_failed"
+    AddedToPickupQueue -> "added_to_pickup_queue"
     -- etc...
 
 -- | Converts an OrderStatus into a human-readable, formatted Russian Text
@@ -306,6 +308,8 @@ formatStatus status = case status of
 
   -- The courier attempted to pick up the package but failed (e.g., wrong address, no one home).
   PickupFailed       -> "⚠️ НЕУДАЧНАЯ ПОПЫТКА ЗАБОРА ПАКЕТА"
+
+  AddedToPickupQueue -> "🗓️ Ожидает включения в партию"
 
 
 -- A record to hold all the necessary information for the final confirmation.

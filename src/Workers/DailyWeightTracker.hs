@@ -43,7 +43,7 @@ import qualified Database.PostgreSQL.Simple.Notification as PG
 import Data.Time.LocalTime (TimeZone (..), getCurrentTimeZone, getZonedTime, zonedTimeToUTC, utcToLocalTime, localTimeOfDay, TimeOfDay (..), localDay)
 
 import App
-import API.Types (OrderStatus (ScheduledForPickup))
+import API.Types (OrderStatus (ScheduledForPickup, AddedToPickupQueue))
 import Text (camelToSnake, tshow, textMoneyToDouble, encodeToText)
 import Concurrency (runJobWithCleanup)
 import TH.Location (currentModule)
@@ -52,7 +52,7 @@ import Infrastructure.Services.Dostavista (scheduleDostavistaPickup)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import  Infrastructure.Services.Dostavista.Types.Config (courierCallCutoffHour)
-import Infrastructure.Database (fetchDostavistaPackages, recordAndLinkPickup, fetchWeightTrackerStateInfo, CourierService (DOSTAVISTA), CourierPickupData (..))
+import Infrastructure.Database (fetchDostavistaPackages, updateOrderStatus, recordAndLinkPickup, fetchWeightTrackerStateInfo, CourierService (DOSTAVISTA), CourierPickupData (..))
 
 
 -- ADT for the notification payload
@@ -262,6 +262,10 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
         , ("weight", tshow weightGrams)
         , ("total_weight", tshow $ wtsTotalWeightGrams updatedState - weightGrams)
         ]
+
+  pool <- fmap _appDBPool ask
+  void $ updateOrderStatus orderId AddedToPickupQueue Nothing pool
+
   msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".AddWeight") templateData
   void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
 
