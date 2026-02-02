@@ -309,7 +309,7 @@ formatStatus status = case status of
   -- The courier attempted to pick up the package but failed (e.g., wrong address, no one home).
   PickupFailed       -> "⚠️ НЕУДАЧНАЯ ПОПЫТКА ЗАБОРА ПАКЕТА"
 
-  AddedToPickupQueue -> "🗓️ Ожидает включения в партию"
+  AddedToPickupQueue -> "🗓️ ОЖИДАЕТ ВКЛЮЧЕНИЯ В ПАРТИЮ"
 
 
 -- A record to hold all the necessary information for the final confirmation.
