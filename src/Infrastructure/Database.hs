@@ -235,7 +235,7 @@ getFabricPreviewStatement =
       AND o.status = 'registered'
       AND o.created_at > NOW() - INTERVAL '30 minutes'
 
-      UNION
+      UNION ALL
 
       SELECT 1
       FROM shelf_order_items soi
@@ -2143,7 +2143,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
             AND o.created_at > 
                 NOW() - INTERVAL '30 minutes'
 
-            UNION
+            UNION ALL
             
             SELECT soi.pre_cut_id as pre_cut_id
             FROM shelf_order_items soi
@@ -2255,7 +2255,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                 JOIN fabrics AS f 
                 ON pc.fabric_id = f.id
                 LEFT JOIN pre_cut_in_order as pcio
-                ON pcio.pre_cut_id = ci.id
+                ON pcio.pre_cut_id = pc.id
                 WHERE pc.in_stock = TRUE
                 AND ci.pre_cut_id IS NULL
                 AND pcio.pre_cut_id IS NULL
@@ -2287,7 +2287,9 @@ fetchDostavistaPackages ordersId pool =
             SUM(moi.total_price) AS price
           FROM manual_order_items AS moi
           GROUP BY moi.order_id
-           UNION
+
+          UNION
+
           SELECT
             ofb.order_id,
             STRING_AGG(f.name, ', ') AS description,
@@ -2303,6 +2305,26 @@ fetchDostavistaPackages ordersId pool =
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
           GROUP BY ofb.order_id
+
+          UNION
+
+          SELECT
+            soi.shelf_order_id AS order_id,
+            STRING_AGG(COALESCE(f.name, pcf.name), ', ') AS description,
+            SUM(COALESCE(soi.length_m, pc.length_m)) AS length,
+            SUM(CASE 
+             WHEN pc.id IS NULL THEN
+              ROUND(f.price_per_meter * (1 - f.discount) * soi.length_m)
+             ELSE ROUND(pc.price_rub * (1 - f.discount))
+            END) AS price
+          FROM shelf_order_items AS soi
+          LEFT JOIN fabrics AS f
+          ON soi.fabric_id = f.id
+          LEFT JOIN pre_cuts AS pc
+          ON soi.pre_cut_id = pc.id
+          LEFT JOIN fabric AS pfc
+          ON pc.fabric_id = pfc.id
+          GROUP BY soi.shelf_order_id
         ) AS oi
         ON o.id = oi.order_id
         WHERE o.id = ANY($1 :: text[])
