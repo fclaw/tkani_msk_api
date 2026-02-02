@@ -38,7 +38,14 @@ runSdekOrderStatusPoller = do
   -- Run the core logic within our application's monad to get access to the DB, logger, etc.
   $(logTM) InfoS "Polling for SDEK order statuses..."
   pool <- fmap _appDBPool ask
-  let requiredStatuses = [Registered, Paid, OnRoute, Delivered, PickedUpByCourier]
+  let requiredStatuses = 
+       [ Registered
+       , Paid
+       , OnRoute
+       , Delivered
+       , PickedUpByCourier
+       , PickupFailed
+       ]
   eUuids <- getOrdersInTransit requiredStatuses pool
   for_ eUuids $ \uuids ->
     void $ pooledForConcurrentlyN 5 uuids $ \(orderId, uuid, status) -> do 
