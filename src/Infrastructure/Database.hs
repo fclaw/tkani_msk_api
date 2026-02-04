@@ -85,6 +85,7 @@ module Infrastructure.Database
   , getPutOnDShelfDetails
   , finalizeShelfCheckout
   , moveItemsToShelfStatement
+  , setFirstItemAddedStatement
   , fetchShelfItemsForShipment
   , placeNewShelfOrder
   , getShelfStatus
@@ -2653,6 +2654,30 @@ updateShelfOrderStatusStatement =
     RETURNING COALESCE(internal_notification_message_id, 0) :: int8
   |]
 
+
+setFirstItemAddedStatement :: Hasql.Statement Text ()
+setFirstItemAddedStatement =
+  [Hasql.resultlessStatement|
+    WITH shelf_ident AS (
+     SELECT shelf_id 
+     FROM shelf_orders
+     WHERE order_id = $1 :: text
+    )
+    UPDATE shelves
+    SET first_item_added_at =
+     CASE WHEN
+      (SELECT COUNT(*) 
+       FROM shelf_items 
+       WHERE shelf_id = 
+       (SELECT shelf_id FROM shelf_ident)) = 0 
+      THEN
+      NOW()
+      ELSE first_item_added_at
+     END
+    WHERE id = (SELECT shelf_id FROM shelf_ident)
+  |]  
+
+
 moveItemsToShelfStatement :: Hasql.Statement Text ()
 moveItemsToShelfStatement =
   [Hasql.resultlessStatement|
@@ -2682,7 +2707,6 @@ moveItemsToShelfStatement =
     FROM items_to_move AS itm
     INNER JOIN shelf_info AS si ON TRUE
   |]
-
 
 fetchShelfItemsForShipment :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe ShelfItemsForShipment))
 fetchShelfItemsForShipment userId pool =

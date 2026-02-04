@@ -32,6 +32,7 @@ import Infrastructure.Database
        , getOrderItemsForAdjustStatement
        , updateShelfOrderStatusStatement
        , moveItemsToShelfStatement
+       , setFirstItemAddedStatement
        , AdjustFabric (..))
 import qualified Infrastructure.Database as DB
 import API.Types (OrderStatus (Paid))
@@ -106,8 +107,10 @@ statements orderId thresholdMetres cutTolerance = do
   Hasql.statement (orderId, CONFIRMED, PENDING) updatePaymentStatusStatement
 
   -- move items to shelf
-  for_ maybeShelfOrderMessageId $ const $ do 
+  for_ maybeShelfOrderMessageId $ const $ do
+    Hasql.statement orderId setFirstItemAddedStatement
     Hasql.statement orderId moveItemsToShelfStatement
+
 
   let messageId = fromMaybe undefined $ maybeOrderMessageId <|> maybeShelfOrderMessageId 
 
