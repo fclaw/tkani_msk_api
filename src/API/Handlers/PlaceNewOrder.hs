@@ -15,7 +15,7 @@ import qualified Data.Text as T
 import qualified Data.Char as C
 import Data.Text (Text)
 import Data.Maybe
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Traversable (for)
 import Data.Foldable (for_)
 import Control.Monad (join, when, void, msum)
@@ -45,9 +45,10 @@ import App (AppM, SdekJob (..), PaymentFlow (ShipNow), currentTime, render, Conf
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
+import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
-import Infrastructure.Database (getOrderItems, placeNewOrder, insertNewPaymentRecord, clearCart, NewPaymentRecord (..))
+import Infrastructure.Database (getOrderItems, placeNewOrder, insertNewPaymentRecord, clearCart, NewPaymentRecord (..), OrderItem)
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
@@ -75,6 +76,8 @@ data PlaceOrderError
   | SdekPollerError Text
   | NotificationSendFailed T.Text  -- (Optional) if you consider this a critical failure
   | CartEmpty
+  | TariffNetworkError HttpError
+  | TariffError Text
   deriving (Show)
 
 
@@ -89,21 +92,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let pool = _appDBPool cfg
   let sdekConfig = _sdekConfig cfg
   let tariffCodes = Sdek.tariffs sdekConfig
-  let senderLocation = Sdek.senderLocation sdekConfig
-  let fromLocation =
-        Sdek.defSdekFromLocation
-        { Sdek.sflAddress = Sdek.address senderLocation
-        , Sdek.sflCode = Sdek.cityCode senderLocation
-        , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation
-        }
   let shipmentPoint = Sdek.dropOffPoint sdekConfig
-
-  when(orTariff `notElem` tariffCodes) $ undefined SdekTariffNotFound
-
-  let maybeFromLocation | orTariff == 136 = Just fromLocation
-                        | otherwise = Nothing
-  let maybeShipmentPoint | orTariff == 138 = Just shipmentPoint
-                         | otherwise = Nothing                  
 
   -- fetch total price for a given fabric
   items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
@@ -111,8 +100,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   when (length items == 0) $ except $ Left CartEmpty
 
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  let minOderReq = Sdek.makeMinimalOrderRequestData orderRequest items orTariff maybeFromLocation maybeShipmentPoint
-  trackingUuid <- wrap (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq)) SdekRegistrationFailed
+  (trackingUuid, optimalTariff) <- tryTariffs orderRequest shipmentPoint tariffCodes items
   orderId <- liftIO generateOrderId
   lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
 
@@ -166,11 +154,11 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let linkToQr = Tinkoff.gqrrData tinkoffQrResp
 
   -- STEP D. Notify the telegram channel
-  telegramMsgId <- wrap (notifyOrdersChannel orderRequest items orderId) NotificationSendFailed
+  telegramMsgId <- wrap (notifyOrdersChannel (orderRequest { orTariff = optimalTariff }) items orderId) NotificationSendFailed
   liftIO $ telegramIdVar `putMVar` telegramMsgId
 
   -- STEP E. Save the order in database
-  let dbOrder = mkDbOrder orderRequest trackingUuid orderId trackingNumber telegramMsgId
+  let dbOrder = mkDbOrder (orderRequest { orTariff = optimalTariff }) trackingUuid orderId trackingNumber telegramMsgId
   void $ wrap (placeNewOrder dbOrder pool) $ DatabaseFailed
 
   let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
@@ -207,6 +195,16 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   void $ wrap (clearCart orTelegramUserId pool) DatabaseFailed
 
   return OrderConfirmationDetails {..}
+
+
+tryTariffs :: OrderRequest -> Text -> [Sdek.Tariff] -> [OrderItem] -> ExceptT PlaceOrderError AppM (UUID.UUID, Int)
+tryTariffs request shipmentPoint tariffs items = do 
+  maybeSdekRes <- wrap(getTariffs shipmentPoint (fromMaybe undefined (T.stripPrefix "sdek_" (orDeliveryPointId request)))) TariffNetworkError
+  let eSdekRes = maybe (Left "getTariffs:empty list") Right maybeSdekRes
+  availableTariffs <- except $ (first TariffError) eSdekRes
+  let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
+  let minOderReq = Sdek.makeMinimalOrderRequestData request items optimalTariff shipmentPoint
+  wrap (fmap (second (,optimalTariff)) (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq))) SdekRegistrationFailed
 
 fetchOrderPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text Text)
 fetchOrderPollerRes uuid = do

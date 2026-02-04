@@ -99,6 +99,7 @@ library
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedCityCodes
       Infrastructure.Services.Sdek.CachedDeliveryPoints
+      Infrastructure.Services.Sdek.CachedTariffs
       Infrastructure.Services.Sdek.Geocode
       Infrastructure.Services.Sdek.Types.Courier
       Infrastructure.Services.Sdek.Types.Enums
@@ -216,6 +217,7 @@ executable tkani-api-exe
     , servant-server
     , stm
     , text
+    , time
     , tkani-api
     , tuple-sop
     , unordered-containers

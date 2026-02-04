@@ -4,12 +4,15 @@
 module Infrastructure.Services.Sdek.Types.Config where
 
 
+import Data.Int (Int32)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Yaml (FromJSON)
+import Data.Function (on)
 import GHC.Generics (Generic)
-import Data.Aeson.Types (camelTo2, defaultOptions, genericParseJSON, parseJSON, fieldLabelModifier)
 import Text.Read (readMaybe)
+import Data.Aeson (withScientific, FromJSON (..))
+import Data.Aeson.Types (camelTo2, defaultOptions, genericParseJSON, parseJSON, fieldLabelModifier)
 
 
 -- | Represents the 'pickup_window' object in YAML
@@ -20,17 +23,6 @@ data SdekPickupWindow = SdekPickupWindow
 
 instance FromJSON SdekPickupWindow
 
-
-
--- | Represents the 'sender_location' object
-data SdekSenderLocation = SdekSenderLocation
-  { address   :: Text
-  , cityCode  :: Int
-  , postalCode :: Text
-  } deriving (Show, Generic)
-
-instance FromJSON SdekSenderLocation where
-  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
 
 -- | Represents the 'credentials' object
 data SdekCredentials = SdekCredentials
@@ -50,12 +42,52 @@ data Sender =
 instance FromJSON Sender where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
 
+data Tariff = 
+      -- | Budget delivery service for companies engaged in remote sales.
+       Tariff136 
+       -- | Budget ground delivery service for companies engaged in remote sales, Economy variant of Tariff136.
+     | Tariff234 
+  deriving (Generic, Eq)
+
+-- This helper function assigns a rank to each tariff.
+-- The lower the rank, the "smaller" it is in the sort order.
+tariffRank :: Tariff -> Int
+tariffRank tariff =
+  case tariff of
+    -- We want Tariff234 to come first, so it gets the lowest rank.
+    Tariff234 -> 1
+    -- Tariff136 comes second.
+    Tariff136 -> 2
+
+-- This is the complete and robust Ord instance.
+instance Ord Tariff where
+  -- The 'compare' function is the core of the Ord typeclass.
+  -- We use the 'on' function to make this clean.
+  compare = compare `on` tariffRank
+  -- This is equivalent to writing:
+  -- compare t1 t2 = compare (tariffRank t1) (tariffRank t2)
+
+
+instance FromJSON Tariff where
+  parseJSON = withScientific "Tariff" $ \s ->
+    case round(s) of
+      136 -> pure Tariff136
+      234 -> pure Tariff234
+      t   -> error $ "Unknown tariff: " <> show t
+
+instance Show Tariff where
+  show Tariff136 = "Warehouse-to-warehouse (W-W)"
+  show Tariff234 = "Economy Warehouse-to-warehouse (W-W)"
+
+tariffToInt :: Tariff -> Int
+tariffToInt Tariff136 = 136
+tariffToInt Tariff234 = 234
+
 -- | The main SdekConfig record
 data SdekConfig = SdekConfig
   { url             :: Text
   , credentials     :: SdekCredentials
-  , senderLocation  :: SdekSenderLocation
-  , tariffs         :: [Int]
+  , tariffs         :: [Tariff]
   , pickupWindow    :: SdekPickupWindow
   , accountNumber   :: Text
   , sender          :: Sender

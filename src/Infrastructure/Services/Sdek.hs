@@ -26,6 +26,8 @@ module Infrastructure.Services.Sdek
        , obtainOrderReceiptUrl
        , requestReceiptGeneration
        , cancelOrder
+       , getAvailableTariffs
+       , findOptimalTariff
        ) where
 
 import Data.Text (Text)
@@ -48,19 +50,28 @@ import Data.Bifunctor (second)
 import App (AppM, sdekAccessToken, _sdekConfig, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
 import API.Types
 import Text (tshow)
-import Infrastructure.Utils.Http
-import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
+import Data.Maybe (fromMaybe)
 import TH.Location (currentModule)
+import Infrastructure.Utils.Http
 import API.WithField (WithField (..))
+import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
 import Infrastructure.Services.Sdek.Types hiding (DeliveryPoint)
 import qualified Infrastructure.Services.Sdek.Types as Sdek (DeliveryPoint)
-import Data.Maybe (fromMaybe)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 import Infrastructure.Database.Types (OrderItem (..))
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import Infrastructure.Services.Sdek.Types.Courier
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
+
+
+
+
+findOptimalTariff :: [Sdek.Tariff] -> [Int] -> Int
+findOptimalTariff [] _ = error "findOptimalTariff: not suitable tariff"
+findOptimalTariff (tariff:rest) availableTariffs 
+  | Sdek.tariffToInt tariff `elem` availableTariffs = Sdek.tariffToInt tariff
+  | otherwise = findOptimalTariff rest availableTariffs
 
 
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
@@ -123,10 +134,9 @@ data MinimalOrderRequestData = MinimalOrderRequestData
     --   Source: User selection from the paginated list of delivery points.
   , mordDeliveryPointCode :: Text
 
-  , mordTariffCode :: Int
-  , mordFromLocation :: Maybe SdekFromLocation
-  , mordShipmentPoint :: Maybe Text
-  , mordItems :: [OrderItem]
+  , mordTariffCode    :: Int
+  , mordShipmentPoint :: Text
+  , mordItems         :: [OrderItem]
   }
 
 
@@ -140,8 +150,8 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Maybe SdekFromLocation -> Maybe Text -> MinimalOrderRequestData
-makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation shipmentPoint =
+makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Text -> MinimalOrderRequestData
+makeMinimalOrderRequestData OrderRequest {..} items tariffCode shipmentPoint =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
   , mordPhone = orCustomerPhone
@@ -150,26 +160,24 @@ makeMinimalOrderRequestData OrderRequest {..} items tariffCode fromLocation ship
         orDeliveryPointId 
         (T.stripPrefix "sdek_" orDeliveryPointId)
   , mordTariffCode = tariffCode
-  , mordFromLocation = fromLocation
   , mordShipmentPoint = shipmentPoint
   , mordItems = items
   }
 
-makeMinimalShelfRequestData :: Text -> Text -> Text -> Int -> [OrderItem] -> SdekFromLocation -> MinimalOrderRequestData
-makeMinimalShelfRequestData fullName phone deliverPoint tariffCode items fromLocation =
+makeMinimalShelfRequestData :: Text -> Text -> Text -> Int -> [OrderItem] -> Text -> MinimalOrderRequestData
+makeMinimalShelfRequestData fullName phone deliverPoint tariffCode items shipmentPoint =
   MinimalOrderRequestData 
   { mordName = fullName
   , mordPhone = phone
   , mordDeliveryPointCode = deliverPoint
   , mordTariffCode = tariffCode
-  , mordFromLocation = Just fromLocation
-  , mordShipmentPoint = Nothing
+  , mordShipmentPoint = shipmentPoint
   , mordItems = items
   }
 
 
-makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Maybe SdekFromLocation -> Maybe Text -> MinimalOrderRequestData
-makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation shipmentPoint =
+makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Text -> MinimalOrderRequestData
+makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode shipmentPoint =
   let indexedItems = zip [1 ..] yorItems
       items = 
          flip map indexedItems $ \(idx, YamlOrderItem {..}) ->
@@ -191,7 +199,6 @@ makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode fromLocation sh
           yorDeliveryPointId 
           (T.stripPrefix "sdek_" yorDeliveryPointId)
     , mordTariffCode = tariffCode
-    , mordFromLocation = fromLocation
     , mordShipmentPoint = shipmentPoint
     , mordItems = items
     }
@@ -240,7 +247,6 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
         sorTariffCode = mordTariffCode -- e.g., "Посылка склад-ПВЗ"
       , sorRecipient = recipient
       , sorPackages = [package]
-      , sorFromLocation = mordFromLocation
       , sorShipmentPoint = mordShipmentPoint
       , sorDeliveryPoint = mordDeliveryPointCode
       , sorServices = [SdekService INSURANCE (Just (T.pack (show (totalPrice + 1))))]
@@ -426,3 +432,15 @@ cancelOrder uuid = do
   let cancelUrl = show HTTPS <> url <> "/v2/orders/" <> show uuid
   let cancelReq = getValidSdekToken >>= (_deleteReq' httpManager cancelUrl . Just . mkDefToken . sdekAccessToken)
   makeRequestWithRetries @CancelOrderResponse (Just (void $ getValidSdekToken)) cancelReq
+
+
+getAvailableTariffs :: Location -> Location -> AppM (Either HttpError AvailableTariffsResponse)
+getAvailableTariffs fromLocation toLocation = do
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let httpManager = _configHttpManager cfg
+  let maxWeight = 20000
+  let printfUrl = show HTTPS <> url <> "/v2/calculator/tarifflist"
+  let tariff = AvailableTariffsRequest  fromLocation toLocation [Package maxWeight 0 0 0]
+  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl tariff . Just . mkDefToken . sdekAccessToken)
+  makeRequestWithRetries @AvailableTariffsResponse (Just (void $ getValidSdekToken)) totalSumReq

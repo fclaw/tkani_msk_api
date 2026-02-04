@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TupleSections     #-}
 
 module API.Handlers.PlaceYamlOrder (handler) where
 
@@ -10,6 +11,9 @@ import Control.Monad.Reader.Class (ask)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.UUID as UUID
 import Data.Text (Text, pack)
+import Data.Maybe (fromMaybe)
+import qualified Data.Text as T
+import Data.Bifunctor (bimap)
 import qualified Data.HashMap.Strict as HM
 import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
@@ -23,6 +27,7 @@ import Data.Either (isLeft)
 
 
 import Text (tshow, encodeToText)
+import TH.Location (currentModule)
 import App (AppM, SdekJob (..), _appDBPool, _sdekConfig, _appSdekChan, currentTime, render, ChatKey (YAML_ORDER))
 import API.Types (ApiResponse, YamlOrderRequest (..), yorItems, mkError, YamlOrderResponse (..), OrderStatus (Paid), PhysicalDimensions (..), yoiWeight)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
@@ -30,9 +35,9 @@ import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Database (placeNewYamlOrder, YamlOrder (..))
-import TH.Location (currentModule)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
 
 
 handler :: YamlOrderRequest -> AppM (ApiResponse YamlOrderResponse)
@@ -48,28 +53,12 @@ handler yamlOrderReq = do
   let pool = _appDBPool cfg
   let sdekConfig = _sdekConfig cfg
   let tariffCodes =  Sdek.tariffs sdekConfig
-  let senderLocation = Sdek.senderLocation sdekConfig
-  let fromLocation = 
-        Sdek.defSdekFromLocation
-        { Sdek.sflAddress = Sdek.address senderLocation
-        , Sdek.sflCode = Sdek.cityCode senderLocation
-        , Sdek.sflPostCode = Just $ Sdek.postalCode senderLocation
-        }
   let shipmentPoint = Sdek.dropOffPoint sdekConfig
-
-  let tariff = yorTariff yamlOrderReq
-  when(tariff`notElem` tariffCodes) $ error $ "YamlOrder: tariff not found: " <> show tariff
-
-  let maybeFromLocation | tariff == 138 = Just fromLocation
-                        | otherwise = Nothing
-  let maybeShipmentPoint | tariff == 136 = Just shipmentPoint
-                         | otherwise = Nothing
-    
-  let requestData = Sdek.makeMinimalYamlOrderRequestData yamlOrderReq tariff maybeFromLocation maybeShipmentPoint      
-  eRes <- Sdek.registerOrder $ Sdek.buildMinimalOderRequest requestData
+        
+  eRes <- tryTariffs yamlOrderReq shipmentPoint tariffCodes
   case eRes of 
     Left err -> pure $ Left $ mkError $ tshow err
-    Right trackingUuid -> do 
+    Right (trackingUuid, tariff) -> do 
       $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
       -- This is the action for our background poller thread.
       $(logTM) InfoS $ "poller tries calling sdek for the final confirmation"
@@ -82,7 +71,7 @@ handler yamlOrderReq = do
           $(logTM) InfoS $ "Successfully received tracking number from SDEK: " <> ls trackingNumber
           -- Now we can store the order in our database.
           orderId <- liftIO $ generateOrderId
-          let yamlDbOrder = mkYamlDbOrder orderId yamlOrderReq trackingUuid trackingNumber
+          let yamlDbOrder = mkYamlDbOrder orderId yamlOrderReq trackingUuid trackingNumber tariff
           let mkResponse (Right _) = 
                 Right $ YamlOrderResponse 
                 { yorOrderId = orderId }
@@ -115,8 +104,8 @@ fetchOrderPollerRes uuid = do
   fmap handleRes $ liftIO $ timeout (30 * 1000000) $ atomically $ takeTMVar replyVar
 
 
-mkYamlDbOrder :: Text -> YamlOrderRequest -> UUID.UUID -> Text -> YamlOrder
-mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber =
+mkYamlDbOrder :: Text -> YamlOrderRequest -> UUID.UUID -> Text -> Int -> YamlOrder
+mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber tariff =
   YamlOrder 
   { _yamlOrderId = orderId
   , _yamlOrderCustomerFullName = yorCustomerFullName
@@ -125,7 +114,7 @@ mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber =
   , _yamlOrderDeliveryPointId = yorDeliveryPointId
   , _yamlOrderSdekRequestUuid = trackingUuid
   , _yamlOrderSdekTrackingNumber = trackingNumber
-  , _yamlOrderTariff = fromIntegral yorTariff
+  , _yamlOrderTariff = fromIntegral tariff
   , _yamlOrderWeight = sum (map (fromIntegral . yoiWeight) yorItems) + 50        
   , _yamlOrderLength = fromIntegral $ pdWidth yorPhysicalDimensions
   , _yamlOrderWidth = fromIntegral $ pdLength yorPhysicalDimensions
@@ -142,3 +131,15 @@ buildTemplateData orderId localTime trackingNumber YamlOrderRequest {..} =
      , ("customerName", yorCustomerFullName)
      , ("customerPhone", yorCustomerPhone)
      ]
+
+
+tryTariffs :: YamlOrderRequest -> Text -> [Sdek.Tariff] -> AppM (Either Text (UUID.UUID, Int))
+tryTariffs request shipmentPoint tariffs = do
+  eSdekResp <- getTariffs shipmentPoint (fromMaybe undefined (T.stripPrefix "sdek_" (yorDeliveryPointId request)))
+  case eSdekResp of
+    Left err -> pure (Left (tshow err))
+    Right Nothing -> pure $ Left "one of points hasn't been found"
+    Right (Just availableTariffs) -> do
+      let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
+      let requestData = Sdek.makeMinimalYamlOrderRequestData request optimalTariff shipmentPoint
+      fmap (bimap tshow (, optimalTariff)) $ Sdek.registerOrder $ Sdek.buildMinimalOderRequest requestData

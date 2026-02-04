@@ -28,6 +28,7 @@ module App
     SdekCity (..),
     DostavistaJob (..),
     PaymentFlow (..),
+    NormalizedRoute (..),
     currentTime,
     render,
     runAppM,
@@ -88,7 +89,7 @@ import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
-import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError)
+import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError, Location, mkLocation)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
@@ -189,12 +190,39 @@ data PaymentFlow = PutOnShelf | ShipNow
   deriving (Show, Eq)
 
 
+-- This newtype wraps our tuple. Its only purpose is to provide a custom Ord instance.
+newtype NormalizedRoute = NormalizedRoute (Location, Location) deriving (Show)
+
+-- A smart constructor for our route, which uses the location smart constructor.
+mkNormalizedRoute :: Int -> Int -> NormalizedRoute
+mkNormalizedRoute from to = NormalizedRoute (mkLocation from, mkLocation to)
+
+-- This is the function that performs the directional normalization.
+-- It ensures the "smaller" location always comes first in the tuple.
+normalizeTuple :: (Location, Location) -> (Location, Location)
+normalizeTuple (a, b) = if a <= b then (a, b) else (b, a)
+
+-- --- The Magic: Custom Eq and Ord Instances ---
+
+-- Two routes are equal if their *normalized* versions are equal.
+instance Eq NormalizedRoute where
+  (NormalizedRoute r1) == (NormalizedRoute r2) =
+    normalizeTuple r1 == normalizeTuple r2
+
+-- The ordering of two routes is based on the ordering of their *normalized* versions.
+instance Ord NormalizedRoute where
+  compare (NormalizedRoute r1) (NormalizedRoute r2) =
+    compare (normalizeTuple r1) (normalizeTuple r2)
+
+
+
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
   { _sdekToken          :: Maybe SdekToken -- Stored in a TVar for thread safety
   , _pointCache         :: PointCache
   , _cityCodeByPVZCache :: CityCodeByPVZCache
+  , _sdekTariffs        :: M.Map NormalizedRoute (UTCTime, [Int])
   , _sdekPromises       :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (PaymentFlow, Text, GetStateRequest)
   , _appSdekChan        :: TChan SdekJob

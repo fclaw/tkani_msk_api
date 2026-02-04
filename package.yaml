@@ -118,6 +118,7 @@ executables:
       - servant
       - servant-server
       - warp
+      - time
       - wai
       - wai-cors
       - stm

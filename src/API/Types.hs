@@ -562,7 +562,6 @@ data YamlOrderRequest =
      , yorDeliveryPointId :: Text
      , yorDeliveryProviderId :: Providers
      , yorItems :: [YamlOrderItem]
-     , yorTariff :: Int
      , yorPhysicalDimensions :: PhysicalDimensions
      } deriving (Show, Eq)
 

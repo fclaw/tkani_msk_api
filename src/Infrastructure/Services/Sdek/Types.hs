@@ -122,20 +122,6 @@ data SdekService = SdekService
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ss" } ''SdekService)
 
--- | Represents the sender's address for a "from the door" tariff.
---   The fields here are based on the standard SDEK API structure.
-data SdekFromLocation = SdekFromLocation
-  { sflAddress   :: Text -- Full street address, e.g., "ул. Ленина, д. 1, кв. 2"
-  , sflCode      :: Int  -- SDEK's internal numeric code for the city
-  , sflPostCode  :: Maybe Text -- Postal code, often required
-  } deriving (Show, Eq, Generic)
-
--- Generate snake_case JSON instance (e.g., sflCityCode -> city_code)
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sfl"} ''SdekFromLocation)
-
-defSdekFromLocation :: SdekFromLocation
-defSdekFromLocation = SdekFromLocation mempty 0 Nothing
-
 
 -- This is the main record you will construct. It contains only the fields
 -- SDEK requires to get an order into their system for later manual editing.
@@ -143,8 +129,7 @@ data SdekOrderRequest = SdekOrderRequest
   { sorTariffCode    :: Int            -- REQUIRED: e.g., 137 for "Склад-ПВЗ".
   , sorRecipient     :: SdekRecipient  -- REQUIRED: Minimal recipient info.
   , sorPackages      :: [SdekPackage]  -- REQUIRED: Minimal package info.
-  , sorFromLocation  :: Maybe SdekFromLocation  -- REQUIRED: Location point if tariff 232
-  , sorShipmentPoint :: Maybe Text  -- REQUIRED: Location point if tariff 234, cannot be used simultaneously with 232
+  , sorShipmentPoint :: Text           -- REQUIRED: Location point if tariff 234, cannot be used simultaneously with 232
   , sorDeliveryPoint :: Text           -- REQUIRED: The code of the PVZ the customer chose.
   , sorServices      :: [SdekService]
   } deriving (Show, Generic)
@@ -310,9 +295,11 @@ instance FromJSON SdekCityWithCode where
 
 
 data Location = Location { lCode :: Int }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Ord, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 1 } ''Location)
+
+mkLocation code = Location { lCode = code }
 
 data Package = Package { pWeight :: Int, pLength :: Int, pWidth :: Int, pHeight :: Int }
   deriving (Show, Eq, Generic)
@@ -514,7 +501,7 @@ data CancelOrderResponse =
      CancelOrderResponse
     { corState  :: SdekRequestState
     , corErrors :: Maybe [SdekErrorDetail]  -- The array of request statuses
-  } deriving (Show, Generic)
+    } deriving (Show, Generic)
 
 -- --- THE SMART PARSER ---
 
@@ -542,3 +529,26 @@ instance FromJSON CancelOrderResponse where
               , corErrors = errors deleteRequest
               }
         pure response
+
+
+data AvailableTariffsRequest =
+     AvailableTariffsRequest
+     { atrFromLocation :: Location
+     , atrToLocation   :: Location
+     , atrPackages     :: [Package]
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''AvailableTariffsRequest)
+
+newtype TariffCode = TariffCode { tariff_code :: Int }
+  deriving (Show, Generic, FromJSON, ToJSON) 
+
+
+data AvailableTariffsResponse =
+     AvailableTariffsResponse
+     { atrTariffCodes :: [TariffCode]
+     , atrErrors      :: Maybe [SdekErrorDetail]
+     }  deriving (Show, Generic)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake . drop 3 } ''AvailableTariffsResponse)

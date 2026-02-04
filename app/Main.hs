@@ -10,15 +10,17 @@
 
 module Main (main) where
 
+
+import Katip
 import Network.Wai.Handler.Warp (run)
 import Servant (Handler)
+import Data.List(sort)
 import Servant.Server
 import Servant.Server.Generic
 import Data.Maybe (fromMaybe)
 import Servant.API.Generic (toServant)
 -- Database and logging imports
 import qualified Hasql.Pool as Pool
-import Katip
 import Control.Monad.Reader (runReaderT)
 import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
@@ -260,7 +262,6 @@ main = do
       let tinkoffSecret      = configTinkoffSecret
       let tinkoffUrl         = configTinkoffUrl
 
-
       -- 6. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool
@@ -272,7 +273,9 @@ main = do
                  { credentials = 
                    SdekCredentials 
                    configSdekClientId 
-                   configSdekClientSecret }
+                   configSdekClientSecret
+                 , tariffs = sort (tariffs sdekConfig)
+                 }
             , _bots =
                 M.fromList
                   [(CONCIERGE, (configConciergeBotToken, configConciergeChatId)),
@@ -331,6 +334,7 @@ main = do
            , _cityCodeByPVZCache = CityCodeByPVZCache {..}
            , _dostavistaChan     = dostavistaChan
            , _allSdekPointsCache =  Nothing
+           , _sdekTariffs        = mempty
            }
       initialState <- newTVarIO state
   
@@ -428,7 +432,7 @@ main = do
                    >>= showErrorInWorker
                         FabricLifecycleObserver)
               , (DailyCleanupNotificationsJanitor,
-                 runForever 1440 $ -- once a day
+                 runForever 720 $ -- twice a day
                    appMToHandler (runDailyCleanupNotificationsJanitor)
                      >>= showErrorInWorker
                            DailyCleanupNotificationsJanitor)
