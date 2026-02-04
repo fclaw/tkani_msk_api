@@ -645,16 +645,24 @@ data ShelfItemsResponse =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } ''ShelfItemsResponse)
 
+data ShelfStatus = Requested | Waitlisted | Active | Absent
+  deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''ShelfStatus)
+
 data PutOnShelfPaymentOptions = 
      PutOnShelfPaymentOptions
-     { paymentLink      :: Text
-     , totalPrice       :: Double
-     , linkToQr         :: Maybe Text
-     , orderId          :: Text  
+     { pspoPaymentLink      :: Maybe Text
+     , pspoTotalPrice       :: Maybe Double
+     , pspoLinkToQr         :: Maybe Text
+     , pspoOrderId          :: Maybe Text
+     , pspoShelfStatus      :: ShelfStatus
     } deriving (Show, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PutOnShelfPaymentOptions)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pspo" } ''PutOnShelfPaymentOptions)
 
+
+mkDefPutOnShelfPaymentOptions = PutOnShelfPaymentOptions Nothing Nothing Nothing Nothing Requested
 
 data InitiateShelfShipment =
      InitiateShelfShipment
@@ -675,10 +683,6 @@ data ShelfShipmentDetails =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ssd" } ''ShelfShipmentDetails)
 
-data ShelfStatus = Requested | Waitlisted | Active | Absent
-  deriving (Show, Generic)
-
-$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''ShelfStatus)
 
 newtype ShelfStatusResponse = ShelfStatusResponse { shelf_status :: ShelfStatus }
   deriving (Show, Generic, ToJSON)

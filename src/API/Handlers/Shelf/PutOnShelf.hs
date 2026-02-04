@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds           #-}
 
 
 module API.Handlers.Shelf.PutOnShelf (handler) where
@@ -39,7 +40,7 @@ import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import API.Handlers.PlaceNewOrder(formatOrderItemLine)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, message_id)
-import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError)
+import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError, ShelfStatus (..), mkDefPutOnShelfPaymentOptions)
 import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
@@ -80,13 +81,23 @@ handler userId = do
           $(logTM) ErrorS $ "Cart is empty for userId: " <> ls (tshow userId)
           return $ Left $ mkError "No items in the cart to put on shelf."
         _ -> do
-         -- Log the specific internal error
-         $(logTM) ErrorS $ "Failed to obtain payment options: " <> ls (show err)
-         -- Return a user-friendly, generic failure response
-         return $ Left $ mkError "Failed to obtain payment options. See server logs for details."  
+          -- Log the specific internal error
+          $(logTM) ErrorS $ "Failed to obtain payment options: " <> ls (show err)
+          -- Return a user-friendly, generic failure response
+          return $ Left $ mkError "Failed to obtain payment options. See server logs for details."  
 
 putOnShelf :: Int64 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
 putOnShelf userId = do
+  cfg <- ask
+  let pool = _appDBPool cfg
+  shelfStatus <- wrap(getShelfStatus userId pool) DatabaseFailed
+  case shelfStatus of
+    Active     -> onSuccess userId
+    status     -> return $ mkDefPutOnShelfPaymentOptions { pspoShelfStatus = status }
+
+
+onSuccess :: Int64 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
+onSuccess userId = do
   cfg <- ask
   let pool = _appDBPool cfg
     -- fetch items
@@ -207,6 +218,12 @@ putOnShelf userId = do
 
   st <- lift get
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (PutOnShelf, orderId, getStateRequest)) . _tinkoffPaymentChan)
-
-  return PutOnShelfPaymentOptions {..}
-
+  let putOnShelfPaymentOptions = 
+       PutOnShelfPaymentOptions
+       { pspoPaymentLink = Just paymentLink 
+       , pspoTotalPrice  = Just totalPrice
+       , pspoLinkToQr    = linkToQr
+       , pspoOrderId     = Just orderId
+       , pspoShelfStatus = Active
+       }
+  return putOnShelfPaymentOptions
