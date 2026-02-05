@@ -62,10 +62,11 @@ library
       API.Handlers.SearchFabrics
       API.Handlers.SetOrderDimensions
       API.Handlers.SetTelegramMessage
+      API.Handlers.Shelf.EditShelfPersonalInfo
       API.Handlers.Shelf.FetchShelfItems
+      API.Handlers.Shelf.GetShelfPersonalInfo
       API.Handlers.Shelf.InitiateShipment
       API.Handlers.Shelf.InitShelf
-      API.Handlers.Shelf.PatchShelfAccount
       API.Handlers.Shelf.PutOnShelf
       API.Handlers.Shelf.RequestShelfStatus
       API.Handlers.Shelf.SaveShelfSubmissionInfo

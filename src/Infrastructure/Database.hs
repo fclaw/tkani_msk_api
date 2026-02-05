@@ -90,6 +90,8 @@ module Infrastructure.Database
   , placeNewShelfOrder
   , getShelfStatus
   , saveShelfSubmissionInfo
+  , getShelfPersonalInfo
+  , editShelfPersonalInfo
   ) where
 
 
@@ -97,7 +99,7 @@ import qualified Hasql.TH as Hasql
 import qualified Hasql.Encoders as HE
 import qualified Hasql.Decoders as HD
 import Data.Text (Text, pack)
-import Data.Bifunctor (first, second)
+import Data.Bifunctor (first, second, bimap)
 import Data.Int (Int64, Int32)
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
@@ -2880,3 +2882,30 @@ saveShelfSubmissionInfo submission pool =
         VALUES ($1 :: int8, $2 :: int8, $3 :: int8)
         ON CONFLICT (chat_id, message_id) DO NOTHING
        |]
+
+getShelfPersonalInfo :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe Text, Maybe Text))
+getShelfPersonalInfo userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+     Hasql.statement (userId) $
+     rmap (bimap Just Just) $
+     [Hasql.singletonStatement|
+      SELECT
+      user_initials :: text,
+      user_phone :: text
+      FROM shelves
+      WHERE telegram_user_id = $1 :: int8
+     |]
+
+editShelfPersonalInfo :: Int64 -> ShelfPersonalInfo -> Hasql.Pool -> AppM (Either Text ())
+editShelfPersonalInfo userId personalInfo pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (personalInfo) $
+     lmap (consT userId . $(recordToTuple ''ShelfPersonalInfo)) $
+     [Hasql.resultlessStatement|
+      UPDATE shelves
+      SET user_initials = COALESCE($2 :: text?, user_initials),
+          user_phone = COALESCE($3 :: text?, user_phone)
+      WHERE telegram_user_id = $1 :: int8
+     |]

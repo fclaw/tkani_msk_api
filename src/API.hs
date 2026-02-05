@@ -208,13 +208,6 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] (WithField "user_id" Int64 ShelfRequest)
        :> Put '[JSON] (ApiResponse ShelfIdResponse)
-   , _patchShelfAccount 
-       :: route
-       :- "shelf"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> Capture "user_id" Int64
-       :> ReqBody '[JSON] ShelfRequest
-       :> Patch '[JSON] (ApiResponse ())
    , _fetchShelfItems
        :: route
        :- "shelf"
@@ -250,6 +243,21 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] ShelfSubmissionChatDetails
        :> Post '[JSON] (ApiResponse ())
+    , _getShelfPersonalInfo
+       :: route
+       :- "shelf"
+       :> "personal-info"
+       :> Capture "user_id" Int64
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Get '[JSON] (ApiResponse ShelfPersonalInfo)
+    , _editShelfPersonalInfo
+       :: route
+       :- "shelf"
+       :> "personal-info"
+       :> Capture "user_id" Int64
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> ReqBody '[JSON] ShelfPersonalInfo
+       :> Patch '[JSON] (ApiResponse ())
   } deriving (Generic)
 
 

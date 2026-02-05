@@ -34,7 +34,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Utils.CollageMaker (generateCollageViaService)
 import Domain.Warehouse.Enums (FabricLifecycle (..))
 import Infrastructure.Database (fetchSpecialPostDetails, insertNewSpecialPost, deleteSpecialPost, SpecialPostDetails (..), SpecialPostDetailsItems (..))
-import App (AppM, _postsCfgs, _thresholdMetres, _messageCannotBeDeleted, _appDBPool, extractFromEither, render, currentTime, ChatKey (MAIN, ORDER), _conciergeBotUrl)
+import App (AppM, _postsCfgs, _thresholdMetres, _messageCannotBeDeleted, _appDBPool, extractFromEither, render, currentTime, ChatKey (MAIN, WAREHOUSE), _conciergeBotUrl)
 
 
 
@@ -227,7 +227,7 @@ deleteAndNotify lifeCycle msgId = do
             then do
               -- Handle the fallback logic as before
               $(logTM) ErrorS $ ls $ "CRITICAL: Failed to delete post " <> tshow msgId <> ". Notifying admins."
-              eTelRes <- forwardTelegramMessage mempty ORDER MAIN msgId
+              eTelRes <- forwardTelegramMessage mempty WAREHOUSE MAIN msgId
               for_ eTelRes $ \ForwardMessageResponse {..} -> do
                 when(ok) $ do
                   let notice = 
@@ -235,7 +235,7 @@ deleteAndNotify lifeCycle msgId = do
                           "ACTION REQUIRED: The bot failed to delete this expired post for " <> 
                           tshow lifeCycle <> 
                           ". Please delete it manually."
-                  void $ sendOrEditTelegramMessage mempty notice ORDER Nothing (Just (message_id result)) Nothing
+                  void $ sendOrEditTelegramMessage mempty notice WAREHOUSE Nothing (Just (message_id result)) Nothing
             else
                 -- It's a different, more serious error.
                 $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText

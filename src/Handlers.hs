@@ -37,12 +37,13 @@ import qualified API.Handlers.SdekDeliveryPointUUID as SdekDeliveryPointUUID
 import qualified API.Handlers.GetCatalogSummary as GetCatalogSummary
 -- Shelf API
 import qualified API.Handlers.Shelf.InitShelf as InitShelf
-import qualified API.Handlers.Shelf.PatchShelfAccount as PatchShelfAccount
 import qualified API.Handlers.Shelf.FetchShelfItems as FetchShelfItems
 import qualified API.Handlers.Shelf.PutOnShelf as PutOnShelf
 import qualified API.Handlers.Shelf.InitiateShipment as InitiateShipment
 import qualified API.Handlers.Shelf.RequestShelfStatus as RequestShelfStatus
 import qualified API.Handlers.Shelf.SaveShelfSubmissionInfo as SaveShelfSubmissionInfo
+import qualified API.Handlers.Shelf.GetShelfPersonalInfo as GetShelfPersonalInfo
+import qualified API.Handlers.Shelf.EditShelfPersonalInfo as EditShelfPersonalInfo
 
 
 
@@ -76,10 +77,11 @@ apiHandlers = Routes
   , _getCatalogSummary         = GetCatalogSummary.handler
   -- Shelf API
   , _initShelf                 = InitShelf.handler
-  , _patchShelfAccount         = PatchShelfAccount.handler
   , _fetchShelfItems           = FetchShelfItems.handler
   , _putOnShelf                = PutOnShelf.handler
   , _initiateShipment          = InitiateShipment.handler
   , _requestShelfStatus        = RequestShelfStatus.handler
   , _saveShelfSubmissionInfo   = SaveShelfSubmissionInfo.handler
+  , _getShelfPersonalInfo      = GetShelfPersonalInfo.handler
+  , _editShelfPersonalInfo     = EditShelfPersonalInfo.handler
   }

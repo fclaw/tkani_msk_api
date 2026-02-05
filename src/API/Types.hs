@@ -695,3 +695,12 @@ data ShelfSubmissionChatDetails =
       } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sscd" } ''ShelfSubmissionChatDetails)
+
+
+data ShelfPersonalInfo =
+     ShelfPersonalInfo
+     { spiFullName :: Maybe Text
+     , spiPhone    :: Maybe Text
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "spi" } ''ShelfPersonalInfo)
