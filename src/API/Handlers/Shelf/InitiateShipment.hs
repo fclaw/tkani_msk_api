@@ -53,8 +53,13 @@ handler userId init = do
       fmap (const (Left (mkError "server error"))) $ 
         $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
     Right Nothing -> pure $ Left $ mkError "you have no items to be shipped"
-    Right (Just shipment) -> fmap (first (const (mkError "server error"))) $ runExceptT $ registerOrder userId cfg init shipment
-
+    Right (Just shipment) -> do
+      eRes <- runExceptT $ registerOrder userId cfg init shipment
+      case eRes of
+        Left err -> 
+          fmap (const (Left (mkError "server error"))) $  
+            $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
+        Right shipmentDetails -> pure $ Right shipmentDetails
 
 registerOrder :: Int64 -> Config -> InitiateShelfShipment -> ShelfItemsForShipment ->  ExceptT PlaceOrderError AppM ShelfShipmentDetails
 registerOrder userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..} = do

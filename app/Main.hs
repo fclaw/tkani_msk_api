@@ -415,10 +415,6 @@ main = do
                    appMToHandler (runOrderDeliveryScheduler lastRunVar)
                      >>= showErrorInWorker 
                            OrderDeliveryScheduler)
-              , (DostavistaOrderStatusPoller,
-                 appMToHandler runDostavistaOrderStatusPoller 
-                   >>= showErrorInWorker 
-                        DostavistaOrderStatusPoller)
               , (SpecialPostManager,
                  appMToHandler (runSpecialPostManager)
                    >>= showErrorInWorker
@@ -442,18 +438,23 @@ main = do
                         ShelfSubmissionObserver)
               ]
 
-        let extTasks 
+        let dostavistaTasks 
               | configIsCourierNeeded =
                 let weightTrackerWorker =
                      (DailyWeightTracker,
                       appMToHandler (runDailyWeightTracker connInfo appMToHandler)
                         >>= showErrorInWorker
                              DailyWeightTracker)
-                in weightTrackerWorker : tasks
-              | otherwise = tasks
+                    dostavistaWorker =
+                     (DostavistaOrderStatusPoller,
+                      appMToHandler runDostavistaOrderStatusPoller 
+                        >>= showErrorInWorker 
+                             DostavistaOrderStatusPoller)         
+                in [weightTrackerWorker, dostavistaWorker]
+              | otherwise = []
 
         putStrLn "Spawning concurrent workers..."
-        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) extTasks
+        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) $ tasks <> dostavistaTasks
         putStrLn "All workers started. Waiting for any worker to exit."
 
         -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
