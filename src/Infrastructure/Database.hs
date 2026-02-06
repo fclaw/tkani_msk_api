@@ -334,7 +334,8 @@ getOrderItemsStatement =
         'fabric_type', ci.item_type,
         'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
         'length_m', ci.length_m,
-        'telegram_url', ci.telegram_url
+        'telegram_url', ci.telegram_url,
+        'thumbnail_url', f.thumbnail_url
        ) :: jsonb
      FROM carts AS c
      INNER JOIN cart_items AS ci
@@ -353,7 +354,8 @@ getOrderItemsStatement =
         'fabric_type', ci.item_type,
         'price_per_metre', null,
         'length_m', null,
-        'telegram_url', ci.telegram_url
+        'telegram_url', ci.telegram_url,
+        'thumbnail_url', f.thumbnail_url
       ) :: jsonb
     FROM carts AS c
     INNER JOIN cart_items AS ci
@@ -2548,7 +2550,8 @@ getPutOnDShelfDetailsStatement =
           'fabric_type', ci.item_type,
           'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
           'length_m', ci.length_m,
-          'telegram_url', ci.telegram_url
+          'telegram_url', ci.telegram_url,
+          'thumbnail_url', f.thumbnail_url
         ) :: jsonb AS item
       FROM carts AS c
       INNER JOIN cart_items AS ci
@@ -2568,7 +2571,8 @@ getPutOnDShelfDetailsStatement =
           'fabric_type', ci.item_type,
           'price_per_metre', null,
           'length_m', null,
-          'telegram_url', ci.telegram_url
+          'telegram_url', ci.telegram_url,
+          'thumbnail_url', f.thumbnail_url
         ) :: jsonb AS item
       FROM carts AS c
       INNER JOIN cart_items AS ci

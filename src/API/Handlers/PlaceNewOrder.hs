@@ -316,8 +316,14 @@ formatOrderItemLine item =
             PreCut ->
                 -- For pre-cuts, the name often already includes the length
                 T.pack (show (DB.oiTotalPrice item)) <> " руб"
+        thumbnailUrl | isJust (DB.oiThumbnailUrl item) =
+                        " | " <> fromJust (DB.oiThumbnailUrl item)
+                     | otherwise = mempty
     in
-    "• " <> name <> " | " <> totalPrice <> " | " <> DB.oiArticle item <> "\n"
+    "• " <> name <> " | " <> 
+           totalPrice <> " | " <> 
+           DB.oiArticle item <> 
+           thumbnailUrl <> "\n"
 
 
 mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order

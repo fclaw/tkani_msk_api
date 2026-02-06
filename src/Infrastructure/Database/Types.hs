@@ -94,11 +94,11 @@ data OrderItem =
      OrderItem
      { -- | The human-readable name of the fabric being purchased (e.g., "Пальтовый кашемир от Dior").
        --   Source: Bot context, from the product the user initially selected. 
-      oiName :: Text
+      oiName           :: Text
        -- | The unique article number or SKU for the fabric in our internal system.
        --   This is crucial for SDEK fiscalization and our own database records.
        --   Source: Bot context, from the product the user initially selected.
-     , oiArticle :: Text
+     , oiArticle       :: Text
        -- the part is required for the bank
      , oiFabricType    :: FabricType    -- The Fabric type
      , oiPricePerMetre :: Maybe Double  -- Price per meter for rolls
@@ -107,7 +107,9 @@ data OrderItem =
      , oiTotalPrice    :: Double        -- Total price for this line item
      , oiLengthM       :: Maybe Double  -- Length, only for rolls
      , oiTelegramUrl   :: Text
-     }
+     , oiThumbnailUrl  :: Maybe Text
+     } deriving (Show, Eq, Generic)
+
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oi" } ''OrderItem)
 

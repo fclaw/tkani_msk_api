@@ -106,7 +106,6 @@ onSuccess userId = do
   when (isNothing maybeDetails) $ except $ Left CartEmpty
   let PutOnShelfDetails {..} = fromJust maybeDetails
 
-
   -- check capacity overflow
   let totalCount = length posdItems + fromIntegral posdItemsOnShelfCount
   when(totalCount > fromIntegral (_shelfCapacity cfg)) $

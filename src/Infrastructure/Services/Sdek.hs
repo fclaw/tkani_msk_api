@@ -189,6 +189,7 @@ makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode shipmentPoint =
             , oiTotalPrice = yoiTotalPrice
             , oiLengthM = yoiLengthM
             , oiTelegramUrl = mempty
+            , oiThumbnailUrl = Nothing
             }
   in
     MinimalOrderRequestData 
