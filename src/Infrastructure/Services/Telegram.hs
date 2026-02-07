@@ -48,6 +48,7 @@ import           Data.Bifunctor (first)
 import           Data.Either (isLeft)
 import qualified Network.Wreq as W
 
+
 -- (Assuming your AppM and Config are defined in App)
 import           App (Config(..), AppM, ChatKey)
 import           Text (recordLabelModifier, tshow)
@@ -67,6 +68,27 @@ data ParseMode = MarkdownV2 | Markdown
   deriving Show
 
 
+data LinkPreviewOptions = 
+     LinkPreviewOptions
+     { is_disabled        :: Bool    -- is_disabled
+     , url                :: Text    -- url
+     , prefer_small_media :: Bool    -- prefer_small_media
+     , prefer_large_media :: Bool    -- prefer_large_media
+     , show_above_text    :: Bool    -- show_above_text
+     } deriving (Show, Eq, Generic, A.ToJSON)
+
+
+-- Convenience constructor for the most common use case: just disabling.
+-- This function will help streamline its usage.
+disableLinkPreviewOption :: LinkPreviewOptions
+disableLinkPreviewOption = 
+  LinkPreviewOptions
+  { is_disabled        = True
+  , url                = mempty
+  , prefer_small_media = False
+  , prefer_large_media = False
+  , show_above_text    = False
+  }
 
 -- You'll need to define a FromJSON instance for this to parse the message_id
 newtype MessageIdResponse = MessageIdResponse { message_id :: Int64 }
@@ -77,6 +99,7 @@ instance A.FromJSON MessageIdResponse where
 -- A simple wrapper around 'try' for better type inference if needed.
 try' :: IO a -> IO (Either SomeException a)
 try' = try
+
 
 -- | Sends a text message to a specified Telegram chat (channel or user).
 --   This function is designed to be called from within your AppM monad.
@@ -112,11 +135,13 @@ sendOrEditTelegramMessage context messageText chatKey mMessageId mbReplyId mRepl
 
     -- 3. The JSON payload for the sendMessage endpoint
     let basePayload =
-          [ Just ("chat_id"    A..= chat)
-          , Just ("text"       A..= messageText)
-          , Just ("parse_mode" A..= T.pack (show MarkdownV2))
+          [ Just ("chat_id" A..= chat)
+          , Just ("text" A..= messageText)
+          , Just ("parse_mode" A..= tshow MarkdownV2)
+          , Just ("link_preview_options" A..= 
+                   disableLinkPreviewOption)
           , ("reply_to_message_id" A..=) <$> mbReplyId
-          , ("reply_markup" A..=) <$> mReplyMarkup
+          , ("reply_markup" A..=)        <$> mReplyMarkup
           ]
 
           -- Combine the base payload with the conditional message_id field
