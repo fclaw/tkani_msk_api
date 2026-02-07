@@ -16,7 +16,6 @@ module Infrastructure.Services.Telegram
   , forwardTelegramMessage
   , TelegramError(..)
   , MessageIdResponse (..)
-  , ForwardMessageResponse (..)
   , ParseMode (..)
   )
 where
@@ -340,21 +339,12 @@ sendDocument chatKey caption filename fileContent contentType = do
 
 
 
--- The top-level response for a successful forwardMessage call.
-data ForwardMessageResponse = 
-     ForwardMessageResponse
-     { ok      :: Bool
-      , result :: MessageIdResponse
-     } deriving (Show, Generic)
-
-instance A.FromJSON ForwardMessageResponse
-
 forwardTelegramMessage
   :: Text                         -- ^ The context for logging.
   -> ChatKey                      -- ^ The target chat to forward TO.
   -> ChatKey                      -- ^ The source chat to forward FROM.
   -> Int64                        -- ^ The message_id in the source chat to forward.
-  -> AppM (Either TelegramError ForwardMessageResponse)
+  -> AppM (Either TelegramError MessageIdResponse)
 forwardTelegramMessage context toChatKey fromChaKey fromMessageId = do
   -- 1. Get the bot token and chat ID for the DESTINATION chat.
   bots <- fmap _bots ask
@@ -382,10 +372,8 @@ forwardTelegramMessage context toChatKey fromChaKey fromMessageId = do
       -- 5. Handle the response (reusing your existing error handling).
       case eResult of
         Right response -> do
-          -- Decode the response into our new 'ForwardMessageResponse' type.
-          let eitherDecodeResult = A.eitherDecode @ForwardMessageResponse (response ^. responseBody)
-          pure $ first (JSONError . T.pack) eitherDecodeResult
-          
+         let mRes = A.eitherDecode @MessageIdResponse (response ^. responseBody)
+         return $ either (Left . JSONError . T.pack . show) Right mRes
         Left err ->
           fmap (const (Left (ApiRequestFailed err))) $
             $(logTM) ErrorS $ "CRITICAL: Failed to forward a message for " <> ls context <> ". Error: " <> ls (show err)

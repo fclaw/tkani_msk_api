@@ -228,14 +228,14 @@ deleteAndNotify lifeCycle msgId = do
               -- Handle the fallback logic as before
               $(logTM) ErrorS $ ls $ "CRITICAL: Failed to delete post " <> tshow msgId <> ". Notifying admins."
               eTelRes <- forwardTelegramMessage mempty WAREHOUSE MAIN msgId
-              for_ eTelRes $ \ForwardMessageResponse {..} -> do
-                when(ok) $ do
-                  let notice = 
-                        escapeMarkdownV2 $ 
-                          "ACTION REQUIRED: The bot failed to delete this expired post for " <> 
-                          tshow lifeCycle <> 
-                          ". Please delete it manually."
-                  void $ sendOrEditTelegramMessage mempty notice WAREHOUSE Nothing (Just (message_id result)) Nothing
+              for_ eTelRes $ \MessageIdResponse {..} -> do
+                let post = "https://t.me/tkani_msk/" <> tshow msgId
+                let notice =
+                     escapeMarkdownV2 $ 
+                      "‼️ ACTION REQUIRED: The bot failed to delete " <> post <> " post for " <> 
+                      tshow lifeCycle <> 
+                      ". Please delete it manually."
+                void $ sendOrEditTelegramMessage mempty notice WAREHOUSE Nothing (Just message_id) Nothing
             else
                 -- It's a different, more serious error.
                 $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText
