@@ -126,7 +126,7 @@ managePost lifeCycle lifeTime itemThreshold = do
        if itemsCount < fromIntegral itemThreshold
        then $(logTM) InfoS $ ls $ 
               "No active post for " <> tshow lifeCycle <> 
-              " and fewer than " <> tshow itemThreshold <> 
+              " and fewer than " <> tshow itemThreshold <>
               " items. Skipping."
        -- =======================================================
        -- === Option 1: No active post, but enough items to justify one.

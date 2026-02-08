@@ -48,12 +48,8 @@ module Infrastructure.Database
   , patchRoll
   , patchPrecut
   , deleteFabric
-  , pickupOrdersForShipment
+  , fetchOrdersForCourierPickup
   , createCourierPickupPromise
-  , recordCourierPickupFailure
-  , recordCourierPickupFailureExt
-  , getPendingPickupRequests
-  , updatePickupStatus
   , markedOrderAsMeasured
    -- yaml order
   , placeNewYamlOrder
@@ -1292,7 +1288,9 @@ deleteFabric fabricId fabricType pool =
             SET
               in_stock = FALSE,
               is_sold = TRUE,
-              is_searchable = FALSE
+              is_searchable = FALSE,
+              available_length_m = 0.0,
+              total_length_m = 0.0
             WHERE id = $1 :: int8
           |]
         DWT.PreCut ->
@@ -1322,139 +1320,126 @@ deleteFabric fabricId fabricType pool =
 
 
 -- Statement takes () and returns a list of (orderId, sdekUuid)
-pickupOrdersForShipment :: Text -> Hasql.Pool -> AppM (Either Text [(Text, UUID)])
-pickupOrdersForShipment status pool =
+fetchOrdersForCourierPickup :: Hasql.Pool -> AppM (Either Text [OrdersForCourierPickup])
+fetchOrdersForCourierPickup pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
-      Hasql.statement (status) $
-       rmap V.toList $
+      Hasql.statement () $
+       rmap (map (extractADT . convertFromJson @OrdersForCourierPickup) . V.toList) $
        [Hasql.vectorStatement|
+        WITH items AS (
+          SELECT
+           o.id AS order_id,
+           CASE
+            WHEN pc.id IS NULL
+            THEN f.article
+            ELSE pcf.article
+           END AS article,
+           CASE
+            WHEN pc.id IS NULL
+            THEN f.name
+            ELSE pcf.name
+           END AS name, 
+           ROUND(
+            CASE 
+             WHEN pc.id IS NULL
+             THEN f.weight_per_metre * ofb.length_m
+             ELSE pc.length_m * pcf.weight_per_metre
+            END) AS weight
+          FROM orders AS o
+          INNER JOIN order_fabric_bindings AS ofb
+          ON o.id = ofb.order_id
+          LEFT JOIN fabrics AS f
+          ON f.id = ofb.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON ofb.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS pcf
+          ON pc.fabric_id = pcf.id
+          
+          UNION ALL
+          
+          SELECT
+           o.id AS order_id,
+           CASE
+            WHEN pc.id IS NULL
+            THEN f.article
+            ELSE pcf.article
+           END AS article,
+           CASE
+            WHEN pc.id IS NULL
+            THEN f.name
+            ELSE pcf.name
+           END AS name,
+           ROUND(
+            CASE 
+             WHEN pc.id IS NULL
+             THEN f.weight_per_metre * si.length_m
+             ELSE pc.length_m * pcf.weight_per_metre
+            END) AS weight
+          FROM orders AS o
+          INNER JOIN shelf_items AS si
+          ON si.main_order_id = o.id
+          LEFT JOIN fabrics AS f
+          ON f.id = si.fabric_id
+          LEFT JOIN pre_cuts AS pc
+          ON si.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS pcf
+          ON pc.fabric_id = pcf.id
+        )
         SELECT
-        id :: text,
-        sdek_request_uuid :: uuid
-        FROM orders
+         json_build_object(
+          'order_id', o.id :: text,
+          'weight', o.actual_weight_grams :: int4,
+          'length', o.length :: int4,
+          'width', o.width :: int4,
+          'height', o.height :: int4,
+          'items', array_agg(
+            json_build_object(
+            'article', i.article :: text,
+            'name', i.name :: text,
+            'weight', i.weight :: int4)) :: jsonb[]
+         ) :: jsonb
+        FROM orders AS o
+        INNER JOIN items AS i
+        ON o.id = i.order_id
         WHERE status = 'paid'
         AND receipt_ready = TRUE
-        AND (SELECT COUNT(*) = 0
-             FROM courier_pickups 
-             WHERE pickup_date = (now() + INTERVAL '1 day')::date
-             AND status = CAST($1 :: text AS pickup_status))
+        AND (
+         SELECT COUNT(*) = 0
+         FROM courier_pickups 
+         WHERE pickup_date = (now() + INTERVAL '1 day')::date)
+        GROUP BY o.id, o.actual_weight_grams, o.length, o.width, o.height
+        ORDER BY o.created_at DESC
        |]
 
-upsertCourierPickupsStatement :: Hasql.Statement (V.Vector (UUID, Text, Day)) ()
-upsertCourierPickupsStatement =
-  lmap V.unzip3 $
-  [Hasql.resultlessStatement|
-    INSERT INTO courier_pickups (request_uuid, status, pickup_date)
-    SELECT
-        unnest_data.request_uuid,
-        CAST(unnest_data.status AS pickup_status),
-        unnest_data.pickup_date
-    FROM
-        UNNEST($1 :: uuid[], $2 :: text[], $3 :: date[])
-          AS unnest_data(request_uuid, status, pickup_date)
-    ON CONFLICT (request_uuid) DO UPDATE SET status = EXCLUDED.status
+createCourierPickupsStatement :: Hasql.Statement (UUID, Day) Int64
+createCourierPickupsStatement =
+  [Hasql.singletonStatement|
+    INSERT INTO courier_pickups (sdek_uuid, pickup_date)
+    VALUES ($1 :: uuid, $2 :: date)
+    RETURNING id :: int8
   |]
 
-updateOrdersWithPickupUuidStatement :: Hasql.Statement (UUID, OrderStatus, V.Vector Text) ()
+updateOrdersWithPickupUuidStatement :: Hasql.Statement (Int64, OrderStatus, V.Vector Text) ()
 updateOrdersWithPickupUuidStatement =
   lmap (app2 encodeToText) $
   [Hasql.resultlessStatement|
     UPDATE orders
-    SET
-      courier_pickup_uuid = $1 :: uuid,
-      status = CAST($2 :: text AS order_status)
+    SET sdek_courier_pickup_id = $1 :: int8,
+        status = CAST($2 :: text AS order_status)
     WHERE id = ANY($3 :: text[])
   |]
 
-
-createCourierPickupPromise :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> AppM (Either Text ())
-createCourierPickupPromise records date pool = 
+createCourierPickupPromise :: UUID -> [Text] -> Day -> Hasql.Pool -> AppM (Either Text ())
+createCourierPickupPromise pickupUuid orders date pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do 
-      -- Prepare the data for the vector statements
-      let pickupData = V.fromList [(uuid, status, date) | (_, uuid, status) <- records]
-      let orderIds = V.fromList [orderId | (orderId, _, _) <- records]
-      let pickupUuid = sel2 (head records) -- Assuming all records in a batch share ONE pickup UUID
-
       -- STEP 1: Insert all new pickup records.
       -- This uses UNNEST to handle the vector of data.
-      Hasql.statement pickupData upsertCourierPickupsStatement
-
+      pickupId <- Hasql.statement (pickupUuid, date) createCourierPickupsStatement
       -- STEP 2: Update all associated orders to link them to this pickup.
-      Hasql.statement (pickupUuid, ScheduledForPickup, orderIds) updateOrdersWithPickupUuidStatement
+      Hasql.statement (pickupId, ScheduledForPickup, V.fromList orders) updateOrdersWithPickupUuidStatement
 
-
-recordCourierPickupFailure :: UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
-recordCourierPickupFailure uuid errorMsg pool =
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ do
-      Hasql.statement (uuid, errorMsg)
-        [Hasql.resultlessStatement|
-          INSERT INTO courier_pickups 
-          (request_uuid, status, pickup_date, error_message)
-          VALUES ($1 :: uuid, 'invalid' :: pickup_status, current_date, $2 :: text)
-          ON CONFLICT (request_uuid) 
-          DO UPDATE
-          SET status = 'invalid' :: pickup_status,
-              error_message = $2 :: text
-        |]
-
-
-recordCourierPickupFailureExt :: Text -> UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
-recordCourierPickupFailureExt orderId uuid errorMsg pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ do
-      Hasql.statement (orderId, uuid, errorMsg)
-        [Hasql.resultlessStatement|
-          WITH updated_order AS (
-            UPDATE orders 
-            SET status = 'paid'
-            WHERE id = $1 :: text
-          )
-          INSERT INTO courier_pickups 
-          (request_uuid, status, pickup_date, error_message)
-          VALUES (
-            $2 :: uuid,
-            'invalid' :: pickup_status, 
-            current_date,
-            $3 :: text)
-          ON CONFLICT (request_uuid) 
-          DO UPDATE
-          SET status = 'invalid' :: pickup_status,
-              error_message = $3 :: text
-        |]
-
--- Statement takes () and returns a list of UUIDs to be checked.
-getPendingPickupRequests :: Hasql.Pool -> AppM (Either Text [(UUID, Int64, Text, Text)])
-getPendingPickupRequests pool = 
-  fmap (first (pack . show)) $
-    runTransactionM pool Hasql.Read $ 
-      Hasql.statement () $
-        rmap V.toList $
-        [Hasql.vectorStatement|
-          SELECT
-            request_uuid :: uuid, 
-            COALESCE(internal_notification_message_id, 0) :: int8,
-            o.id :: text,
-            o.sdek_tracking_number :: text
-          FROM courier_pickups AS cp
-          JOIN orders AS o
-          ON o.courier_pickup_uuid = cp.request_uuid
-          WHERE cp.status IN ('accepted', 'waiting')
-          AND cp.created_at > NOW() - INTERVAL '3 days'
-        |]
-
-updatePickupStatus :: UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
-updatePickupStatus uuid status pool = 
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      Hasql.statement (uuid, status)
-        [Hasql.resultlessStatement|
-          UPDATE courier_pickups
-          SET status = CAST($2 :: text AS pickup_status)
-          WHERE request_uuid = $1 :: uuid
-        |]
 
 markedOrderAsMeasured :: Text -> Hasql.Pool -> AppM (Either Text Bool)
 markedOrderAsMeasured trackingN pool =

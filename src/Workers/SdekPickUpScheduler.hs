@@ -61,7 +61,7 @@ runSdekPickUpScheduler lastRunVar = do
   -- E. Execute the job if the check passed
   when shouldRun $ do
     $(logTM) InfoS "Pickup window is open. Running SDEK courier scheduling..."
-    void $ prepareAndSchedulePickup
+    _ <- prepareAndSchedulePickup
     $(logTM) InfoS "SDEK courier scheduling finished."
 
   -- F. If it is a new day (after midnight), reset the lock.

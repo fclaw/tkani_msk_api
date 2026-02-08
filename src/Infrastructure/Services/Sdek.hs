@@ -17,8 +17,6 @@ module Infrastructure.Services.Sdek
        , makeMinimalShelfRequestData
        , getOrderStatus
        , getOrdersInTransit
-       , scheduleSingleOrderCourier
-       , getPickupApplicationByUUID
        , getDeliveryPointByCode
        , getCityByName
        , getTotalSumByTariff
@@ -28,6 +26,8 @@ module Infrastructure.Services.Sdek
        , cancelOrder
        , getAvailableTariffs
        , findOptimalTariff
+       , registerCourierCall
+       , getPickupApplication
        ) where
 
 import Data.Text (Text)
@@ -41,11 +41,11 @@ import Control.Concurrent.STM (atomically, readTVar)
 import Data.Time (UTCTime, diffUTCTime)
 import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
+import Data.Bifunctor (second)
 import qualified Data.UUID as UUID
 import Data.Traversable (for)
 import Data.Time.Calendar (addDays)
 import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay)
-import Data.Bifunctor (second)
 
 
 import App (AppM, sdekAccessToken, _sdekConfig, _pointCache, currentTime, _configHttpManager, Scheme (HTTPS))
@@ -55,6 +55,7 @@ import Data.Maybe (fromMaybe)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http
 import API.WithField (WithField (..))
+import Infrastructure.Services.Sdek.Types.Courier
 import Infrastructure.Services.Sdek.Auth (getValidSdekToken)
 import Infrastructure.Services.Sdek.CachedDeliveryPoints (storeDeliveryPoints)
 import Infrastructure.Services.Sdek.Types hiding (DeliveryPoint)
@@ -62,9 +63,7 @@ import qualified Infrastructure.Services.Sdek.Types as Sdek (DeliveryPoint)
 import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekOrderInTransitResponse)
 import Infrastructure.Database.Types (OrderItem (..))
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
-import Infrastructure.Services.Sdek.Types.Courier
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
-
 
 
 
@@ -136,7 +135,7 @@ data MinimalOrderRequestData = MinimalOrderRequestData
   , mordDeliveryPointCode :: Text
 
   , mordTariffCode    :: Int
-  , mordShipmentPoint :: Text
+  , mordShipmentPoint :: Maybe Text
   , mordItems         :: [OrderItem]
   }
 
@@ -151,7 +150,7 @@ stripPrefix prefix txt =
     Nothing   -> txt     -- Prefix did not match, return the original string.
 
 
-makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Text -> MinimalOrderRequestData
+makeMinimalOrderRequestData :: OrderRequest -> [OrderItem] -> Int -> Maybe Text -> MinimalOrderRequestData
 makeMinimalOrderRequestData OrderRequest {..} items tariffCode shipmentPoint =
   MinimalOrderRequestData 
   { mordName = orCustomerFullName
@@ -165,7 +164,7 @@ makeMinimalOrderRequestData OrderRequest {..} items tariffCode shipmentPoint =
   , mordItems = items
   }
 
-makeMinimalShelfRequestData :: Text -> Text -> Text -> Int -> [OrderItem] -> Text -> MinimalOrderRequestData
+makeMinimalShelfRequestData :: Text -> Text -> Text -> Int -> [OrderItem] -> Maybe Text -> MinimalOrderRequestData
 makeMinimalShelfRequestData fullName phone deliverPoint tariffCode items shipmentPoint =
   MinimalOrderRequestData 
   { mordName = fullName
@@ -177,7 +176,7 @@ makeMinimalShelfRequestData fullName phone deliverPoint tariffCode items shipmen
   }
 
 
-makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Text -> MinimalOrderRequestData
+makeMinimalYamlOrderRequestData :: YamlOrderRequest -> Int -> Maybe Text -> MinimalOrderRequestData
 makeMinimalYamlOrderRequestData YamlOrderRequest {..} tariffCode shipmentPoint =
   let indexedItems = zip [1 ..] yorItems
       items = 
@@ -232,7 +231,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       , pkiCost = round oiTotalPrice
       }
 
-    totalPrice = sum [oiTotalPrice item | item <- mordItems]     
+    totalPrice = sum [oiTotalPrice item | item <- mordItems]  
 
     -- 3. Create a default package payload
     --    You MUST provide an estimated weight. You can't skip this.
@@ -241,6 +240,9 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       { pkgNumber = "1" -- Simple default for one-package orders
       , pkgWeight = 1 -- Default weight in grams
       , pkgItems = items
+      , pkgLength = Nothing
+      , pkgWidth = Nothing
+      , pkgHeight = Nothing
       }
   in
     -- 3. Assemble the final request
@@ -250,6 +252,7 @@ buildMinimalOderRequest MinimalOrderRequestData {..} =
       , sorRecipient = recipient
       , sorPackages = [package]
       , sorShipmentPoint = mordShipmentPoint
+      , sorFromLocation = Nothing
       , sorDeliveryPoint = mordDeliveryPointCode
       , sorServices = [SdekService INSURANCE (Just (T.pack (show (totalPrice + 1))))]
       }
@@ -317,41 +320,6 @@ getOrdersInTransit uuid = do
   let httpManager = _configHttpManager cfg
   let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken . sdekAccessToken)
   makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
-
-
-scheduleSingleOrderCourier :: (Text, UUID) -> AppM (Either HttpError (Text, SdekCourierResponse))
-scheduleSingleOrderCourier (orderId, uuid) = do
-  $(logTM) InfoS $ ls $ "scheduling courier for order " <> orderId <> " with SDEK UUID " <> tshow uuid
-  today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
-  cfg <-  ask
-  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
-  let courierUrl = show HTTPS <> url <> "/v2/intakes"
-  let httpManager = _configHttpManager cfg
-  let sdekConfig = _sdekConfig cfg
-  let tomorrow = addDays 1 today
-  let sdekCourierRequest = 
-        SdekCallCourierRequest
-        { sccrOrderUuid = uuid
-        , sccrIntakeDate = tshow tomorrow
-        , sccrIntakeTimeFrom = Sdek.from (Sdek.pickupWindow sdekConfig)
-        , sccrIntakeTimeTo = Sdek.to (Sdek.pickupWindow sdekConfig)
-        , sccrSender = SdekCallCourierSender
-            { scsName = Sdek.name (Sdek.sender sdekConfig)
-            , scsPhones = [SenderPhone (Sdek.phone (Sdek.sender sdekConfig))]
-            }
-        }
-  let courierReq = getValidSdekToken >>= (_postReq' httpManager courierUrl sdekCourierRequest . Just . mkDefToken . sdekAccessToken)
-  fmap (second (orderId,)) $ makeRequestWithRetries @SdekCourierResponse (Just (void $ getValidSdekToken)) courierReq
-
-getPickupApplicationByUUID :: UUID -> AppM (Either HttpError SdekPickupApplicationResponse)
-getPickupApplicationByUUID uuid = do
-  $(logTM) DebugS $ "Polling SDEK for pickup application UUID: " <> ls (UUID.toText uuid)
-  cfg <-  ask
-  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
-  let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
-  let httpManager = _configHttpManager cfg
-  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
-  makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq
 
 
 getDeliveryPointByCode :: Text -> AppM (Either HttpError [Sdek.DeliveryPoint])
@@ -447,3 +415,38 @@ getAvailableTariffs fromLocation toLocation = do
   let tariff = AvailableTariffsRequest  fromLocation toLocation [Package maxWeight 0 0 0]
   let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl tariff . Just . mkDefToken . sdekAccessToken)
   makeRequestWithRetries @AvailableTariffsResponse (Just (void $ getValidSdekToken)) totalSumReq
+
+
+registerCourierCall :: UUID -> AppM (Either HttpError SdekCourierResponse)
+registerCourierCall uuid = do
+  today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
+  let tomorrow = addDays 1 today
+  cfg <-  ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let courierUrl = show HTTPS <> url <> "/v2/intakes"
+  let httpManager = _configHttpManager cfg
+  let sdekConfig = _sdekConfig cfg
+  let sdekCourierRequest = 
+        SdekCallCourierRequest
+        { sccrOrderUuid = uuid
+        , sccrIntakeDate = tshow tomorrow
+        , sccrIntakeTimeFrom = Sdek.from (Sdek.pickupWindow sdekConfig)
+        , sccrIntakeTimeTo = Sdek.to (Sdek.pickupWindow sdekConfig)
+        , sccrSender = 
+           SdekCallCourierSender
+           { scsName = Sdek.name (Sdek.sender sdekConfig)
+           , scsPhones = [SenderPhone (Sdek.phone (Sdek.sender sdekConfig))]
+           }
+        }
+  let courierReq = getValidSdekToken >>= (_postReq' httpManager courierUrl sdekCourierRequest . Just . mkDefToken . sdekAccessToken)
+  makeRequestWithRetries @SdekCourierResponse (Just (void $ getValidSdekToken)) courierReq
+
+getPickupApplication :: UUID -> AppM (Either HttpError SdekPickupApplicationResponse)
+getPickupApplication uuid = do
+  $(logTM) DebugS $ "Polling SDEK for pickup application UUID: " <> ls (UUID.toText uuid)
+  cfg <-  ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
+  let httpManager = _configHttpManager cfg
+  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
+  makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq

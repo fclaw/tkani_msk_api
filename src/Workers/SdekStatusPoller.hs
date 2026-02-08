@@ -20,7 +20,7 @@ import Control.Concurrent.STM.TMVar (putTMVar)
 
 
 import Text (tshow)
-import App (AppM, _appSdekChan, SdekJob (..))
+import App (AppM, _sdekOrderChan, SdekJob (..))
 import Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek.Types.State as Sdek
@@ -44,7 +44,7 @@ runSdekStatusPoller = do
   $(logTM) InfoS "SDEK Order Status Poller started."
   stVar <- get
   st <- liftIO $ atomically $ readTVar stVar
-  let inChan = _appSdekChan st
+  let inChan = _sdekOrderChan st
   forever $ do
     -- 1. Block and wait for a new UUID to appear in the channel
     SdekJob {sjSdekUuid, sjReplyVar} <- liftIO $ atomically $ readTChan inChan

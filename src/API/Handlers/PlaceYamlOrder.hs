@@ -28,7 +28,7 @@ import Data.Either (isLeft)
 
 import Text (tshow, encodeToText)
 import TH.Location (currentModule)
-import App (AppM, SdekJob (..), _appDBPool, _sdekConfig, _appSdekChan, currentTime, render, ChatKey (YAML_ORDER))
+import App (AppM, SdekJob (..), _appDBPool, _sdekConfig, _sdekOrderChan, currentTime, render, ChatKey (YAML_ORDER))
 import API.Types (ApiResponse, YamlOrderRequest (..), yorItems, mkError, YamlOrderResponse (..), OrderStatus (Paid), PhysicalDimensions (..), yoiWeight)
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
@@ -91,7 +91,7 @@ handler yamlOrderReq = do
 fetchOrderPollerRes :: UUID.UUID -> AppM (Either Text Text)
 fetchOrderPollerRes uuid = do 
   st <- get
-  inChan <- fmap _appSdekChan $ liftIO $ atomically $ readTVar st -- The poller's INput chan
+  inChan <- fmap _sdekOrderChan $ liftIO $ atomically $ readTVar st -- The poller's INput chan
   -- 1. Create a new, empty TMVar for the reply
   replyVar <- liftIO newEmptyTMVarIO
   -- 2. Create the job and put it on the poller's queue
@@ -141,5 +141,5 @@ tryTariffs request shipmentPoint tariffs = do
     Right Nothing -> pure $ Left "one of points hasn't been found"
     Right (Just availableTariffs) -> do
       let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
-      let requestData = Sdek.makeMinimalYamlOrderRequestData request optimalTariff shipmentPoint
+      let requestData = Sdek.makeMinimalYamlOrderRequestData request optimalTariff (Just shipmentPoint)
       fmap (bimap tshow (, optimalTariff)) $ Sdek.registerOrder $ Sdek.buildMinimalOderRequest requestData

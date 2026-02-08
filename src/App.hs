@@ -29,6 +29,7 @@ module App
     DostavistaJob (..),
     PaymentFlow (..),
     NormalizedRoute (..),
+    SdekCourierJob (..),
     currentTime,
     render,
     runAppM,
@@ -95,6 +96,7 @@ import Infrastructure.Services.Overpass.Types (MetroStation)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
+import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
 
 
 
@@ -158,6 +160,13 @@ data SdekJob = SdekJob
   , sjReplyVar :: ReplyVar -- The reply box
   }
 
+type ReplyCourierVar = TMVar (Either Text SdekRequestState)
+
+data SdekCourierJob =
+     SdekCourierJob
+     { scjSdekUuid :: UUID
+     , scjReplyVar :: ReplyCourierVar -- The reply box
+     }
 
 -- Minimal info needed for a PVZ
 data SdekPvzInfo = SdekPvzInfo
@@ -225,7 +234,8 @@ data State = State
   , _sdekTariffs        :: M.Map NormalizedRoute (UTCTime, [Int])
   , _sdekPromises       :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (PaymentFlow, Text, GetStateRequest)
-  , _appSdekChan        :: TChan SdekJob
+  , _sdekOrderChan      :: TChan SdekJob
+  , _sdekCourierChan    :: TChan SdekCourierJob
   , _metroStations      :: [MetroStation]
   , _dostavistaChan     :: TChan DostavistaJob
   , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE

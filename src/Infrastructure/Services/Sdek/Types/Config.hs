@@ -36,7 +36,7 @@ instance FromJSON SdekCredentials where
 data Sender =
      Sender
      { name   :: Text
-     , phone :: Text
+     , phone  :: Text
      } deriving (Show, Generic)
 
 instance FromJSON Sender where
@@ -83,18 +83,31 @@ tariffToInt :: Tariff -> Int
 tariffToInt Tariff136 = 136
 tariffToInt Tariff234 = 234
 
+-- | Represents the 'sender_location' object
+data SdekSenderLocation = SdekSenderLocation
+  { address    :: Text
+  , cityCode   :: Int
+  , postalCode :: Text
+  } deriving (Show, Generic)
+
+instance FromJSON SdekSenderLocation where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
+
+
 -- | The main SdekConfig record
 data SdekConfig = 
      SdekConfig
-     { url               :: Text
-     , credentials       :: SdekCredentials
-     , tariffs           :: [Tariff]
-     , pickupWindow      :: SdekPickupWindow
-     , sender            :: Sender
-     , pickupMinimum     :: Int
-     , dropOffPoint      :: Text
-     , commissionRate    :: Double
-     , consolidationTime :: Int
+     { url                 :: Text
+     , credentials         :: SdekCredentials
+     , tariffs             :: [Tariff]
+     , pickupWindow        :: SdekPickupWindow
+     , sender              :: Sender
+     , pickupMinimum       :: Int
+     , dropOffPoint        :: Text
+     , courierDropOffPoint :: Text
+     , commissionRate      :: Double
+     , consolidationTime   :: Int
+     , senderLocation      :: SdekSenderLocation
      } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where

@@ -343,3 +343,25 @@ data ShelfItemsForShipment =
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sifs" } ''ShelfItemsForShipment)
+
+data OrdersForCourierPickupItem = 
+     OrdersForCourierPickupItem
+     { ocpiArticle :: Text
+     , ocpiName    :: Text
+     , ocpiWeight  :: Int32
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocpi" } ''OrdersForCourierPickupItem)
+
+
+data OrdersForCourierPickup = 
+     OrdersForCourierPickup
+     { ocpOrderId :: Text
+     , ocpWeight  :: Int32
+     , ocpLength  :: Int32
+     , ocpWidth   :: Int32
+     , ocpHeight  :: Int32
+     , ocpItems   :: [OrdersForCourierPickupItem]
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocp" } ''OrdersForCourierPickup)

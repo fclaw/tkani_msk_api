@@ -7,31 +7,40 @@
 module Domain.Services.Shipping (prepareAndSchedulePickup) where
 
 
-import Data.Text (pack)
-import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay, Day)
+import Data.Text (Text)
 import Data.UUID (UUID)
+import Control.Monad (void)
+import Data.Traversable (for)
+import Data.Functor ((<&>))
+import Data.Bifunctor (first, second)
+import System.Timeout (timeout)
 import Control.Monad.IO.Class (liftIO)
 import Katip (logTM, Severity(..), ls)
 import Control.Monad.Reader.Class (ask)
-import Data.Foldable (for_)
-import Control.Monad (unless)
+import Control.Monad.State.Class (get)
+import Control.Monad.Trans.Class (lift)
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Control.Monad.Trans.Except
 import Data.Time.Calendar (addDays)
-import Control.Monad (when, forM_, forM)
-import Data.Text as T (intercalate)
-import Data.Maybe (fromMaybe, catMaybes)
-import Data.Either (isRight, isLeft, partitionEithers, fromLeft)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
+import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay, Day)
 
 
+import App
 import Text (tshow, encodeToText)
-import App (AppM, _appDBPool, _sdekConfig)
-import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Services.Sdek.Types.State
-import Infrastructure.Services.Sdek  (scheduleSingleOrderCourier)
-import Infrastructure.Services.Sdek.Types.Error (SdekErrorDetail (..))
-import Infrastructure.Services.Sdek.Types.Config (SdekConfig (..))
-import Infrastructure.Services.Sdek.Types.Courier (SdekCourierResponse (..), SdekRequestDto (..), uuid)
-import Infrastructure.Database (pickupOrdersForShipment, recordCourierPickupFailure, createCourierPickupPromise)
-
+import Infrastructure.Services.Sdek.Types
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, sendDocument)
+import Infrastructure.Services.Sdek.Types.Courier
+import Workers.SdekPriceCalculator (registerReceipt)
+import Workers.SdekGenerateReceipt (getSdekReceipt, downloadSdekPdf)
+import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
+import API.Handlers.PlaceNewOrder (PlaceOrderError (..), fetchOrderPollerRes)
+import Infrastructure.Services.Sdek  (registerOrder, registerCourierCall)
+import Infrastructure.Services.Sdek.Types.Config (SdekConfig (..), Sender (..), SdekSenderLocation (..))
+import Infrastructure.Database (OrdersForCourierPickup (..), OrdersForCourierPickupItem (..), fetchOrdersForCourierPickup, createCourierPickupPromise)
 
 
 
@@ -44,9 +53,9 @@ prepareAndSchedulePickup = do
     --    The query now has built-in guards.
     cfg <- ask
     let pool = _appDBPool cfg
-    let minCourierPickup = pickupMinimum . _sdekConfig $ cfg
-    let status = convertStateToSql Successful
-    eOrdersToSchedule <- pickupOrdersForShipment status pool
+    let sdekConfig = _sdekConfig cfg
+    let minCourierPickup = pickupMinimum sdekConfig
+    eOrdersToSchedule <- fetchOrdersForCourierPickup pool
     case eOrdersToSchedule of
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->
@@ -57,54 +66,135 @@ prepareAndSchedulePickup = do
             $(logTM) InfoS $ ls $
               "Found only " <> tshow (length orders) <>
               " orders, which is below the minimum threshold of " <>
-              tshow minCourierPickup <> 
+              tshow minCourierPickup <>
               " for courier pickup. Skipping scheduling."
         else do
           -- We have enough orders to schedule a pickup
           $(logTM) InfoS "Scheduling courier pickup for orders..."          
           -- ... (the rest of your logic to call the SDEK API) ...
           $(logTM) InfoS $ ls $ "Found " <> tshow (length orders) <> " orders. Scheduling courier..."
-          -- 2. For each order we just claimed, call the SDEK API
-          --    We can run these in parallel with a bounded concurrency.
-          results <- pooledForConcurrentlyN 3 orders scheduleSingleOrderCourier
-          -- Let's separate the successes from the failures first for clarity.
-          let (failures, successes) = partitionEithers results
-          -- Check if any of the API calls failed
-          -- 1. Handle any hard network failures
-          forM_ failures $ \err ->
-            $(logTM) ErrorS $ ls $ "A SDEK courier call request failed at the network level: " <> tshow err
-          fmap (const True) $ forM_ successes $ \(orderId, SdekCourierResponse {entity, requests}) -> do 
-            records <- forM requests $ \SdekRequestDto {..} -> do
-              -- A. Check if the request was accepted or failed validation
-              let entityUuid = uuid entity
-              if state == Invalid
-              then do
-                -- THE REQUEST FAILED VALIDATION ON SDEK'S SIDE
-                let errorDetails = fromMaybe [] errors
-                let errorMsg = T.intercalate ", " (map message errorDetails)
-                      
-                $(logTM) ErrorS $ ls $ 
-                  "SDEK rejected courier call for UUID " <> tshow entityUuid
-                  <> ". Status: " <> tshow state
-                  <> ". Errors: " <> errorMsg
-                      
-                -- DB ACTION: Log this failure
-                eDbRes <- recordCourierPickupFailure entityUuid errorMsg pool
-                when(isLeft eDbRes) $
-                  $(logTM) ErrorS $ ls $ 
-                  "Failed to record courier pickup failure for SDEK pickup " <>
-                  tshow entityUuid <> ": " <>
-                  tshow (fromLeft undefined eDbRes)
-                return Nothing
+          let recipient = SdekRecipient (name (sender sdekConfig)) [SdekPhone (phone (sender sdekConfig))]
+          let SdekSenderLocation {..} = senderLocation sdekConfig
+          let location = SdekFromLocation address cityCode (Just postalCode)
+          let pickupOderRequest = mkPickupOderRequest location (courierDropOffPoint sdekConfig) recipient orders
+          $(logTM) InfoS $ ls $ "pretty print pickupOderRequest: " <> encodePretty pickupOderRequest
+          eResp <- runExceptT $ tryRegisteringCourierCall pickupOderRequest
+          case eResp of
+            Left err -> do
+              $(logTM) ErrorS $ ls $ "tryRegisteringCourierCall failed: " <> tshow err
+              let error = escapeMarkdownV2 $ "‼️ Error in calling tryRegisteringCourierCall: " <> tshow err
+              fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+            Right (Left Invalid) -> do
+               $(logTM) ErrorS $ "tryRegisteringCourierCall failed: invalid state"
+               let error = escapeMarkdownV2 $ "‼️ Error in calling tryRegisteringCourierCall: invalid state"
+               fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+            Right (Right uuid) -> do
+              let orderIds = orders <&> \OrdersForCourierPickup {..} -> ocpOrderId
+              eDbRes <- createCourierPickupPromise uuid orderIds (addDays 1 today) pool
+              case eDbRes of
+                Left dbErr -> do
+                  $(logTM) ErrorS $ ls $ "DB error while creating courier pickup promise: " <> tshow dbErr
+                  let error = escapeMarkdownV2 $ "‼️ Error in calling createCourierPickupPromise: " <> tshow dbErr
+                  fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                Right _ -> do
+                  eReceiptRes <- registerReceipt uuid
+                  case eReceiptRes of
+                    Left err -> do
+                      $(logTM) ErrorS $ ls $ "registerReceipt failed: " <> tshow err
+                      let error = escapeMarkdownV2 $ "‼️ Error in calling registerReceipt: " <> tshow err
+                      fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                    Right receipt_uuid -> do
+                      eUrlRes <-getSdekReceipt receipt_uuid
+                      case eUrlRes of
+                        Left err -> do
+                          $(logTM) ErrorS $ ls $ "getSdekReceipt failed: " <> tshow err
+                          let error = escapeMarkdownV2 $ "‼️ Error in calling getSdekReceipt: " <> tshow err
+                          fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                        Right url -> do
+                          ePdfRes <- downloadSdekPdf url
+                          case ePdfRes of
+                            Left err -> do
+                              $(logTM) ErrorS $ ls $ "downloadSdekPdf failed: " <> tshow err
+                              let error = escapeMarkdownV2 $ "‼️ Error in calling downloadSdekPdf: " <> tshow err
+                              fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                            Right pdfBytes -> do
+                              let filename = "pickup-manifest-" <> tshow today <> ".pdf"
+                              -- 2. Call the new service function
+                              void $ sendDocument PICKUP mempty filename pdfBytes "application/pdf"
+                              fmap (const True) $ $(logTM) InfoS $ "Successfully sent  pickup manifest for " <> ls (tshow today) <> " to pickup channel."
 
-              else do
-                -- SUCCESS (or waiting). The request was accepted by SDEK.
-                $(logTM) InfoS $ ls $
-                  "SDEK accepted courier call for UUID " <> tshow entityUuid
-                  <> ". Initial status: " <> tshow state
-                  <> ". order ID: " <> orderId
-                return $ Just (orderId, entityUuid, convertStateToSql state)
-            
-            let tomorrow = addDays 1 today
-            eDbRes <- createCourierPickupPromise (catMaybes records) tomorrow pool
-            when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Failed to records courier pickup for SDEK pickup " <> tshow (fromLeft undefined eDbRes)
+
+mkPickupOderRequest :: SdekFromLocation -> Text -> SdekRecipient -> [OrdersForCourierPickup] -> SdekOrderRequest
+mkPickupOderRequest location dropOffPoint recipient orders =
+  let packages = 
+        orders <&> \OrdersForCourierPickup {..} ->
+        let pkgNumber = ocpOrderId
+            pkgWeight = fromIntegral ocpWeight
+            pkgItems  = 
+              ocpItems <&> \OrdersForCourierPickupItem {..} ->
+                let pkiName    = ocpiName
+                    pkiWareKey = ocpiArticle
+                    pkiPayment = 
+                      SdekPayment
+                      { payValue = 0
+                      , vatSum = Nothing
+                      , vatRate = Nothing
+                      }
+                    pkiWeight = fromIntegral ocpWeight
+                    pkiAmount = 1
+                    pkiCost   = 0                      
+                in SdekPackageItem {..}
+            pkgLength = Just $ fromIntegral ocpLength
+            pkgWidth  = Just $ fromIntegral ocpWidth
+            pkgHeight = Just $ fromIntegral ocpHeight
+        in SdekPackage {..}
+  in
+    SdekOrderRequest
+    { sorTariffCode    = 138 -- Courier pickup tariff code
+    , sorRecipient     = recipient
+    , sorPackages      = packages
+    , sorShipmentPoint = Nothing
+    , sorFromLocation  = Just location
+    , sorDeliveryPoint = dropOffPoint
+    , sorServices      = []
+    }
+
+wrap action error = withExceptT error (ExceptT action)
+
+fetchCourierPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text SdekRequestState)
+fetchCourierPollerRes uuid = do
+  st <- get
+  inChan <- fmap _sdekCourierChan $ lift $ readTVarIO st -- The poller's INput chan
+  -- 1. Create a new, empty TMVar for the reply
+  replyVar <- liftIO newEmptyTMVarIO
+
+  -- 2. Create the job and put it on the poller's queue
+  let job = SdekCourierJob uuid replyVar
+  lift $ writeTChanIO inChan job
+
+  -- 3. Block and wait for the result to appear in our reply box
+  -- We use a timeout to prevent waiting forever.
+  mResult <- liftIO $ timeout (30 * 1000000) $ atomically $ takeTMVar replyVar
+
+  -- 4. Handle the outcome
+  case mResult of
+    -- Timeout occurred
+    Nothing -> throwE SdekConfirmationTimeout
+        
+    -- We got a result from the poller
+    Just result -> return result
+
+stateToEither Successful = Right ()
+stateToEither Invalid = Left Invalid
+
+-- uuid is required for a receipt
+tryRegisteringCourierCall :: SdekOrderRequest -> ExceptT PlaceOrderError AppM (Either SdekRequestState UUID)
+tryRegisteringCourierCall orderReq = do
+  order_uuid <- wrap (registerOrder orderReq) SdekRegistrationFailed
+  ePollerRes <- fetchOrderPollerRes order_uuid
+  -- for now we discard tracking number
+  _ <- except $ (first SdekPollerError) ePollerRes
+  SdekCourierResponse {..} <- wrap (registerCourierCall order_uuid) NetworkError
+  eCourierPollerRes <- fetchCourierPollerRes $ uuid entity
+  fmap (second (const order_uuid) . stateToEither) $ except $ (first SdekPollerError) eCourierPollerRes
+  

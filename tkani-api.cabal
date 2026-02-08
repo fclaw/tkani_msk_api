@@ -22,7 +22,6 @@ library
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
       Workers.SdekPickUpScheduler
-      Workers.SdekPickupStatusPoller
       Workers.SdekStatusPoller
       Workers.SdekPriceCalculator
       Workers.SdekGenerateReceipt
@@ -34,6 +33,7 @@ library
       Workers.FabricLifecycleObserver
       Workers.DailyCleanupNotificationsJanitor
       Workers.ShelfSubmissionObserver
+      Workers.SdekCourierStatusPoller
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

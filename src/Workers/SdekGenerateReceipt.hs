@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE LambdaCase                 #-}
 
-module Workers.SdekGenerateReceipt (runSdekGenerateReceipt) where
+module Workers.SdekGenerateReceipt (runSdekGenerateReceipt, getSdekReceipt, downloadSdekPdf) where
 
 import Katip
 import Data.Aeson

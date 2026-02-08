@@ -61,7 +61,7 @@ handler userId init = do
             $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
         Right shipmentDetails -> pure $ Right shipmentDetails
 
-registerOrder :: Int64 -> Config -> InitiateShelfShipment -> ShelfItemsForShipment ->  ExceptT PlaceOrderError AppM ShelfShipmentDetails
+registerOrder :: Int64 -> Config -> InitiateShelfShipment -> ShelfItemsForShipment -> ExceptT PlaceOrderError AppM ShelfShipmentDetails
 registerOrder userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..} = do
   let sdekConfig = _sdekConfig cfg
   let shipmentPoint = Sdek.dropOffPoint sdekConfig
@@ -91,7 +91,7 @@ tryTariffs InitiateShelfShipment {..} ShelfItemsForShipment {..} shipmentPoint t
   let eSdekRes = maybe (Left "getTariffs:empty list") Right maybeSdekRes
   availableTariffs <- except $ (first TariffError) eSdekRes
   let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
-  let minOderReq = Sdek.makeMinimalShelfRequestData sifsUserInitials sifsPhone issPointId optimalTariff sifsItems shipmentPoint
+  let minOderReq = Sdek.makeMinimalShelfRequestData sifsUserInitials sifsPhone issPointId optimalTariff sifsItems (Just shipmentPoint)
   wrap (fmap (second (,optimalTariff)) (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq))) SdekRegistrationFailed
 
 

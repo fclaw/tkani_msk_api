@@ -46,19 +46,20 @@ instance FromJSON SdekCourierResponseEntity where
         <$> v .: "uuid"
 
 -- | The top-level response structure.
-data SdekCourierResponse = SdekCourierResponse
-  { entity :: SdekCourierResponseEntity
-  , requests :: [SdekRequestDto]
-  } deriving (Show, Eq, Generic)
+data SdekCourierResponse = 
+     SdekCourierResponse
+     { entity   :: SdekCourierResponseEntity
+     , requests :: [SdekRequestDto]
+     } deriving (Show, Eq, Generic)
 
 instance FromJSON SdekCourierResponse where
   parseJSON = genericParseJSON defaultOptions
 
 
 data SdekPickupApplicationResponse = 
-     SdekPickupApplicationResponse 
-     { state :: SdekRequestState 
-     , errors :: Maybe [SdekErrorDetail]
+     SdekPickupApplicationResponse
+     { sparState  :: SdekRequestState 
+     , sparErrors :: Maybe [SdekErrorDetail]
      }   deriving (Show, Eq, Generic)
 
 -- | Manual FromJSON instance to navigate the nested structure.

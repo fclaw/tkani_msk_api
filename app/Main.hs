@@ -70,7 +70,6 @@ import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
-import Workers.SdekPickupStatusPoller (runSdekPickupStatusPoller)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Workers.SdekPriceCalculator (runSdekPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
@@ -82,6 +81,7 @@ import Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler)
 import Workers.FabricLifecycleObserver (runFabricLifecycleObserver)
 import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJanitor)
 import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
+import Workers.SdekCourierStatusPoller (runSdekCourierStatusPoller)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -98,7 +98,6 @@ data Workers =
       | CollageMaker 
       | CartsCleaner
       | SdekPickUpScheduler
-      | PickupStatusPoller
       | SdekStatusPoller
       | SdekPriceCalculator
       | SdekGenerateReceipt
@@ -110,6 +109,7 @@ data Workers =
       | FabricLifecycleObserver
       | DailyCleanupNotificationsJanitor
       | ShelfSubmissionObserver
+      | SdekCourierStatusPoller
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -118,7 +118,6 @@ instance Show Workers where
   show CollageMaker                     = "Collage Maker"
   show CartsCleaner                     = "Carts Cleaner"
   show SdekPickUpScheduler              = "SDEK Pickup Scheduler"
-  show PickupStatusPoller               = "SDEK Pickup Status Poller"
   show SdekStatusPoller                 = "SDEK Status Poller"
   show SdekPriceCalculator              = "SDEK Price Calculator"
   show SdekGenerateReceipt              = "SDEK Generate Receipt"
@@ -130,6 +129,8 @@ instance Show Workers where
   show FabricLifecycleObserver          = "Fabric Lifecycle Observer"
   show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
   show ShelfSubmissionObserver          = "Shelf Submission Observer"
+  show SdekCourierStatusPoller          = "SDEK Courier Status Poller"
+
 
 
 
@@ -318,7 +319,8 @@ main = do
             }
 
       tinkoffPaymentChan <- newTChanIO
-      appSdekChan <- newTChanIO
+      sdekOrderChan <- newTChanIO
+      sdekCourierChan <- newTChanIO
 
       cityCacheVar <- newTVarIO M.empty
       pvzCacheVar <- newTVarIO M.empty
@@ -331,7 +333,8 @@ main = do
            , _pointCache         = mempty
            , _sdekPromises       = mempty
            , _tinkoffPaymentChan = tinkoffPaymentChan
-           , _appSdekChan        = appSdekChan
+           , _sdekOrderChan      = sdekOrderChan
+           , _sdekCourierChan    = sdekCourierChan
            , _metroStations      = []
            , _cityCodeByPVZCache = CityCodeByPVZCache {..}
            , _dostavistaChan     = dostavistaChan
@@ -450,13 +453,12 @@ main = do
                         appMToHandler (runSdekPickUpScheduler lastRunVar)
                           >>= showErrorInWorker 
                             SdekPickUpScheduler)
-                    sdekCourierSatusPollerWorker =
-                     (PickupStatusPoller,
-                      runForever 5 $
-                        appMToHandler runSdekPickupStatusPoller 
-                          >>= showErrorInWorker 
-                            PickupStatusPoller)
-                in [sdekCourierWorker, sdekCourierSatusPollerWorker]
+                    sdekCourierStatusPoller =
+                     (SdekCourierStatusPoller,
+                      appMToHandler (runSdekCourierStatusPoller)
+                        >>= showErrorInWorker
+                          SdekCourierStatusPoller)
+                in [sdekCourierWorker, sdekCourierStatusPoller]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."

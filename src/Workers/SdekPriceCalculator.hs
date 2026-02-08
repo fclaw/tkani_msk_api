@@ -7,7 +7,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Workers.SdekPriceCalculator (runSdekPriceCalculator) where
+module Workers.SdekPriceCalculator (runSdekPriceCalculator, registerReceipt) where
 
 import Katip
 import Data.Aeson

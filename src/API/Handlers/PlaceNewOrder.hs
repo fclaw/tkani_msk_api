@@ -41,7 +41,7 @@ import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), ApiResponse, formatStatus, OrderStatus (Registered), mkError)
-import App (AppM, SdekJob (..), PaymentFlow (ShipNow), currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig, _appSdekChan)
+import App (AppM, SdekJob (..), PaymentFlow (ShipNow), currentTime, render, Config (..), runAppM, _tinkoffPaymentChan, ChatKey(ORDER), TinkoffCredentials (..), _tinkoffCred, _sdekConfig, _sdekOrderChan)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
@@ -78,6 +78,7 @@ data PlaceOrderError
   | CartEmpty
   | TariffNetworkError HttpError
   | TariffError Text
+  | NetworkError HttpError
   deriving (Show)
 
 
@@ -203,13 +204,13 @@ tryTariffs request shipmentPoint tariffs items = do
   let eSdekRes = maybe (Left "getTariffs:empty list") Right maybeSdekRes
   availableTariffs <- except $ (first TariffError) eSdekRes
   let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
-  let minOderReq = Sdek.makeMinimalOrderRequestData request items optimalTariff shipmentPoint
+  let minOderReq = Sdek.makeMinimalOrderRequestData request items optimalTariff (Just shipmentPoint)
   wrap (fmap (second (,optimalTariff)) (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq))) SdekRegistrationFailed
 
 fetchOrderPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text Text)
 fetchOrderPollerRes uuid = do
   st <- get
-  inChan <- fmap _appSdekChan $ liftIO $ atomically $ readTVar st -- The poller's INput chan
+  inChan <- fmap _sdekOrderChan $ liftIO $ atomically $ readTVar st -- The poller's INput chan
   -- 1. Create a new, empty TMVar for the reply
   replyVar <- liftIO newEmptyTMVarIO
 

@@ -13,7 +13,11 @@ credentials:
 
 
 # drop_off_point: MSK2184
-drop_off_point: MSK2184
+# drop_off_point: MSK2184
+drop_off_point: MSK65
+
+# courier_drop_off_point: MSK339
+courier_drop_off_point: MSK339
 
 # Your default tariff codes for different delivery types
 tariffs:
@@ -26,7 +30,7 @@ pickup_window:
   from: "13:00"
   to: "15:00"
 
-consolidation_time: 10
+consolidation_time: 18
 
 
 # Business account number for reference
@@ -38,7 +42,18 @@ sender:
   email: "fclaw007@gmail.com"
 
 # Minimum order amount for courier pickup
-pickup_minimum: 3
+pickup_minimum: 5
 
 # 3 %
 commission_rate: 1.035
+
+# Details about your office for courier pickup (from_location)
+sender_location:
+  # Full, detailed address for the courier. YES, include floor/office.
+  address: "г. Москва, шоссе Энтузиастов, 56с32, этаж 3, офис 361"
+  
+  # SDEK's internal numeric code for the city (44 for Moscow)
+  city_code: 44
+  
+  # Postal code is often mandatory
+  postal_code: "111123"
