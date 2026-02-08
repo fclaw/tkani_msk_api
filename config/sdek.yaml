@@ -4,7 +4,7 @@
 
 # Base URL for the SDEK API (can be test or prod)
 #  prod: "api.cdek.ru"
-url: "api.edu.cdek.ru"
+url: "api.cdek.ru"
 
 # Your API credentials for authentication
 credentials:
@@ -13,7 +13,7 @@ credentials:
 
 
 # drop_off_point: MSK2184
-drop_off_point: MSK89
+drop_off_point: MSK2184
 
 # Your default tariff codes for different delivery types
 tariffs:
