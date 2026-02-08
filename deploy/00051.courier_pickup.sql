@@ -3,7 +3,7 @@
 BEGIN;
 
 -- XXX Add DDLs here.
-DROP TABLE IF EXISTS courier_pickups;
+DROP TABLE IF EXISTS courier_pickups CASCADE;
 CREATE TABLE courier_pickups (
     id SERIAL PRIMARY KEY,
     sdek_uuid UUID NOT NULL,
