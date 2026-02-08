@@ -59,7 +59,7 @@ timeout :: Int
 timeout = 30 * 1000000
 
 allotedTime :: Int
-allotedTime = 2 * 3600 -- 3600 = 1 hour
+allotedTime = 3 * 3600 -- 3600 = 1 hour
 
 
 pollerLogic :: TVar (DostavistaOrderStatus, UTCTime) -> Int64 -> AppM ()
@@ -79,7 +79,7 @@ pollerLogic statusVar orderId = do
     void $ setDostavistaOrderStatus orderId Canceled pool
     $(logTM) InfoS $ "Dostavista order " <> ls (show orderId) <> " has been cancelled due to timeout."
     let msg = escapeMarkdownV2 $ "⚠️ Dostavista order " <> tshow orderId <> " has been cancelled automatically due to missing courier. timeout"
-    void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+    void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
   else do
     pool <- fmap _appDBPool ask
     eResp <- getOrder orderId
@@ -124,7 +124,7 @@ pollerLogic statusVar orderId = do
                              , ("deliveryCost", paymentAmount)
                              ]
                         msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
-                        void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+                        void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                         liftIO $ threadDelay timeout
                         pollerLogic statusVar orderId
                       _ -> do
@@ -134,7 +134,7 @@ pollerLogic statusVar orderId = do
                   Completed -> do
                   -- Order is delivered. Update main order table.
                     let msg = escapeMarkdownV2 $ "the order " <> tshow orderId <> " has been delivered."
-                    void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+                    void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                     void $ setDostavistaOrderStatus orderId Completed pool
                   -- recurse
                   Available -> do
@@ -150,7 +150,7 @@ pollerLogic statusVar orderId = do
                     $(logTM) InfoS $ "Dostavista order has been cancelled.."
                     void $ setDostavistaOrderStatus orderId Canceled pool
                     msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Cancelled") $ HM.fromList [("orderId", tshow orderId)]
-                    void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+                    void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                   -- Order was canceled. Revert and alert.
                   -- For 'new', 'available', etc., just log it. The next poll will check again.
                   _ -> $(logTM) ErrorS $ "Dostavista API returned an unexpected order status: " <> ls (show status)
@@ -158,8 +158,8 @@ pollerLogic statusVar orderId = do
               $(logTM) InfoS $ 
                 "Status for Dostavista order " <> 
                 ls (show orderId) <> 
-                " has not changed. status " <> 
-                ls (show status) <> 
+                " has not changed. status " <>
+                ls (show status) <>
                 ". retry in 1 min .." 
               liftIO $ threadDelay timeout
               pollerLogic statusVar orderId

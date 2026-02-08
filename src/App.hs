@@ -239,6 +239,8 @@ data ChatKey =
       | MAIN
       | YAML_ORDER
       | SHELF
+      | PICKUP
+      | SPECIAL_POST
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int64)

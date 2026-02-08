@@ -98,7 +98,7 @@ runDailyWeightTracker connInfo runAppM = do
       let loadedTmpl | courierCalledToday = ".Init"
                      | otherwise = ".Pickup"
       msg <- fmap escapeMarkdownV2 $ render ($currentModule <> loadedTmpl) templateData
-      void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+      void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
       -- Worker A: Periodically checks if we need to call the courier 
       let checkCourierPoller = runAppM $ callDostavistaCourier stateVar
@@ -181,7 +181,7 @@ runStatusChangeListener stateVar connInfo runAppM = do
                   , ("total_weight", tshow (wtsTotalWeightGrams state + weightGrams))
                   ]
             msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".DropWeight") templateData
-            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+            void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
 runWeightAccumulator :: TVar WeightTrackerState -> PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
 runWeightAccumulator stateVar connInfo runAppM = 
@@ -267,7 +267,7 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
   void $ updateOrderStatus orderId AddedToPickupQueue Nothing pool
 
   msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".AddWeight") templateData
-  void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+  void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
 
 callDostavistaCourier :: TVar WeightTrackerState -> AppM ()
@@ -361,6 +361,6 @@ callDostavistaCourier stateVar = forever $ do
                   , ("order_list",  T.unlines (map ((<>) "• `" . (`T.append` "`")) ordersInBatch))
                   ]
             msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
-            void $ sendOrEditTelegramMessage mempty msg ORDER Nothing Nothing Nothing
+            void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
         else $(logTM) ErrorS "Dostativsta call has ended up in failure"
   liftIO $ threadDelay (10 * 60 * 1000000) -- sleep 10 minutes before re-evaluating

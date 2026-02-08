@@ -300,7 +300,7 @@ formatStatus status = case status of
   -- The order was cancelled.
   Cancelled          -> "❌ ОТМЕНЁН"
 
-  -- 
+  -- scheduled for pickup
   ScheduledForPickup -> "🗓️ ЗАПЛАНИРОВАН К ОТПРАВКЕ"
 
   -- The courier has picked up the package from our warehouse.
@@ -313,12 +313,13 @@ formatStatus status = case status of
 
 
 -- A record to hold all the necessary information for the final confirmation.
-data OrderConfirmationDetails = OrderConfirmationDetails
-  { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
-  , paymentLink      :: Text
-  , trackingNumber   :: Text -- delivery provider tracking number
-  , linkToQr         :: Maybe Text
-  } deriving (Show, Generic)
+data OrderConfirmationDetails = 
+     OrderConfirmationDetails
+     { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
+     , paymentLink      :: Text
+     , trackingNumber   :: Text -- delivery provider tracking number
+     , linkToQr         :: Maybe Text
+     } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''OrderConfirmationDetails)
 

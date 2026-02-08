@@ -49,7 +49,7 @@ module Infrastructure.Database
   , patchPrecut
   , deleteFabric
   , pickupOrdersForShipment
-  , createCourierPickup
+  , createCourierPickupPromise
   , recordCourierPickupFailure
   , recordCourierPickupFailureExt
   , getPendingPickupRequests
@@ -1322,33 +1322,23 @@ deleteFabric fabricId fabricType pool =
 
 
 -- Statement takes () and returns a list of (orderId, sdekUuid)
--- explanation:
--- This statement selects all orders that are in 'paid' status and are ready to be picked up by the courier.
--- time gate is applied based on the current hour in 'Europe/Moscow' timezone at least one hour earlier than the time of courier arrival.
--- It uses a CTE (Common Table Expression) to first select the eligible orders and locks them for update 
-pickupOrdersForShipment :: Int32 -> Hasql.Pool -> AppM (Either Text [(Text, UUID)])
-pickupOrdersForShipment hourToStart pool =
+pickupOrdersForShipment :: Text -> Hasql.Pool -> AppM (Either Text [(Text, UUID)])
+pickupOrdersForShipment status pool =
   fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      Hasql.statement hourToStart $
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement (status) $
        rmap V.toList $
        [Hasql.vectorStatement|
-         WITH paid_orders_to_schedule AS (
-          SELECT id
-          FROM orders
-          WHERE 
-            status = 'paid'
-            AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Europe/Moscow') = $1 :: int4
-            AND is_measured = TRUE
-            AND tariff = 138
-          FOR UPDATE SKIP LOCKED
-         )
-         UPDATE orders
-         SET 
-           status = 'picked_up_by_courier',
-           updated_at = NOW()
-         WHERE id IN (SELECT id FROM paid_orders_to_schedule)
-         RETURNING id :: text, sdek_request_uuid :: uuid
+        SELECT
+        id :: text,
+        sdek_request_uuid :: uuid
+        FROM orders
+        WHERE status = 'paid'
+        AND receipt_ready = TRUE
+        AND (SELECT COUNT(*) = 0
+             FROM courier_pickups 
+             WHERE pickup_date = (now() + INTERVAL '1 day')::date
+             AND status = CAST($1 :: text AS pickup_status))
        |]
 
 upsertCourierPickupsStatement :: Hasql.Statement (V.Vector (UUID, Text, Day)) ()
@@ -1366,19 +1356,20 @@ upsertCourierPickupsStatement =
     ON CONFLICT (request_uuid) DO UPDATE SET status = EXCLUDED.status
   |]
 
-updateOrdersWithPickupUuidStatement :: Hasql.Statement (UUID, V.Vector Text) ()
+updateOrdersWithPickupUuidStatement :: Hasql.Statement (UUID, OrderStatus, V.Vector Text) ()
 updateOrdersWithPickupUuidStatement =
+  lmap (app2 encodeToText) $
   [Hasql.resultlessStatement|
     UPDATE orders
     SET
       courier_pickup_uuid = $1 :: uuid,
-      status = 'picked_up_by_courier' :: order_status
-    WHERE id = ANY($2 :: text[])
+      status = CAST($2 :: text AS order_status)
+    WHERE id = ANY($3 :: text[])
   |]
 
 
-createCourierPickup :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> AppM (Either Text ())
-createCourierPickup records date pool = 
+createCourierPickupPromise :: [(Text, UUID, Text)] -> Day -> Hasql.Pool -> AppM (Either Text ())
+createCourierPickupPromise records date pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do 
       -- Prepare the data for the vector statements
@@ -1391,7 +1382,7 @@ createCourierPickup records date pool =
       Hasql.statement pickupData upsertCourierPickupsStatement
 
       -- STEP 2: Update all associated orders to link them to this pickup.
-      Hasql.statement (pickupUuid, orderIds) updateOrdersWithPickupUuidStatement
+      Hasql.statement (pickupUuid, ScheduledForPickup, orderIds) updateOrdersWithPickupUuidStatement
 
 
 recordCourierPickupFailure :: UUID -> Text -> Hasql.Pool -> AppM (Either Text ())
@@ -1437,14 +1428,14 @@ recordCourierPickupFailureExt orderId uuid errorMsg pool =
 -- Statement takes () and returns a list of UUIDs to be checked.
 getPendingPickupRequests :: Hasql.Pool -> AppM (Either Text [(UUID, Int64, Text, Text)])
 getPendingPickupRequests pool = 
-  fmap (first (pack . show)) $ 
+  fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $ 
       Hasql.statement () $
         rmap V.toList $
         [Hasql.vectorStatement|
           SELECT
             request_uuid :: uuid, 
-            internal_notification_message_id :: int8,
+            COALESCE(internal_notification_message_id, 0) :: int8,
             o.id :: text,
             o.sdek_tracking_number :: text
           FROM courier_pickups AS cp

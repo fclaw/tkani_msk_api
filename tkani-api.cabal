@@ -22,7 +22,7 @@ library
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
       Workers.SdekPickUpScheduler
-      Workers.SdekPickupRStatusPoller
+      Workers.SdekPickupStatusPoller
       Workers.SdekStatusPoller
       Workers.SdekPriceCalculator
       Workers.SdekGenerateReceipt

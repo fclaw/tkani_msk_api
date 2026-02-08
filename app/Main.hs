@@ -70,7 +70,7 @@ import Infrastructure.Templating (loadTemplatesFromDirectory)
 import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
-import Workers.SdekPickupRStatusPoller (runSdekPickupStatusPoller)
+import Workers.SdekPickupStatusPoller (runSdekPickupStatusPoller)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Workers.SdekPriceCalculator (runSdekPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
@@ -283,7 +283,9 @@ main = do
                    (WAREHOUSE, (configWarehouseBotToken, configWarehouseChatId)),
                    (MAIN, (configConciergeBotToken, configMainChatId)),
                    (YAML_ORDER, (configWarehouseBotToken, configYamlOrderChatId)),
-                   (SHELF, (configConciergeBotToken, configShelfChatId))
+                   (SHELF, (configConciergeBotToken, configShelfChatId)),
+                   (PICKUP, (configConciergeBotToken, configPickupChatId)),
+                   (SPECIAL_POST, (configConciergeBotToken, configSpecialPostChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
@@ -384,18 +386,6 @@ main = do
                    appMToHandler runCartsCleaner 
                      >>= showErrorInWorker 
                            CartsCleaner)
-              , (SdekPickUpScheduler, do
-                 -- Initialize the lock variable
-                 lastRunVar <- newTVarIO Nothing
-                 runForever 10 $
-                   appMToHandler (runSdekPickUpScheduler lastRunVar)
-                     >>= showErrorInWorker 
-                           SdekPickUpScheduler)
-              , (PickupStatusPoller,
-                 runForever 5 $
-                   appMToHandler runSdekPickupStatusPoller 
-                     >>= showErrorInWorker 
-                           PickupStatusPoller)
               , (SdekStatusPoller,
                  appMToHandler runSdekStatusPoller 
                    >>= showErrorInWorker 
@@ -438,7 +428,7 @@ main = do
                         ShelfSubmissionObserver)
               ]
 
-        let dostavistaTasks 
+        let courierPickupTasks 
               | configIsCourierNeeded =
                 let weightTrackerWorker =
                      (DailyWeightTracker,
@@ -451,10 +441,26 @@ main = do
                         >>= showErrorInWorker 
                              DostavistaOrderStatusPoller)         
                 in [weightTrackerWorker, dostavistaWorker]
+              | configIsSdekCourierNeeded =
+                let sdekCourierWorker =
+                     (SdekPickUpScheduler, do
+                      -- Initialize the lock variable
+                      lastRunVar <- newTVarIO Nothing
+                      runForever 10 $
+                        appMToHandler (runSdekPickUpScheduler lastRunVar)
+                          >>= showErrorInWorker 
+                            SdekPickUpScheduler)
+                    sdekCourierSatusPollerWorker =
+                     (PickupStatusPoller,
+                      runForever 5 $
+                        appMToHandler runSdekPickupStatusPoller 
+                          >>= showErrorInWorker 
+                            PickupStatusPoller)
+                in [sdekCourierWorker, sdekCourierSatusPollerWorker]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."
-        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) $ tasks <> dostavistaTasks
+        asyncs <- mapM (\(name, action) -> (show name,) <$> async action) $ tasks <> courierPickupTasks
         putStrLn "All workers started. Waiting for any worker to exit."
 
         -- Supervise the tasks. 'waitAny' will block and re-throw any exception.

@@ -43,6 +43,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Data.Traversable (for)
+import Data.Time.Calendar (addDays)
 import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay)
 import Data.Bifunctor (second)
 
@@ -327,10 +328,11 @@ scheduleSingleOrderCourier (orderId, uuid) = do
   let courierUrl = show HTTPS <> url <> "/v2/intakes"
   let httpManager = _configHttpManager cfg
   let sdekConfig = _sdekConfig cfg
+  let tomorrow = addDays 1 today
   let sdekCourierRequest = 
         SdekCallCourierRequest
         { sccrOrderUuid = uuid
-        , sccrIntakeDate = tshow today
+        , sccrIntakeDate = tshow tomorrow
         , sccrIntakeTimeFrom = Sdek.from (Sdek.pickupWindow sdekConfig)
         , sccrIntakeTimeTo = Sdek.to (Sdek.pickupWindow sdekConfig)
         , sccrSender = SdekCallCourierSender

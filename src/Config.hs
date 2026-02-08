@@ -66,6 +66,7 @@ data Config = Config
   , configMessageCannotBeDeleted :: Text
   , configMessageNotFound        :: Text
   , configIsCourierNeeded        :: Bool
+   , configIsSdekCourierNeeded   :: Bool
   , configCourierWeightThreshold :: Int
   , configDostavistaToken        :: Text
   , configCourierCallCutoffHour  :: Maybe Int
@@ -78,6 +79,8 @@ data Config = Config
   , configShelfChatId            :: Int64
   , configShelfCapacity          :: Int32
   , configTotalShelves           :: Int32
+  , configPickupChatId           :: Int64
+  , configSpecialPostChatId      :: Int64
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -132,7 +135,9 @@ loadConfig = do
   let configConciergeBotToken = (Map.!) env "CONCIERGE_BOT_TOKEN"
   let configWarehouseBotToken = (Map.!) env "WAREHOUSE_BOT_TOKEN"
   let configConciergeChatId = fromIntegral $ extractNumber "CONCIERGE_CHAT_ID" $ textToInt $ (Map.!) env "CONCIERGE_CHAT_ID"
-  
+  let configPickupChatId = fromIntegral $ extractNumber "PICKUP_CHAT_ID" $ textToInt $ (Map.!) env "PICKUP_CHAT_ID"
+
+
   let configWarehouseChatId = fromIntegral $ extractNumber "WAREHOUSE_CHANNEL_ID" $ textToInt $ (Map.!) env "WAREHOUSE_CHANNEL_ID"
   let configMainChatId = fromIntegral $ extractNumber "MAIN_CHANNEL_ID" $ textToInt $ (Map.!) env "MAIN_CHANNEL_ID"
   let configOrderChatId = fromIntegral $ extractNumber "ORDER_CHAT_ID" $ textToInt $ (Map.!) env "ORDER_CHAT_ID"
@@ -140,6 +145,8 @@ loadConfig = do
   let configThresholdMetres = extractNumber "METRES_THRESHOLD" $ textToDouble $ (Map.!) env "METRES_THRESHOLD"
 
   let configShelfChatId = fromIntegral $ extractNumber "SHELF_CHAT_ID" $ textToInt $ (Map.!) env "SHELF_CHAT_ID"
+
+  let configSpecialPostChatId = fromIntegral $ extractNumber "SPECIAL_POST_CHAT_ID" $ textToInt $ (Map.!) env "SPECIAL_POST_CHAT_ID"
 
   let configTinkoffTerminalKey = (Map.!) env "TINKOFF_TERMINAL_KEY"
   let configTinkoffSecret = (Map.!) env "TINKOFF_SECRET"
@@ -158,6 +165,7 @@ loadConfig = do
   
    -- courier
   let configIsCourierNeeded = textToBool $ (Map.!) env "IS_COURIER_NEEDED"
+  let configIsSdekCourierNeeded = textToBool $ (Map.!) env "IS_SDEK_COURIER_NEEDED"
   let configCourierWeightThreshold = fromIntegral $ extractNumber "COURIER_WEIGHT_THRESHOLD" $ textToInt $ (Map.!) env "COURIER_WEIGHT_THRESHOLD"
   
   let configCourierCallCutoffHour = fmap (fromIntegral . extractNumber "COURIER_CALL_CUTOFF_HOUR" . textToInt) $ (Map.!?) env "COURIER_CALL_CUTOFF_HOUR"

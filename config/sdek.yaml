@@ -4,7 +4,7 @@
 
 # Base URL for the SDEK API (can be test or prod)
 #  prod: "api.cdek.ru"
-url: "api.cdek.ru"
+url: "api.edu.cdek.ru"
 
 # Your API credentials for authentication
 credentials:
@@ -12,7 +12,8 @@ credentials:
   client_secret: "YOUR_SDEK_CLIENT_SECRET"
 
 
-drop_off_point: MSK2184
+# drop_off_point: MSK2184
+drop_off_point: MSK89
 
 # Your default tariff codes for different delivery types
 tariffs:
@@ -22,15 +23,18 @@ tariffs:
 
 # Your standard daily window for courier pickup requests
 pickup_window:
-  from: "17:00"
-  to: "18:00"
+  from: "13:00"
+  to: "15:00"
+
+consolidation_time: 10
+
 
 # Business account number for reference
 account_number: "YOUR_SDEK_ACCOUNT_NUMBER"
 
 sender:
   name: "Sergey Yakovlev"
-  phone: "79361645867"
+  phone: "+79361645867"
   email: "fclaw007@gmail.com"
 
 # Minimum order amount for courier pickup

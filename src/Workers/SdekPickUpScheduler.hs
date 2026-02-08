@@ -37,12 +37,12 @@ runSdekPickUpScheduler lastRunVar = do
   let day = dayOfWeek today
 
   -- B. Get config for the pickup window
-  cfg <- fmap _sdekConfig ask
-  let pickupStartHour = fromMaybe 16 (parseHour $ from (pickupWindow cfg)) -- Default to 16:00 if parse fails
+  sdekCfg <- fmap _sdekConfig ask
 
   -- C. Check if we need to run the job
-  let isRightTime = hour == pickupStartHour
-  let isWeekday = day `elem` [Monday .. Friday]
+  let isRightTime = hour == consolidationTime sdekCfg
+  let days = Sunday : [Monday .. Thursday]
+  let isWeekday = day `elem` days
 
   -- D. Atomically check the lock
   shouldRun <- liftIO $ atomically $ do

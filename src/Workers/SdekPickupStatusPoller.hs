@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Workers.SdekPickupRStatusPoller (runSdekPickupStatusPoller) where
+module Workers.SdekPickupStatusPoller (runSdekPickupStatusPoller) where
 
 
 import Katip
@@ -20,7 +20,7 @@ import Data.Time.LocalTime (localTimeOfDay, TimeOfDay(..), utcToLocalTime, zoned
 import Data.Time (getZonedTime, localDay, formatTime, defaultTimeLocale, Day)
 
 
-import App (AppM, _appDBPool, render, ChatKey (ORDER), currentTime)
+import App (AppM, _appDBPool, render, ChatKey (PICKUP), currentTime)
 import Infrastructure.Database (getPendingPickupRequests)
 import Text (tshow)
 import TH.Location (currentModule)
@@ -64,7 +64,7 @@ runSdekPickupStatusPoller = do
       $(logTM) InfoS $ ls $ "Successfully confirmed " <> tshow (length successfulPickups) <> " pickups."
       when(not (null successfulPickups)) $ do
 
-        let orders = zipWith (\(oid, tn) idx -> (oid, tn, idx + 1)) successfulPickups [0..]
+        let orders = zipWith (\(oid, tn) idx -> (oid, tn, idx)) successfulPickups [1..]
         let msk = TimeZone (3 * 60) False "MSK"
         now <- liftIO $ getZonedTime
         let mskTime = utcToLocalTime msk (zonedTimeToUTC now)
@@ -81,8 +81,8 @@ runSdekPickupStatusPoller = do
                   "Order ID: " <> oid <> 
                   ", Tracking Number: " <> tn) 
                  orders))]
-        message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Shipment") payload
-        void $ sendOrEditTelegramMessage mempty message ORDER Nothing Nothing Nothing
+        message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Scheduled") payload
+        void $ sendOrEditTelegramMessage mempty message PICKUP Nothing Nothing Nothing
 
 checkSinglePickupStatus :: UUID -> Int64 -> Text -> Text -> AppM (Maybe (Text, Text))
 checkSinglePickupStatus uuid msgId orderId trackingNumber = do
@@ -100,13 +100,13 @@ checkSinglePickupStatus uuid msgId orderId trackingNumber = do
           -- THE HAPPY PATH
           $(logTM) InfoS $ ls $ "SDEK courier pickup " <> tshow uuid <> " is confirmed."
           -- Update the pickup status to 'successful'
-          eDbRes <- updatePickupStatus uuid "successful" pool
+          eDbRes <- updatePickupStatus uuid (convertStateToSql Successful) pool
           when (isLeft eDbRes) $
             $(logTM) ErrorS $ ls $ 
               "Failed to update DB status for pickup " <> 
-              tshow uuid <> ": " <> 
+              tshow uuid <> ": " <>
               tshow (fromLeft undefined eDbRes)
-          return $ Just (orderId, trackingNumber)     
+          return $ Just (orderId, trackingNumber)
         Waiting -> do
           -- STILL PENDING
            fmap (const Nothing) $ $(logTM) InfoS $ ls $ "SDEK courier pickup " <> tshow uuid <> " is still waiting."
@@ -122,15 +122,15 @@ checkSinglePickupStatus uuid msgId orderId trackingNumber = do
           -- Run the Revert Transaction
           eDbRes <- recordCourierPickupFailureExt orderId uuid errorMsg pool
           when (isLeft eDbRes) $
-            $(logTM) ErrorS $ ls $ 
+            $(logTM) ErrorS $ ls $
               "Failed to update DB status (recordCourierPickupFailure) for pickup " <> 
-              tshow uuid <> ": " <> 
+              tshow uuid <> ": " <>
               tshow (fromLeft undefined eDbRes)
         
           -- Send an alert to the admin
           for_ eDbRes $ const $ do
             message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Error") $ HM.fromList [("uuid", tshow uuid)]
-            void $ sendOrEditTelegramMessage mempty message ORDER Nothing (Just msgId) Nothing   
+            void $ sendOrEditTelegramMessage mempty message PICKUP Nothing (Just msgId) Nothing   
           return Nothing   
 
         _ -> fmap (const Nothing) $ $(logTM) WarningS $ ls $ "Received unknown status for pickup " <> tshow uuid <> ": " <> tshow (state response)

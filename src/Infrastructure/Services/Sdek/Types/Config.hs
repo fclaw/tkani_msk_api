@@ -84,17 +84,18 @@ tariffToInt Tariff136 = 136
 tariffToInt Tariff234 = 234
 
 -- | The main SdekConfig record
-data SdekConfig = SdekConfig
-  { url             :: Text
-  , credentials     :: SdekCredentials
-  , tariffs         :: [Tariff]
-  , pickupWindow    :: SdekPickupWindow
-  , accountNumber   :: Text
-  , sender          :: Sender
-  , pickupMinimum   :: Int
-  , dropOffPoint    :: Text
-  , commissionRate  :: Double
-  } deriving (Show, Generic)
+data SdekConfig = 
+     SdekConfig
+     { url               :: Text
+     , credentials       :: SdekCredentials
+     , tariffs           :: [Tariff]
+     , pickupWindow      :: SdekPickupWindow
+     , sender            :: Sender
+     , pickupMinimum     :: Int
+     , dropOffPoint      :: Text
+     , commissionRate    :: Double
+     , consolidationTime :: Int
+     } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
