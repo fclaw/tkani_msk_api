@@ -155,7 +155,7 @@ mkPickupOderRequest location dropOffPoint recipient orders =
                       , vatSum = Nothing
                       , vatRate = Nothing
                       }
-                    pkiWeight = fromIntegral ocpWeight
+                    pkiWeight = fromIntegral ocpiWeight
                     pkiAmount = 1
                     pkiCost   = 0                      
                 in SdekPackageItem {..}
