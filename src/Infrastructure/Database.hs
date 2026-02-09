@@ -88,6 +88,8 @@ module Infrastructure.Database
   , saveShelfSubmissionInfo
   , getShelfPersonalInfo
   , editShelfPersonalInfo
+    -- courier 
+  , getAppStatusDetails
   ) where
 
 
@@ -137,6 +139,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database.Utils as Utils
+import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
 
 --------------------------------------------------------------------------------
@@ -1412,11 +1415,11 @@ fetchOrdersForCourierPickup pool =
         ORDER BY o.created_at DESC
        |]
 
-createCourierPickupsStatement :: Hasql.Statement (UUID, Day) Int64
+createCourierPickupsStatement :: Hasql.Statement (UUID, UUID, Text, Day) Int64
 createCourierPickupsStatement =
   [Hasql.singletonStatement|
-    INSERT INTO courier_pickups (sdek_uuid, pickup_date)
-    VALUES ($1 :: uuid, $2 :: date)
+    INSERT INTO courier_pickups (sdek_uuid, app_uuid, app_status, pickup_date)
+    VALUES ($1 :: uuid, $2 :: uuid, $3 :: text, $4 :: date)
     RETURNING id :: int8
   |]
 
@@ -1430,13 +1433,13 @@ updateOrdersWithPickupUuidStatement =
     WHERE id = ANY($3 :: text[])
   |]
 
-createCourierPickupPromise :: UUID -> [Text] -> Day -> Hasql.Pool -> AppM (Either Text ())
-createCourierPickupPromise pickupUuid orders date pool = 
+createCourierPickupPromise :: UUID -> UUID -> Text -> [Text] -> Day -> Hasql.Pool -> AppM (Either Text ())
+createCourierPickupPromise order_uuid app_uuid status orders date pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do 
       -- STEP 1: Insert all new pickup records.
       -- This uses UNNEST to handle the vector of data.
-      pickupId <- Hasql.statement (pickupUuid, date) createCourierPickupsStatement
+      pickupId <- Hasql.statement (order_uuid, app_uuid, status, date) createCourierPickupsStatement
       -- STEP 2: Update all associated orders to link them to this pickup.
       Hasql.statement (pickupId, ScheduledForPickup, V.fromList orders) updateOrdersWithPickupUuidStatement
 
@@ -2888,4 +2891,20 @@ editShelfPersonalInfo userId personalInfo pool =
       SET user_initials = COALESCE($2 :: text?, user_initials),
           user_phone = COALESCE($3 :: text?, user_phone)
       WHERE telegram_user_id = $1 :: int8
+     |]
+
+
+getAppStatusDetails :: [SdekPickupAppStatus] -> Hasql.Pool -> AppM (Either Text (Int64, UUID, SdekPickupAppStatus))
+getAppStatusDetails statuses pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+    Hasql.statement (map encodeToText statuses) $
+     dimap V.fromList (app3 (extractADT . convertFromJson @SdekPickupAppStatus)) $
+     [Hasql.singletonStatement|
+       SELECT
+        id :: int8,
+        app_uuid :: uuid,
+        to_jsonb(status) :: jsonb
+       FROM courier_pickups
+       WHERE status = ANY($1 :: text[])
      |]

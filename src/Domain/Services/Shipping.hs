@@ -9,6 +9,7 @@ module Domain.Services.Shipping (prepareAndSchedulePickup) where
 
 import Data.Text (Text)
 import Data.UUID (UUID)
+import Data.Maybe (fromJust)
 import Control.Monad (void)
 import Data.Traversable (for)
 import Data.Functor ((<&>))
@@ -42,6 +43,14 @@ import Infrastructure.Services.Sdek  (registerOrder, registerCourierCall)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig (..), Sender (..), SdekSenderLocation (..))
 import Infrastructure.Database (OrdersForCourierPickup (..), OrdersForCourierPickupItem (..), fetchOrdersForCourierPickup, createCourierPickupPromise)
 
+
+data CourierCall = 
+     CourierCall
+     { orderUuid :: Maybe UUID
+     , appUuid   :: Maybe UUID
+     , state     :: SdekRequestState
+     , status    :: SdekPickupAppStatus
+     }
 
 
 prepareAndSchedulePickup :: AppM Bool
@@ -84,44 +93,50 @@ prepareAndSchedulePickup = do
               $(logTM) ErrorS $ ls $ "tryRegisteringCourierCall failed: " <> tshow err
               let error = escapeMarkdownV2 $ "‼️ Error in calling tryRegisteringCourierCall: " <> tshow err
               fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-            Right (Left Invalid) -> do
-               $(logTM) ErrorS $ "tryRegisteringCourierCall failed: invalid state"
-               let error = escapeMarkdownV2 $ "‼️ Error in calling tryRegisteringCourierCall: invalid state"
-               fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-            Right (Right uuid) -> do
-              let orderIds = orders <&> \OrdersForCourierPickup {..} -> ocpOrderId
-              eDbRes <- createCourierPickupPromise uuid orderIds (addDays 1 today) pool
-              case eDbRes of
-                Left dbErr -> do
-                  $(logTM) ErrorS $ ls $ "DB error while creating courier pickup promise: " <> tshow dbErr
-                  let error = escapeMarkdownV2 $ "‼️ Error in calling createCourierPickupPromise: " <> tshow dbErr
+            Right CourierCall {..} ->
+              case state of
+                Invalid -> do
+                  $(logTM) ErrorS $ "tryRegisteringCourierCall failed: invalid state"
+                  let error = escapeMarkdownV2 $ "‼️ Error in calling tryRegisteringCourierCall: invalid state"
                   fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-                Right _ -> do
-                  eReceiptRes <- registerReceipt uuid
-                  case eReceiptRes of
-                    Left err -> do
-                      $(logTM) ErrorS $ ls $ "registerReceipt failed: " <> tshow err
-                      let error = escapeMarkdownV2 $ "‼️ Error in calling registerReceipt: " <> tshow err
+                Successful -> do
+                  let app_uuid = fromJust appUuid
+                  let order_uuid = fromJust orderUuid
+                  let statusTxt = tshow status
+                  let orderIds = orders <&> \OrdersForCourierPickup {..} -> ocpOrderId
+                  eDbRes <- createCourierPickupPromise order_uuid app_uuid statusTxt orderIds (addDays 1 today) pool
+                  case eDbRes of
+                    Left dbErr -> do
+                      $(logTM) ErrorS $ ls $ "DB error while creating courier pickup promise: " <> tshow dbErr
+                      let error = escapeMarkdownV2 $ "‼️ Error in calling createCourierPickupPromise: " <> tshow dbErr
                       fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-                    Right receipt_uuid -> do
-                      eUrlRes <-getSdekReceipt receipt_uuid
-                      case eUrlRes of
+                    Right _ -> do
+                      eReceiptRes <- registerReceipt order_uuid
+                      case eReceiptRes of
                         Left err -> do
-                          $(logTM) ErrorS $ ls $ "getSdekReceipt failed: " <> tshow err
-                          let error = escapeMarkdownV2 $ "‼️ Error in calling getSdekReceipt: " <> tshow err
+                          $(logTM) ErrorS $ ls $ "registerReceipt failed: " <> tshow err
+                          let error = escapeMarkdownV2 $ "‼️ Error in calling registerReceipt: " <> tshow err
                           fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-                        Right url -> do
-                          ePdfRes <- downloadSdekPdf url
-                          case ePdfRes of
+                        Right receipt_uuid -> do
+                          eUrlRes <-getSdekReceipt receipt_uuid
+                          case eUrlRes of
                             Left err -> do
-                              $(logTM) ErrorS $ ls $ "downloadSdekPdf failed: " <> tshow err
-                              let error = escapeMarkdownV2 $ "‼️ Error in calling downloadSdekPdf: " <> tshow err
+                              $(logTM) ErrorS $ ls $ "getSdekReceipt failed: " <> tshow err
+                              let error = escapeMarkdownV2 $ "‼️ Error in calling getSdekReceipt: " <> tshow err
                               fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-                            Right pdfBytes -> do
-                              let filename = "pickup-manifest-" <> tshow today <> ".pdf"
-                              -- 2. Call the new service function
-                              void $ sendDocument PICKUP mempty filename pdfBytes "application/pdf"
-                              fmap (const True) $ $(logTM) InfoS $ "Successfully sent  pickup manifest for " <> ls (tshow today) <> " to pickup channel."
+                            Right url -> do
+                              ePdfRes <- downloadSdekPdf url
+                              case ePdfRes of
+                                Left err -> do
+                                  $(logTM) ErrorS $ ls $ "downloadSdekPdf failed: " <> tshow err
+                                  let error = escapeMarkdownV2 $ "‼️ Error in calling downloadSdekPdf: " <> tshow err
+                                  fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                                Right pdfBytes -> do
+                                  let caption = "the courier call has been registered for " <> escapeMarkdownV2 (tshow (addDays 1 today))
+                                  let filename = "pickup-manifest-" <> tshow today <> ".pdf"
+                                  -- 2. Call the new service function
+                                  void $ sendDocument PICKUP caption filename pdfBytes "application/pdf"
+                                  fmap (const True) $ $(logTM) InfoS $ "Successfully sent  pickup manifest for " <> ls (tshow today) <> " to pickup channel."
 
 
 mkPickupOderRequest :: SdekFromLocation -> Text -> SdekRecipient -> [OrdersForCourierPickup] -> SdekOrderRequest
@@ -161,7 +176,7 @@ mkPickupOderRequest location dropOffPoint recipient orders =
 
 wrap action error = withExceptT error (ExceptT action)
 
-fetchCourierPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text SdekRequestState)
+fetchCourierPollerRes :: UUID -> ExceptT PlaceOrderError AppM (Either Text (SdekRequestState, SdekPickupAppStatus))
 fetchCourierPollerRes uuid = do
   st <- get
   inChan <- fmap _sdekCourierChan $ lift $ readTVarIO st -- The poller's INput chan
@@ -184,17 +199,26 @@ fetchCourierPollerRes uuid = do
     -- We got a result from the poller
     Just result -> return result
 
-stateToEither Successful = Right ()
-stateToEither Invalid = Left Invalid
 
 -- uuid is required for a receipt
-tryRegisteringCourierCall :: SdekOrderRequest -> ExceptT PlaceOrderError AppM (Either SdekRequestState UUID)
+tryRegisteringCourierCall :: SdekOrderRequest -> ExceptT PlaceOrderError AppM CourierCall
 tryRegisteringCourierCall orderReq = do
   order_uuid <- wrap (registerOrder orderReq) SdekRegistrationFailed
   ePollerRes <- fetchOrderPollerRes order_uuid
   -- for now we discard tracking number
   _ <- except $ (first SdekPollerError) ePollerRes
   SdekCourierResponse {..} <- wrap (registerCourierCall order_uuid) NetworkError
-  eCourierPollerRes <- fetchCourierPollerRes $ uuid entity
-  fmap (second (const order_uuid) . stateToEither) $ except $ (first SdekPollerError) eCourierPollerRes
+  let app_uuid = uuid entity
+  eCourierPollerRes <- fetchCourierPollerRes app_uuid
+  (state, status) <- except $ (first SdekPollerError) eCourierPollerRes
+  return $  
+    case state of
+      Successful -> 
+        CourierCall 
+        { orderUuid = Just order_uuid
+        , appUuid = Just app_uuid
+        , state = state
+        , status = status 
+        }
+      Invalid   -> CourierCall { orderUuid = Nothing, appUuid = Nothing, state = state, status = status }
   

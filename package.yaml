@@ -30,6 +30,7 @@ library:
     - Workers.DailyCleanupNotificationsJanitor
     - Workers.ShelfSubmissionObserver
     - Workers.SdekCourierStatusPoller
+    - Workers.SdekPickupAppStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

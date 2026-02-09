@@ -16,8 +16,8 @@ credentials:
 # drop_off_point: MSK2184
 drop_off_point: MSK65
 
-# courier_drop_off_point: MSK339
 courier_drop_off_point: MSK339
+# courier_drop_off_point: MSK65
 
 # Your default tariff codes for different delivery types
 tariffs:
@@ -30,7 +30,7 @@ pickup_window:
   from: "13:00"
   to: "15:00"
 
-consolidation_time: 18
+consolidation_time: 21
 
 
 # Business account number for reference
@@ -42,7 +42,7 @@ sender:
   email: "fclaw007@gmail.com"
 
 # Minimum order amount for courier pickup
-pickup_minimum: 5
+pickup_minimum: 0
 
 # 3 %
 commission_rate: 1.035

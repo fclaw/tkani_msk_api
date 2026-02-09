@@ -90,6 +90,7 @@ import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
+import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError, Location, mkLocation)
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Overpass.Types (MetroStation)
@@ -160,7 +161,7 @@ data SdekJob = SdekJob
   , sjReplyVar :: ReplyVar -- The reply box
   }
 
-type ReplyCourierVar = TMVar (Either Text SdekRequestState)
+type ReplyCourierVar = TMVar (Either Text (SdekRequestState, SdekPickupAppStatus))
 
 data SdekCourierJob =
      SdekCourierJob

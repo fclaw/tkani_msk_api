@@ -28,6 +28,7 @@ module Infrastructure.Services.Sdek
        , findOptimalTariff
        , registerCourierCall
        , getPickupApplication
+       , getPickupApplicationStatus
        ) where
 
 import Data.Text (Text)
@@ -443,10 +444,21 @@ registerCourierCall uuid = do
 
 getPickupApplication :: UUID -> AppM (Either HttpError SdekPickupApplicationResponse)
 getPickupApplication uuid = do
-  $(logTM) DebugS $ "Polling SDEK for pickup application UUID: " <> ls (UUID.toText uuid)
+  $(logTM) DebugS $ "SDEK: pickup application UUID: " <> ls (UUID.toText uuid)
   cfg <-  ask
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
   let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
   makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq
+
+
+getPickupApplicationStatus :: UUID -> AppM (Either HttpError SdekPickupAppStatusResponse)
+getPickupApplicationStatus uuid = do
+  $(logTM) DebugS $ "SDEK: status for pickup application UUID: " <> ls (UUID.toText uuid)
+  cfg <-  ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
+  let httpManager = _configHttpManager cfg
+  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
+  makeRequestWithRetries @SdekPickupAppStatusResponse (Just (void $ getValidSdekToken)) pickupReq

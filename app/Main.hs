@@ -82,6 +82,7 @@ import Workers.FabricLifecycleObserver (runFabricLifecycleObserver)
 import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJanitor)
 import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
 import Workers.SdekCourierStatusPoller (runSdekCourierStatusPoller)
+import Workers.SdekPickupAppStatusPoller (runSdekPickupAppStatusPoller)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -110,6 +111,7 @@ data Workers =
       | DailyCleanupNotificationsJanitor
       | ShelfSubmissionObserver
       | SdekCourierStatusPoller
+      | SdekPickupAppStatusPoller
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -130,7 +132,7 @@ instance Show Workers where
   show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
   show ShelfSubmissionObserver          = "Shelf Submission Observer"
   show SdekCourierStatusPoller          = "SDEK Courier Status Poller"
-
+  show SdekPickupAppStatusPoller        = "SDEK Pickup App Status Poller"
 
 
 
@@ -458,7 +460,13 @@ main = do
                       appMToHandler (runSdekCourierStatusPoller)
                         >>= showErrorInWorker
                           SdekCourierStatusPoller)
-                in [sdekCourierWorker, sdekCourierStatusPoller]
+                    sdekPickupAppStatusPoller =
+                     (SdekPickupAppStatusPoller,
+                      runForever 10 $
+                        appMToHandler (runSdekPickupAppStatusPoller)
+                          >>= showErrorInWorker
+                            SdekPickupAppStatusPoller)
+                in [sdekCourierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."

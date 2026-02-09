@@ -60,7 +60,7 @@ runSdekCourierStatusPoller = do
       liftIO $ atomically $ putTMVar scjReplyVar pollerRes
 
 -- | Polls SDEK for the status of a single order identified by its UUID.
-pollForSingleCourier :: UUID -> AppM (Either Text SdekRequestState)
+pollForSingleCourier :: UUID -> AppM (Either Text (SdekRequestState, Courier.SdekPickupAppStatus))
 pollForSingleCourier sdekUuid = do
   eAppResp <- Sdek.getPickupApplication sdekUuid
   case eAppResp of
@@ -76,11 +76,11 @@ pollForSingleCourier sdekUuid = do
           let errors = Courier.sparErrors resp
           log WarningS $ " resulted in INVALID state. Errors: " <> tshow errors
           -- Return the error result, which stops the loop.
-          pure $ Right Sdek.Invalid
+          pure $ Right (Sdek.Invalid, Courier.sparStatus resp)
         Sdek.Successful -> do
           -- FINAL STATE: SDEK accepted the courier application!
           log InfoS $ " resulted in SUCCESSFUL state."
-          pure $ Right Sdek.Successful
+          pure $ Right (Sdek.Successful, Courier.sparStatus resp)
         other -> do
           let errMsg = 
                Sdek.SdekError 
