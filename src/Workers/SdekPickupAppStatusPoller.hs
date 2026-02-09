@@ -69,7 +69,7 @@ runSdekPickupAppStatusPoller = do
                     PROBLEM_DETECTED -> do
                       $(logTM) WarningS $ "Problem detected for pickup"
                     -- Send alert to admin channel.
-                      updatePickedUpOrdersStatus id OnRoute pool
+                      updatePickedUpOrdersStatus id PickupFailed pool
                       let error = escapeMarkdownV2 $ "‼️ Problems detected. orders are marked as PickupFailed"
                       void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                     REMOVED -> do
