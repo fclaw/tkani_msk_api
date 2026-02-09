@@ -462,7 +462,7 @@ main = do
                           SdekCourierStatusPoller)
                     sdekPickupAppStatusPoller =
                      (SdekPickupAppStatusPoller,
-                      runForever 10 $
+                      runForever 5 $
                         appMToHandler (runSdekPickupAppStatusPoller)
                           >>= showErrorInWorker
                             SdekPickupAppStatusPoller)

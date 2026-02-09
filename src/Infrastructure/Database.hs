@@ -90,6 +90,8 @@ module Infrastructure.Database
   , editShelfPersonalInfo
     -- courier 
   , getAppStatusDetails
+  , updatePickupAppStatus
+  , updatePickedUpOrdersStatus
   ) where
 
 
@@ -2894,17 +2896,39 @@ editShelfPersonalInfo userId personalInfo pool =
      |]
 
 
-getAppStatusDetails :: [SdekPickupAppStatus] -> Hasql.Pool -> AppM (Either Text (Int64, UUID, SdekPickupAppStatus))
+getAppStatusDetails :: [SdekPickupAppStatus] -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, UUID, SdekPickupAppStatus)))
 getAppStatusDetails statuses pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
     Hasql.statement (map encodeToText statuses) $
-     dimap V.fromList (app3 (extractADT . convertFromJson @SdekPickupAppStatus)) $
-     [Hasql.singletonStatement|
+     dimap V.fromList (fmap (app3 (extractADT . convertFromJson @SdekPickupAppStatus))) $
+     [Hasql.maybeStatement|
        SELECT
         id :: int8,
         app_uuid :: uuid,
-        to_jsonb(status) :: jsonb
+        to_jsonb(app_status) :: jsonb
        FROM courier_pickups
-       WHERE status = ANY($1 :: text[])
+       WHERE app_status = ANY($1 :: text[])
+     |]
+
+updatePickupAppStatus :: Int64 -> SdekPickupAppStatus -> Hasql.Pool -> AppM (Either Text ())
+updatePickupAppStatus id status pool =
+ fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (id, encodeToText status) $
+     [Hasql.resultlessStatement|
+       UPDATE courier_pickups
+       SET app_status = $2 :: text
+       WHERE id = $1 :: int8
+     |]
+
+updatePickedUpOrdersStatus :: Int64 -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
+updatePickedUpOrdersStatus pickupId status pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (pickupId, encodeToText status) $
+     [Hasql.resultlessStatement|
+       UPDATE orders
+       SET status = CAST($2 :: text AS order_status)
+       WHERE sdek_courier_pickup_id = $1 :: int8
      |]

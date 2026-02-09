@@ -9,7 +9,7 @@
 module Infrastructure.Services.Sdek.Types.Courier where
 
 import Data.List (sortBy)
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Data.UUID (UUID)
@@ -23,13 +23,18 @@ import Infrastructure.Services.Sdek.Types.Error (SdekErrorDetail) -- Re-using th
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
 
 
-data SdekPickupAppStatus = 
-        READY_FOR_APPOINTMENT 
-      | APPOINTED_COURIER 
-      | DONE 
-      | PROBLEM_DETECTED
-      | Other Text
-      deriving (Show, Eq, Generic)
+-- Your ADT for SDEK Pickup Application Status (assuming these map 1:1 to SDEK codes)
+data SdekPickupAppStatus
+  = ACCEPTED
+  | CREATED
+  | REMOVED
+  | READY_FOR_APPOINTMENT
+  | APPOINTED_COURIER
+  | DONE
+  | PROBLEM_DETECTED
+  | PROCESSING_REQUIRED
+  | INVALID
+  deriving (Show, Eq, Generic) -- Make sure it derives Generic for Aeson
 
 instance FromJSON SdekPickupAppStatus where
   parseJSON = withText "SdekPickupAppStatus" $ \s ->
@@ -38,7 +43,12 @@ instance FromJSON SdekPickupAppStatus where
       "APPOINTED_COURIER"     -> pure APPOINTED_COURIER
       "DONE"                  -> pure DONE
       "PROBLEM_DETECTED"      -> pure PROBLEM_DETECTED
-      _                       -> pure $ Other s
+      "PROCESSING_REQUIRED"   -> pure PROCESSING_REQUIRED
+      "INVALID"               -> pure INVALID
+      "ACCEPTED"              -> pure ACCEPTED
+      "CREATED"               -> pure CREATED
+      "REMOVED"               -> pure REMOVED
+      _                       -> fail $ "Unknown SDEK Pickup Application Status: " <> unpack s
 
 instance ToJSON SdekPickupAppStatus where
   toJSON s = 
@@ -47,8 +57,25 @@ instance ToJSON SdekPickupAppStatus where
       APPOINTED_COURIER     -> String "APPOINTED_COURIER"
       DONE                  -> String "DONE"
       PROBLEM_DETECTED      -> String "PROBLEM_DETECTED"
-      Other s               -> String s
+      ACCEPTED              -> String "ACCEPTED"
+      CREATED               -> String "CREATED"
+      REMOVED               -> String "REMOVED"
+      PROCESSING_REQUIRED   -> String "PROCESSING_REQUIRED"
+      INVALID               -> String "INVALID"
 
+
+-- This helper assigns a numerical rank to each status. Higher rank means "more advanced".
+statusRank :: SdekPickupAppStatus -> Int
+statusRank status = case status of
+  INVALID               -> 0
+  PROCESSING_REQUIRED   -> 10
+  PROBLEM_DETECTED      -> 15 -- This is an "out-of-band" state, often possible from anywhere
+  ACCEPTED              -> 20
+  READY_FOR_APPOINTMENT -> 30
+  APPOINTED_COURIER     -> 40
+  REMOVED               -> 90  -- REMOVED is often terminal. We could give it high priority.
+  DONE                  -> 100
+  CREATED               -> 200 -- Often initial or successful validation (like ACCEPTED, but done)
 
 -- | Represents a single request status object within the main response.
 data SdekRequestDto = SdekRequestDto
