@@ -63,20 +63,32 @@ prepareAndSchedulePickup = do
     cfg <- ask
     let pool = _appDBPool cfg
     let sdekConfig = _sdekConfig cfg
-    let minCourierPickup = pickupMinimum sdekConfig
+    let countThreshold = pickupParcels sdekConfig
+    let weightThreshold = pickupWeight sdekConfig
     eOrdersToSchedule <- fetchOrdersForCourierPickup pool
     case eOrdersToSchedule of
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->
         if null orders then
           fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
-        else if length orders < minCourierPickup then
-          fmap (const False) $ 
-            $(logTM) InfoS $ ls $
-              "Found only " <> tshow (length orders) <>
-              " orders, which is below the minimum threshold of " <>
-              tshow minCourierPickup <>
-              " for courier pickup. Skipping scheduling."
+        else if not (checkRequirements orders countThreshold weightThreshold) then do
+          -- --- This is the refined logging message ---
+          let totalWeight =  sum $ orders <&> \OrdersForCourierPickup {..} -> ocpWeight
+          let totalParcelsCount = length orders
+          let notMetMsg = 
+                "Requirements not met to call courier. " <>
+                "Current state: " <>
+                "Parcels Count = " <> 
+                tshow totalParcelsCount <> 
+                " (Threshold = " <> 
+                tshow countThreshold <> "), " <>
+                "Total Weight = " <>
+                tshow totalWeight <> 
+                " g (Threshold = " <> 
+                tshow weightThreshold <> " g). " <>
+                "Waiting for more orders or a heavier batch."
+          $(logTM) InfoS $ ls notMetMsg
+          fmap (const False) $ sendOrEditTelegramMessage mempty notMetMsg PICKUP Nothing Nothing Nothing
         else do
           -- We have enough orders to schedule a pickup
           $(logTM) InfoS "Scheduling courier pickup for orders..."          
@@ -139,12 +151,36 @@ prepareAndSchedulePickup = do
                                   fmap (const True) $ $(logTM) InfoS $ "Successfully sent  pickup manifest for " <> ls (tshow today) <> " to pickup channel."
 
 
+-- | Checks if the given list of orders meets the requirements to call a courier.
+--
+-- Conditions:
+--   1. Total parcels count exceeds 'countThreshold'.
+--   2. OR total parcels count is less than or equal to 'countThreshold'
+--      AND the total weight exceeds 'weightThreshold'.
+--
+-- This implies that if you have many parcels, call a courier regardless of weight.
+-- But if you have few parcels, only call a courier if they are collectively heavy enough.
+--
+checkRequirements ::  [OrdersForCourierPickup] -> Int -> Int -> Bool
+checkRequirements orders countThreshold weightThreshold =
+  let totalWeight = fromIntegral $ sum $ orders <&> \OrdersForCourierPickup {..} -> ocpWeight
+      totalParcelsCount = length orders
+  in
+    -- --- Implementation of your conditions ---
+    -- Condition 1: parcels > countThreshold -> true
+    (totalParcelsCount > countThreshold)
+    -- OR
+    ||
+    -- Condition 2: parcels <= countThreshold && totalWeight > weightThreshold -> true
+    (totalParcelsCount <= countThreshold && totalWeight > weightThreshold)
+
+
 mkPickupOderRequest :: SdekFromLocation -> Text -> SdekRecipient -> [OrdersForCourierPickup] -> SdekOrderRequest
 mkPickupOderRequest location dropOffPoint recipient orders =
   let packages = 
         orders <&> \OrdersForCourierPickup {..} ->
         let pkgNumber = ocpOrderId
-            pkgWeight = fromIntegral ocpWeight
+            pkgWeight = fromIntegral ocpWeight + 100 -- safety margin
             pkgItems  = 
               ocpItems <&> \OrdersForCourierPickupItem {..} ->
                 let pkiName    = ocpiName

@@ -102,7 +102,8 @@ data SdekConfig =
      , tariffs             :: [Tariff]
      , pickupWindow        :: SdekPickupWindow
      , sender              :: Sender
-     , pickupMinimum       :: Int
+     , pickupParcels       :: Int
+     , pickupWeight        :: Int
      , dropOffPoint        :: Text
      , courierDropOffPoint :: Text
      , commissionRate      :: Double

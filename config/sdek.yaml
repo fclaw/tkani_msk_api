@@ -42,7 +42,8 @@ sender:
   email: "fclaw007@gmail.com"
 
 # Minimum order amount for courier pickup
-pickup_minimum: 4
+pickup_parcels: 5
+pickup_weight: 5000
 
 # 3 %
 commission_rate: 1.035
