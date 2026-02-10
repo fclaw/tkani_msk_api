@@ -2742,13 +2742,22 @@ fetchShelfItemsForShipmentStatement =
              NULL
            END,
           'length_m', si.length_m,
-          'telegram_url', ''
+          'telegram_url', '',
+          'thumbnail_url', 
+           CASE 
+            WHEN pc.id IS NULL THEN
+             f.thumbnail_url
+            ELSE
+             fpc.thumbnail_url
+           END
           )) AS items
       FROM shelf_items AS si
       INNER JOIN fabrics AS f
       ON si.fabric_id = f.id
       LEFT JOIN pre_cuts AS pc
       ON pc.fabric_id = f.id
+      LEFT JOIN fabrics AS fpc
+      ON pc.fabric_id = fpc.id
       WHERE si.status = 'ON_SHELF'
       GROUP BY shelf_id
     ) AS ci
