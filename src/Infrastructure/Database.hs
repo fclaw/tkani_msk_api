@@ -2570,7 +2570,7 @@ getPutOnDShelfDetailsStatement =
       'phone', s.user_phone,
       'items', ci.items,
       'items_on_shelf_count', 
-       COALESCE(COUNT(si.id), 0)
+       COALESCE(COUNT(si.id) FILTER (WHERE si.status = 'ON_SHELF'), 0)
      ) :: jsonb
     FROM shelves AS s
     LEFT JOIN shelf_items AS si
