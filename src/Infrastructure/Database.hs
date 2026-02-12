@@ -1390,6 +1390,17 @@ fetchOrdersForCourierPickup pool =
           ON si.pre_cut_id = pc.id
           LEFT JOIN fabrics AS pcf
           ON pc.fabric_id = pcf.id
+
+          UNION ALL
+
+          SELECT
+           o.id AS order_id,
+           moi.article AS article,
+           moi.item_name AS name,
+           moi.weight AS weight
+          FROM orders AS o
+          INNER JOIN manual_order_items AS moi
+          ON o.id = moi.order_id
         )
         SELECT
          json_build_object(
