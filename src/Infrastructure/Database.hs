@@ -92,6 +92,8 @@ module Infrastructure.Database
   , getAppStatusDetails
   , updatePickupAppStatus
   , updatePickedUpOrdersStatus
+   -- fabric media
+  , addMediaToFabric
   ) where
 
 
@@ -795,6 +797,17 @@ searchFabricCardStatement =
       FROM all_claimed_pieces
       GROUP BY fabric_id
     ),
+    media_list AS (
+      SELECT
+       fabric_parent_id,
+       fabric_type,
+       array_agg(jsonb_build_object(
+        'telegram_file_id', telegram_file_id,
+        'media_type', media_type
+       )) :: jsonb[] AS pictures
+      FROM fabric_media
+      GROUP BY fabric_parent_id, fabric_type
+    ),
     item AS (
         SELECT
           jsonb_build_object(
@@ -814,15 +827,21 @@ searchFabricCardStatement =
             'warehouse_file_id', f.image_url,
             'description', f.description,
             'media_type', to_jsonb(f.media_type),
-            'width', f.width
+            'width', f.width,
+            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
               ) :: jsonb AS item_json
         FROM fabrics AS f
         LEFT JOIN total_claimed_length as cl
         ON cl.fabric_id = f.id
+        LEFT JOIN media_list AS ml
+        ON ml.fabric_parent_id = f.id 
+        AND ml.fabric_type = 'roll'
         WHERE $1 :: text = 'roll' 
         AND f.id = $2 :: int8
         AND (f.available_length_m - COALESCE(cl.length, 0.0)) > $3 :: float8
+
       UNION ALL
+
         SELECT
           jsonb_build_object(
             'id', pc.id,
@@ -838,12 +857,17 @@ searchFabricCardStatement =
             'warehouse_file_id', f.image_url,
             'description', f.description,
             'media_type', to_jsonb(f.media_type),
-            'width', f.width
+            'width', f.width,
+            'media', COALESCE(ml.pictures, '{}' :: jsonb[])
           ) :: jsonb AS item_json
         FROM pre_cuts AS pc
         LEFT JOIN cart_items AS ci
         ON pc.id = ci.pre_cut_id
-        JOIN fabrics AS f ON pc.fabric_id = f.id
+        JOIN fabrics AS f 
+        ON pc.fabric_id = f.id
+        LEFT JOIN media_list AS ml
+        ON ml.fabric_parent_id = pc.id 
+        AND ml.fabric_type = 'pre_cut'
         WHERE $1 :: text = 'pre_cut' 
         AND pc.id = $2 :: int8
         AND ci.pre_cut_id IS NULL 
@@ -2138,6 +2162,17 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
             AND so.status = 'registered'
             AND so.created_at > 
                 NOW() - INTERVAL '30 minutes'
+          ),
+          media_list AS (
+            SELECT
+            fabric_parent_id,
+            fabric_type,
+            array_agg(jsonb_build_object(
+              'telegram_file_id', telegram_file_id,
+              'media_type', media_type
+            )) :: jsonb[] AS pictures
+            FROM fabric_media
+            GROUP BY fabric_parent_id, fabric_type
           )
           SELECT item_json :: jsonb
             FROM (
@@ -2161,7 +2196,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'description', f.description,
                     'media_type', to_jsonb(f.media_type),
                     'width', f.width,
-                    'discount', f.discount
+                    'discount', f.discount,
+                    'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
                   ) AS item_json
                 FROM 
                   fabrics AS f
@@ -2208,6 +2244,9 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                   GROUP BY soi.fabric_id
                 ) AS locked_stock
                 ON f.id = locked_stock.fabric_id
+                LEFT JOIN media_list AS ml
+                ON f.id = ml.fabric_parent_id
+                AND ml.fabric_type = 'roll'
                 WHERE f.is_sold = FALSE
                 AND (f.available_length_m - COALESCE(locked_stock.total_locked, 0.0)) > $3 :: float8
                 AND f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
@@ -2232,7 +2271,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'description', f.description,
                         'media_type', to_jsonb(f.media_type),
                         'width', f.width,
-                        'discount', f.discount
+                        'discount', f.discount,
+                        'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
                     ) :: jsonb AS item_json
                 FROM pre_cuts AS pc
                 LEFT JOIN cart_items AS ci
@@ -2241,6 +2281,9 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                 ON pc.fabric_id = f.id
                 LEFT JOIN pre_cut_in_order as pcio
                 ON pcio.pre_cut_id = pc.id
+                LEFT JOIN media_list AS ml
+                ON pc.id = ml.fabric_parent_id
+                AND ml.fabric_type = 'pre_cut'
                 WHERE pc.in_stock = TRUE
                 AND ci.pre_cut_id IS NULL
                 AND pcio.pre_cut_id IS NULL
@@ -2951,4 +2994,21 @@ updatePickedUpOrdersStatus pickupId status pool =
        UPDATE orders
        SET status = CAST($2 :: text AS order_status)
        WHERE sdek_courier_pickup_id = $1 :: int8
+     |]
+
+addMediaToFabric :: FabricMediaRequest -> Hasql.Pool -> AppM (Either Text ())
+addMediaToFabric media pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement media $
+     lmap ( app2 encodeToText 
+          . app4 encodeToText 
+          . $(recordToTuple ''FabricMediaRequest))
+     [Hasql.resultlessStatement|
+       INSERT INTO fabric_media
+       ( fabric_parent_id
+       , fabric_type
+       , telegram_file_id
+       , media_type)
+       VALUES ($1 :: int8, $2 :: text, $3 :: text, $4 :: text)
      |]

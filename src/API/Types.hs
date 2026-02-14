@@ -357,6 +357,16 @@ instance FromHttpApiData CatalogDate where
     let mRes = fmap CatalogDate $ parseTimeM True defaultTimeLocale "%Y-%m-%d" (T.unpack dateStr)
     in case mRes of Just v -> Right v; Nothing -> Left "wrong format"
 
+
+data FabricMedia = 
+     FabricMedia
+     { fmTelegramFileId :: Text
+     , fmMediaType      :: MediaType
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fm" } ''FabricMedia)
+
+
 -- | Represents a single item in the daily catalog carousel.
 --   This is a "summary" DTO (Data Transfer Object).
 data CatalogSummaryItem = CatalogSummaryItem
@@ -392,6 +402,7 @@ data CatalogSummaryItem = CatalogSummaryItem
     --   It is the most critical measurement for tailoring and pattern layout, as selvedges
     --   are typically cut off and discarded.
   , csiWidth               :: Int
+  , csiMediaList           :: [FabricMedia]
   } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)
@@ -705,3 +716,14 @@ data ShelfPersonalInfo =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "spi" } ''ShelfPersonalInfo)
+
+
+data FabricMediaRequest = 
+     FabricMediaRequest
+     { fmrFabricId       :: Int64
+     , fmrFabricType     :: FabricType
+     , fmrTelegramFileId :: Text
+     , fmrMediaType      :: MediaType
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fmr" } ''FabricMediaRequest)

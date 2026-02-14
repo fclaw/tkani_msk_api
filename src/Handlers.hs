@@ -13,6 +13,7 @@ import App (AppM) -- Your custom monad
 import API (Routes (..)) -- Import our new ApiWithDocs
 import qualified API.Handlers.GetFabricPreview as GetFabricPreview
 import qualified API.Handlers.PutNewFabric as PutNewFabric
+import qualified API.Handlers.UploadMediaForFabric as UploadMediaForFabric
 import qualified API.Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified API.Handlers.GetProviders as GetProviders
 import qualified API.Handlers.PlaceNewOrder as PlaceNewOrder
@@ -54,6 +55,7 @@ apiHandlers = Routes
   { _getFabricPreview          = GetFabricPreview.handler -- Assign the handler function to the field
   , _putNewFabric              = PutNewFabric.handler
   , _getDeliveryPoints         = GetDeliveryPoints.handler
+  , _uploadMediaForFabric      = UploadMediaForFabric.handler
   , _getProviders              = GetProviders.handler
   , _placeNewOrder             = PlaceNewOrder.handler
   , _setTelegramMessage        = SetTelegramMessage.handler

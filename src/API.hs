@@ -46,7 +46,15 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "fabric_id" Int64
        :> Capture "fabric_type" FabricType
-       :> Delete '[JSON] (ApiResponse ())  
+       :> Delete '[JSON] (ApiResponse ())
+  , _uploadMediaForFabric
+       :: route
+       :- "warehouse"
+       :> "fabric"
+       :> "media"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> ReqBody '[JSON] FabricMediaRequest
+       :> Post '[JSON] (ApiResponse ())
   , _getFabricPreview 
        :: route 
        :- "fabric"

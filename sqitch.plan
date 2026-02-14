@@ -54,3 +54,4 @@
 00050.order 2026-02-02T16:36:51Z System Administrator <root@Sonny.local> # order: added to pickup queue
 00051.courier_pickup 2026-02-08T11:38:43Z System Administrator <root@Sonny.local> # sdek: courier pickup
 00052.courier_pickup_app_uuid 2026-02-09T04:53:57Z System Administrator <root@Sonny.local> # sdek: courier pickup
+00054.media_fabric 2026-02-13T06:09:36Z System Administrator <root@Sonny.local> # fabric media

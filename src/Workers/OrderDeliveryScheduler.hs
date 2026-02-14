@@ -47,7 +47,7 @@ runOrderDeliveryScheduler lastRunVar = do
   let (TimeOfDay hour _ _) = localTimeOfDay mskLocalTime
   let today = localDay mskLocalTime
 
-  let pickupStartHour = 15 -- Default to 7:00
+  let pickupStartHour = 9 -- Default to 7:00
 
   -- C. Check if we need to run the job
   let isRightTime = hour == pickupStartHour
