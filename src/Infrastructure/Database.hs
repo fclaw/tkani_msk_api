@@ -1253,11 +1253,16 @@ patchRoll fabric pool =
       Hasql.statement fabric $
         lmap ($(recordToTuple ''PatchedFabric))
         [Hasql.resultlessStatement|
-          UPDATE fabrics 
+          UPDATE fabrics AS f_alias
           SET
             description = $2 :: text,
             total_length_m = $3 :: float8,
-            available_length_m = $3 :: float8,
+            available_length_m = 
+              GREATEST(
+               0.0, 
+               ($3 :: float8) - 
+               (f_alias.total_length_m - 
+                f_alias.available_length_m)),
             width = $4 :: int4,
             price_per_meter = $5 :: int4,
             is_searchable = $6 :: bool,
@@ -1266,10 +1271,10 @@ patchRoll fabric pool =
             media_group_id = $9 :: text?,
             thumbnail_url = $10 :: text?,
             media_type = $11 :: text,
-            lifecycle = COALESCE(CAST($12 :: text? AS fabric_lifecycle), lifecycle),
-            discount = COALESCE($13 :: float8?, discount),
+            lifecycle = COALESCE(CAST($12 :: text? AS fabric_lifecycle), f_alias.lifecycle),
+            discount = COALESCE($13 :: float8?, f_alias.discount),
             updated_at = now()
-          WHERE id = $1 :: int8
+          WHERE f_alias.id = $1 :: int8
         |]
 
 patchPrecut :: PatchedFabric -> Hasql.Pool -> AppM (Either Text ())
