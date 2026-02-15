@@ -64,7 +64,7 @@ initiateTinkoffPayment initReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  postReq @InitResponse httpManager (show HTTPS <> unpack url <> "/v2/Init") initReq Nothing
+  postReq @InitResponse httpManager (show HTTPS <> unpack url <> "/v2/Init") initReq [] Nothing
 
 
 -- | Queries the Tinkoff Acquiring API to get the current status of a payment (`GetState` method).
@@ -105,7 +105,7 @@ checkTinkoffPaymentStatus getStateReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  eResp <- postReq @GetStateResponse httpManager (show HTTPS <> unpack url <> "/v2/GetState") getStateReq Nothing
+  eResp <- postReq @GetStateResponse httpManager (show HTTPS <> unpack url <> "/v2/GetState") getStateReq [] Nothing
   $(logTM) InfoS $ ls $ "Tinkoff GetState response: " <> pack (show eResp)
   for eResp $ \resp -> do 
     let isSuccess = gsrpSuccess resp
@@ -151,7 +151,7 @@ getTinkoffQRCode qrReq = do
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
   liftIO $ print $ "qr url -> " <> (show HTTPS <> unpack url <> "/v2/GetQr")
-  postReq @GetQrResponse httpManager (show HTTPS <> unpack url <> "/v2/GetQr") qrReq Nothing
+  postReq @GetQrResponse httpManager (show HTTPS <> unpack url <> "/v2/GetQr") qrReq [] Nothing
 
 
 {-|
@@ -183,4 +183,4 @@ cancelTinkoffPayment cancelReq = do
   cfg <- ask
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
-  postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq Nothing
+  postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq [] Nothing

@@ -93,6 +93,14 @@ mkDefToken token = Token "Authorization"  ("Bearer " <> token)
 addToken Nothing opt = opt
 addToken (Just Token {..}) opts = opts & header tokenHeader .~ [TE.encodeUtf8 tokenValue]
 
+
+type Headers = [(HeaderName, Text)]
+
+addHeaders opts [] = opts
+addHeaders opts ((name, value):rest) =
+  let newOpts = opts & header name .~ [TE.encodeUtf8 value]
+  in addHeaders newOpts rest
+
 data HttpExceptionInfo
   = RetryableNetworkError HttpExceptionContent
   | RetryableServerError Int
@@ -170,8 +178,8 @@ initialDelay = 1000000
 -- == 1. PRIMITIVE REQUESTS (UPDATED to accept Manager)
 -- ===================================================================
 
-_getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
-_getReq' mgr url queryParams maybeToken = do
+_getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
+_getReq' mgr url queryParams headers maybeToken = do
   -- FIX: Use global manager
   let baseOpts = 
         defaults 
@@ -180,11 +188,12 @@ _getReq' mgr url queryParams maybeToken = do
            tlsManagerSettings 
            { managerResponseTimeout = 
              responseTimeoutMicro (60 * 1000000) })
-  let opts = addToken maybeToken (baseOpts & params .~ queryParams)
+  let optsWithToken = addToken maybeToken (baseOpts & params .~ queryParams)
+  let opts = addHeaders optsWithToken headers
   liftIO $ try (getWith opts url)
 
-_postReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
-_postReq' mgr url body maybeToken = do
+_postReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
+_postReq' mgr url body headers maybeToken = do
   -- FIX: Use global manager and set Content-Type
   let baseOpts = defaults 
         & manager .~ Right mgr 
@@ -195,12 +204,13 @@ _postReq' mgr url body maybeToken = do
             { managerResponseTimeout = 
               responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
 
-  let opts = addToken maybeToken baseOpts
+  let optsWithToken = addToken maybeToken baseOpts
+  let opts = addHeaders optsWithToken headers
   let encoded_body = encode body
   liftIO $ try (postWith opts url encoded_body)
 
-_patchReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
-_patchReq' mgr url body maybeToken = do
+_patchReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m, ToJSON b) => Manager -> String -> b -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
+_patchReq' mgr url body headers maybeToken = do
   -- FIX: Use global manager and set Content-Type
   let baseOpts = defaults 
         & manager .~ Right mgr 
@@ -211,7 +221,8 @@ _patchReq' mgr url body maybeToken = do
             { managerResponseTimeout = 
               responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
 
-  let opts = addToken maybeToken baseOpts
+  let optsWithToken = addToken maybeToken baseOpts
+  let opts = addHeaders optsWithToken headers
   let encoded_body = encode body
   liftIO $ try (patchWith opts url encoded_body)
 
@@ -227,8 +238,8 @@ _postFormReq' mgr url payload = do
              responseTimeoutMicro (60 * 1000000) })
   liftIO $ try (postWith opts url payload)
 
-_deleteReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
-_deleteReq' mgr url maybeToken = do
+_deleteReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
+_deleteReq' mgr url headers maybeToken = do
   -- FIX: Use global manager
   let baseOpts = 
         defaults 
@@ -237,7 +248,8 @@ _deleteReq' mgr url maybeToken = do
            tlsManagerSettings 
            { managerResponseTimeout = 
              responseTimeoutMicro (60 * 1000000) })
-  let opts = addToken maybeToken baseOpts
+  let optsWithToken = addToken maybeToken baseOpts
+  let opts = addHeaders optsWithToken headers
   liftIO $ try (deleteWith opts url)
 
 
@@ -245,24 +257,73 @@ _deleteReq' mgr url maybeToken = do
 -- == 2. PUBLIC API (UPDATED to accept Manager)
 -- ===================================================================
 
-getReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> QueryParams -> Maybe Token -> m (Either HttpError a)
-getReq mgr url queryParams maybeToken = makeRequestWithRetries Nothing (_getReq' mgr url queryParams maybeToken)
+getReq :: forall a m . 
+         (KatipContext m, 
+          MonadIO m, 
+          Catch.MonadCatch m, 
+          FromJSON a) => 
+         Manager      -> 
+         String       -> 
+         QueryParams  ->
+         Headers      -> 
+         Maybe Token  -> 
+         m (Either HttpError a)
+getReq mgr url queryParams headers maybeToken = makeRequestWithRetries Nothing (_getReq' mgr url queryParams headers maybeToken)
 {-# INLINE getReq #-}
 
-postReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either HttpError a)
-postReq mgr url body maybeToken = makeRequestWithRetries Nothing (_postReq' mgr url body maybeToken)
+postReq :: forall a b m . 
+           (KatipContext m, 
+            MonadIO m, 
+            Catch.MonadCatch m, 
+            FromJSON a, 
+            ToJSON b)  => 
+           Manager     -> 
+           String      -> 
+           b           ->
+           Headers     -> 
+           Maybe Token -> 
+           m (Either HttpError a)
+postReq mgr url body headers maybeToken = makeRequestWithRetries Nothing (_postReq' mgr url body headers maybeToken)
 {-# INLINE postReq #-}
 
-postFormReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> FormParams -> m (Either HttpError a)
+postFormReq :: forall a m . 
+               (KatipContext m, 
+                MonadIO m, 
+                Catch.MonadCatch m, 
+                FromJSON a) => 
+               Manager      -> 
+               String       -> 
+               FormParams   -> 
+               m (Either HttpError a)
 postFormReq mgr url payload = makeRequestWithRetries Nothing (_postFormReq' mgr url payload)
 {-# INLINE postFormReq #-}
 
-patchReq :: forall a b m. (KatipContext m, MonadIO m, Catch.MonadCatch m,  FromJSON a, ToJSON b) => Manager -> String -> b -> Maybe Token -> m (Either HttpError a)
-patchReq mgr url body maybeToken = makeRequestWithRetries Nothing (_patchReq' mgr url body maybeToken)
+patchReq :: forall a b m . 
+            (KatipContext m, 
+             MonadIO m, 
+             Catch.MonadCatch m, 
+             FromJSON a, 
+             ToJSON b)  => 
+            Manager     -> 
+            String      -> 
+            b           ->
+            Headers     -> 
+            Maybe Token ->
+            m (Either HttpError a)
+patchReq mgr url body headers maybeToken = makeRequestWithRetries Nothing (_patchReq' mgr url body headers maybeToken)
 {-# INLINE patchReq #-}
 
-deleteReq :: forall a m. (KatipContext m, MonadIO m, Catch.MonadCatch m, FromJSON a) => Manager -> String -> Maybe Token -> m (Either HttpError a)
-deleteReq mgr url maybeToken = makeRequestWithRetries Nothing (_deleteReq' mgr url maybeToken)
+deleteReq :: forall a m . 
+             (KatipContext m, 
+              MonadIO m, 
+              Catch.MonadCatch m, 
+              FromJSON a) => 
+             Manager      -> 
+             String       ->
+             Headers      ->
+             Maybe Token  -> 
+             m (Either HttpError a)
+deleteReq mgr url headers maybeToken = makeRequestWithRetries Nothing (_deleteReq' mgr url headers maybeToken)
 {-# INLINE deleteReq #-}
 
 -- ... (Rest of adapters handleApiResponse, etc. remain the same) ...

@@ -100,7 +100,7 @@ generateCollageViaService urls jobId = do
                }
 
           $(logTM) InfoS "Calling collage service..."
-          eResult <- postReq @CollageResponse mgr (collageServiceUrl <> "/generate-collage") requestPayload Nothing
+          eResult <- postReq @CollageResponse mgr (collageServiceUrl <> "/generate-collage") requestPayload [] Nothing
 
           -- 4. Clean up the temporary input images immediately
           liftIO $ removeDirectoryRecursive jobDir

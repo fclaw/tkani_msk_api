@@ -131,7 +131,7 @@ scheduleDostavistaPickup packages totalWeightGrams = do
         }
   $(logTM) InfoS $ ls $ "orderReq: " <> encodePretty orderReq
   let token = Token "X-DV-Auth-Token" (Cfg.token dostavistaCfg)
-  eResp <- postReq @DostavistaOrderResponse mgr url orderReq (Just token)
+  eResp <- postReq @DostavistaOrderResponse mgr url orderReq [] (Just token)
   fmap (const eResp) $ $(logTM) InfoS $ "Dostavista order registration response: " <> ls (show eResp)
 
 
@@ -142,7 +142,7 @@ getOrder orderId = do
   let dostavistaCfg = _dostavistaConfig cfg
   let url = show HTTPS <> T.unpack (Cfg.url dostavistaCfg) <> "/orders"
   let token = Token "X-DV-Auth-Token" (Cfg.token dostavistaCfg)
-  eResp <- getReq @DostavistaOrdersResponse mgr url [("order_id", tshow orderId)] (Just token)
+  eResp <- getReq @DostavistaOrdersResponse mgr url [("order_id", tshow orderId)] [] (Just token)
   fmap (const eResp) $ $(logTM) InfoS $ "Dostavista order poller response: " <> ls (show eResp)
 
 cancelOrder :: Int64 -> AppM (())
@@ -153,5 +153,5 @@ cancelOrder orderId = do
   let url = show HTTPS <> T.unpack (Cfg.url dostavistaCfg) <> "/cancel-order"
   let token = Token "X-DV-Auth-Token" (Cfg.token dostavistaCfg)
   let cancelReq = CancelOrderRequest orderId
-  eResp <- postReq @DostavistaOrderResponse mgr url cancelReq (Just token)
+  eResp <- postReq @DostavistaOrderResponse mgr url cancelReq [] (Just token)
   $(logTM) InfoS $ "Dostavista cancel order response: " <> ls (show eResp)

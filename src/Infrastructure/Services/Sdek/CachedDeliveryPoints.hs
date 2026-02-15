@@ -109,7 +109,10 @@ storeDeliveryPoints cityCode = do
   let httpManager = _configHttpManager cfg
   let pointsUrl = show HTTPS <> url <> "/v2/deliverypoints"
   let pointsParams = [("city_code", T.pack $ show cityCode), ("type", "PVZ")]
-  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl pointsParams . Just . mkDefToken . sdekAccessToken)
+  let pointsReq = 
+        getValidSdekToken >>= \token -> 
+          let tkn =  (Just . mkDefToken . sdekAccessToken) token
+          in _getReq' httpManager pointsUrl pointsParams [] tkn
   ePoints <- makeRequestWithRetries @[SdekApiPoint] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[SdekApiPoint] $(currentModule) ePoints $ \sdekPoints -> do
     -- Transform the result (only runs on success of the second call)
@@ -177,5 +180,8 @@ fetchAllPointsAndCache = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let pointsUrl = show HTTPS <> url <> "/v2/deliverypoints"
-  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl [] . Just . mkDefToken . sdekAccessToken)
+  let pointsReq = 
+       getValidSdekToken >>= \token -> 
+        let tkn = (Just . mkDefToken . sdekAccessToken) token
+        in _getReq' httpManager pointsUrl [] [] tkn
   makeRequestWithRetries @[SdekPoint] (Just (void $ getValidSdekToken)) pointsReq

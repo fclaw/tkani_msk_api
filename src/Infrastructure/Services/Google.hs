@@ -24,4 +24,4 @@ getGeocode address = do
   let geocodeUrl = show HTTPS <> unpack baseUrlText
   let params = [("address", address), ("key", apiKey)]
   -- 3. Prepare the request object using your helper
-  getReq @GeocodingResponse httpManager geocodeUrl params Nothing
+  getReq @GeocodingResponse httpManager geocodeUrl params [] Nothing

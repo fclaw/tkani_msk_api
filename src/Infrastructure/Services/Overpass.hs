@@ -40,7 +40,7 @@ fetchAllRussianMetros = do
         -- 2. Call API
         cfg <- ask
         let httpManager = _configHttpManager cfg
-        resp <- withRetry 3 $ getReq @OverpassResponse httpManager "https://overpass-api.de/api/interpreter" params Nothing
+        resp <- withRetry 3 $ getReq @OverpassResponse httpManager "https://overpass-api.de/api/interpreter" params [] Nothing
         let metros = extractOverpassMetros resp
         $(logTM) InfoS $ ls $ "Fetched " <> pack (show (length metros)) <> " stations for " <> ctName city
                 

@@ -75,6 +75,11 @@ findOptimalTariff (tariff:rest) availableTariffs
   | otherwise = findOptimalTariff rest availableTariffs
 
 
+withToken mkRequest = 
+  getValidSdekToken >>= \token ->
+    let tkn = (Just . mkDefToken . sdekAccessToken) token
+    in mkRequest tkn
+
 getDeliveryPoints :: Text -> AppM (ApiResponse [WithField "dpMetros" [T.Text] DeliveryPoint])
 getDeliveryPoints city = do
   cfg <-  ask
@@ -89,7 +94,7 @@ getDeliveryPoints city = do
         , ("lang", "rus")          -- Optional but good practice: ensure Russian response
         ]
   let httpManager = _configHttpManager cfg      
-  let cityReq = getValidSdekToken >>= (_getReq' httpManager cityUrl cityParams . Just . mkDefToken . sdekAccessToken)
+  let cityReq = withToken (_getReq' httpManager cityUrl cityParams [])
   eCities <- makeRequestWithRetries @[SdekCity] (Just (void $ getValidSdekToken)) cityReq
   handleApiResponse @_ @[SdekCity] $(currentModule) eCities $ \case
     [] -> do
@@ -267,7 +272,7 @@ registerOrder order = do
   $(logTM) InfoS $ logStr $ "registering order in sdek" <> show order
   let ordersUrl = show HTTPS <> url <> "/v2/orders"
   let httpManager = _configHttpManager cfg
-  let ordersReq = getValidSdekToken >>= (_postReq' httpManager ordersUrl order . Just . mkDefToken . sdekAccessToken)
+  let ordersReq = withToken (_postReq' httpManager ordersUrl order [])
   eOrders <- makeRequestWithRetries @SdekOrderResponse (Just (void $ getValidSdekToken)) ordersReq
   handleApiResponse @_ @SdekOrderResponse $(currentModule) eOrders $ \resp -> do
     when(sorRequestState resp == Accepted) $ 
@@ -307,7 +312,7 @@ getOrderStatus uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
-  let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken . sdekAccessToken)
+  let ordersReq = withToken (_getReq' httpManager fullUrl mempty [])
   eOrders <- makeRequestWithRetries @SdekOrderStatusResponse (Just (void $ getValidSdekToken)) ordersReq
   handleApiResponse @_ @SdekOrderStatusResponse $(currentModule) eOrders $ pure . Right
 
@@ -319,7 +324,7 @@ getOrdersInTransit uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/orders/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
-  let ordersReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken . sdekAccessToken)
+  let ordersReq = withToken (_getReq' httpManager fullUrl mempty [])
   makeRequestWithRetries @SdekOrderInTransitResponse (Just (void $ getValidSdekToken)) ordersReq
 
 
@@ -336,7 +341,7 @@ getDeliveryPointByCode code = do
     -- When searching by a unique 'code', we should NOT filter by 'type'.
     -- This allows the API to return the result whether it's a PVZ or a POSTAMAT.
   let params = [("code", code)]
-  let pointsReq = getValidSdekToken >>= (_getReq' httpManager pointsUrl params . Just . mkDefToken . sdekAccessToken)
+  let pointsReq = withToken (_getReq' httpManager pointsUrl params [])
   ePoints <- makeRequestWithRetries @[Sdek.DeliveryPoint] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[Sdek.DeliveryPoint] $(currentModule) ePoints $ pure . Right
 
@@ -351,7 +356,7 @@ getCityByName cityName = do
         , ("city", cityName)
         , ("size", tshow 1)
         ]
-  let pointsReq = getValidSdekToken >>= (_getReq' httpManager cityUrl params . Just . mkDefToken . sdekAccessToken)
+  let pointsReq = withToken (_getReq' httpManager cityUrl params [])
   ePoints <- makeRequestWithRetries @[SdekCityWithCode] (Just (void $ getValidSdekToken)) pointsReq
   handleApiResponse @_ @[SdekCityWithCode] $(currentModule) ePoints $ pure . Right
 
@@ -362,7 +367,7 @@ getTotalSumByTariff totalSum = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let tariffUrl = show HTTPS <> url <> "/v2/calculator/tariff"
-  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager tariffUrl totalSum . Just . mkDefToken . sdekAccessToken)
+  let totalSumReq = withToken (_postReq' httpManager tariffUrl totalSum [])
   makeRequestWithRetries @TotalSumResponse (Just (void $ getValidSdekToken)) totalSumReq
 
 
@@ -372,7 +377,7 @@ patchOrder patchedOrder = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let patchUrl = show HTTPS <> url <> "/v2/orders"
-  let patchReq = getValidSdekToken >>= (_patchReq' httpManager patchUrl patchedOrder . Just . mkDefToken . sdekAccessToken)
+  let patchReq = withToken (_patchReq' httpManager patchUrl patchedOrder [])
   makeRequestWithRetries @PatchedOrderResponse (Just (void $ getValidSdekToken)) patchReq
 
 obtainOrderReceiptUrl :: UUID -> AppM (Either HttpError ReceiptStatusResponse)
@@ -381,7 +386,7 @@ obtainOrderReceiptUrl uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let receiptUrl = show HTTPS <> url <> "/v2/print/orders/" <> show uuid
-  let receiptReq = getValidSdekToken >>= (_getReq' httpManager receiptUrl [] . Just . mkDefToken . sdekAccessToken)
+  let receiptReq = withToken (_getReq' httpManager receiptUrl [] [])
   makeRequestWithRetries @ReceiptStatusResponse (Just (void $ getValidSdekToken)) receiptReq
 
 
@@ -392,7 +397,7 @@ requestReceiptGeneration uuid = do
   let httpManager = _configHttpManager cfg
   let printfUrl = show HTTPS <> url <> "/v2/print/orders"
   let orders = ReceiptRegisterRequest [ReceiptRegisterRequestOrder uuid] 2
-  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl orders . Just . mkDefToken . sdekAccessToken)
+  let totalSumReq = withToken (_postReq' httpManager printfUrl orders [])
   makeRequestWithRetries @ReceiptRegisterResponse (Just (void $ getValidSdekToken)) totalSumReq
 
 
@@ -402,7 +407,7 @@ cancelOrder uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let httpManager = _configHttpManager cfg
   let cancelUrl = show HTTPS <> url <> "/v2/orders/" <> show uuid
-  let cancelReq = getValidSdekToken >>= (_deleteReq' httpManager cancelUrl . Just . mkDefToken . sdekAccessToken)
+  let cancelReq = withToken (_deleteReq' httpManager cancelUrl [])
   makeRequestWithRetries @CancelOrderResponse (Just (void $ getValidSdekToken)) cancelReq
 
 
@@ -414,7 +419,7 @@ getAvailableTariffs fromLocation toLocation = do
   let maxWeight = 20000
   let printfUrl = show HTTPS <> url <> "/v2/calculator/tarifflist"
   let tariff = AvailableTariffsRequest  fromLocation toLocation [Package maxWeight 0 0 0]
-  let totalSumReq = getValidSdekToken >>= (_postReq' httpManager printfUrl tariff . Just . mkDefToken . sdekAccessToken)
+  let totalSumReq = withToken (_postReq' httpManager printfUrl tariff [])
   makeRequestWithRetries @AvailableTariffsResponse (Just (void $ getValidSdekToken)) totalSumReq
 
 
@@ -439,7 +444,7 @@ registerCourierCall uuid = do
            , scsPhones = [SenderPhone (Sdek.phone (Sdek.sender sdekConfig))]
            }
         }
-  let courierReq = getValidSdekToken >>= (_postReq' httpManager courierUrl sdekCourierRequest . Just . mkDefToken . sdekAccessToken)
+  let courierReq = withToken (_postReq' httpManager courierUrl sdekCourierRequest [])
   makeRequestWithRetries @SdekCourierResponse (Just (void $ getValidSdekToken)) courierReq
 
 getPickupApplication :: UUID -> AppM (Either HttpError SdekPickupApplicationResponse)
@@ -449,7 +454,7 @@ getPickupApplication uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
-  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
+  let pickupReq = withToken (_getReq' httpManager fullUrl mempty [])
   makeRequestWithRetries @SdekPickupApplicationResponse (Just (void $ getValidSdekToken)) pickupReq
 
 
@@ -460,5 +465,5 @@ getPickupApplicationStatus uuid = do
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg
   let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
   let httpManager = _configHttpManager cfg
-  let pickupReq = getValidSdekToken >>= (_getReq' httpManager fullUrl mempty . Just . mkDefToken. sdekAccessToken)
+  let pickupReq = withToken (_getReq' httpManager fullUrl mempty [])
   makeRequestWithRetries @SdekPickupAppStatusResponse (Just (void $ getValidSdekToken)) pickupReq
