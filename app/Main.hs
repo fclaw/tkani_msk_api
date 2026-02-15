@@ -83,6 +83,7 @@ import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJan
 import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
 import Workers.SdekCourierStatusPoller (runSdekCourierStatusPoller)
 import Workers.SdekPickupAppStatusPoller (runSdekPickupAppStatusPoller)
+import Workers.CancelledOrdersCleaner (runCancelledOrdersCleaner)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -112,6 +113,7 @@ data Workers =
       | ShelfSubmissionObserver
       | SdekCourierStatusPoller
       | SdekPickupAppStatusPoller
+      | CancelledOrdersCleaner
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -133,7 +135,7 @@ instance Show Workers where
   show ShelfSubmissionObserver          = "Shelf Submission Observer"
   show SdekCourierStatusPoller          = "SDEK Courier Status Poller"
   show SdekPickupAppStatusPoller        = "SDEK Pickup App Status Poller"
-
+  show CancelledOrdersCleaner           = "Cancelled Orders Cleaner"
 
 
 methodsCors :: Middleware
@@ -431,6 +433,11 @@ main = do
                  appMToHandler (runShelfSubmissionObserver connInfo appMToHandler)
                    >>= showErrorInWorker
                         ShelfSubmissionObserver)
+              , (CancelledOrdersCleaner,
+                 runForever 30 $
+                   appMToHandler (runCancelledOrdersCleaner)
+                     >>= showErrorInWorker
+                            CancelledOrdersCleaner)
               ]
 
         let courierPickupTasks 

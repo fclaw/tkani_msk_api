@@ -31,6 +31,7 @@ library:
     - Workers.ShelfSubmissionObserver
     - Workers.SdekCourierStatusPoller
     - Workers.SdekPickupAppStatusPoller
+    - Workers.CancelledOrdersCleaner
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

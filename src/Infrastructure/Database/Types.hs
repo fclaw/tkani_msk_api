@@ -18,6 +18,7 @@ import           Data.Char (toLower)
 import           Data.Time.Calendar.Month (Month)
 
 
+import App (ChatKey)
 import Domain.Logic.Dimensions
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Text (recordLabelModifier, encodeToText)
@@ -365,3 +366,13 @@ data OrdersForCourierPickup =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocp" } ''OrdersForCourierPickup)
+
+
+data CancelledOrders =
+     CancelledOrders
+     { coOrderId   :: Text
+     , coChannel   :: ChatKey
+     , coMessageId :: Int64
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "co" } ''CancelledOrders)

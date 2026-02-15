@@ -94,6 +94,8 @@ module Infrastructure.Database
   , updatePickedUpOrdersStatus
    -- fabric media
   , addMediaToFabric
+  , fetchCancelledOrders
+  , markedCancelledOrders
   ) where
 
 
@@ -127,7 +129,7 @@ import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
 import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del3, del7)
 
 
-import App (AppM, PaymentFlow)
+import App (AppM, PaymentFlow, ChatKey (..))
 import Utils.Sql (splitSql)
 import API.Types hiding (Active) -- Your data types
 import TH.RecordToTuple (recordToTuple, tupleToRecord)
@@ -3017,3 +3019,60 @@ addMediaToFabric media pool =
        , media_type)
        VALUES ($1 :: int8, $2 :: text, $3 :: text, $4 :: text)
      |]
+
+
+fetchCancelledOrders :: Hasql.Pool -> AppM (Either Text [CancelledOrders])
+fetchCancelledOrders pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement () $
+       rmap (map (extractADT . convertFromJson @CancelledOrders) . V.toList) $
+       [Hasql.vectorStatement|
+         SELECT
+           jsonb_build_object(
+            'order_id', id,
+            'channel', to_jsonb('main' :: text), 
+            'message_id', COALESCE(internal_notification_message_id, 0))
+            :: jsonb
+         FROM orders
+         WHERE status = 'cancelled'
+         AND is_erased = FALSE
+          
+         UNION ALL
+
+         SELECT 
+           jsonb_build_object(
+            'order_id', order_id,
+            'channel', to_jsonb('shelf' :: text), 
+            'message_id', COALESCE(internal_notification_message_id, 0))
+            :: jsonb
+         FROM shelf_orders
+         WHERE status = 'cancelled'
+         AND is_erased = FALSE   
+       |]
+
+markedCancelledOrders :: [(Text, ChatKey)] -> Hasql.Pool -> AppM (Either Text ())
+markedCancelledOrders ids pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+     
+     let mainOrders = V.fromList $ fst $ unzip $ filter (\(_, channel) -> channel == MAIN) ids
+     let shelfOrders = V.fromList $ fst $ unzip $ filter (\(_, channel) -> channel == SHELF) ids
+
+     Hasql.statement (mainOrders) $
+      [Hasql.resultlessStatement|
+       UPDATE orders
+       SET is_erased = TRUE
+       WHERE id = ANY($1 :: text[])
+       AND status = 'cancelled' 
+       AND is_erased = FALSE
+      |]
+
+     Hasql.statement (shelfOrders) $
+      [Hasql.resultlessStatement|
+       UPDATE shelf_orders
+       SET is_erased = TRUE
+       WHERE order_id = ANY($1 :: text[])
+       AND status = 'cancelled' 
+       AND is_erased = FALSE
+      |]

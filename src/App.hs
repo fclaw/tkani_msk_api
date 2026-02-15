@@ -69,6 +69,7 @@ import Data.Time (UTCTime)
 import qualified Data.HashSet as HS
 import Control.Concurrent (MVar)
 import Data.UUID (UUID)
+import Data.Char (toLower)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Control.Concurrent (forkIO)
@@ -395,10 +396,6 @@ extractFromEither (Right r) app = app r
 extractFromEither (Left e) _ = $(logTM) ErrorS $ ls $ "either has resulted in error: " <> show e
 
 
-$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''PaymentFlow)
-
-
-
 -- | Forks an AppM action into a separate thread. This is for "fire-and-forget"
 --   tasks where we do not need the result. It ensures any exceptions in the
 --   background thread are caught and logged, preventing them from crashing the server.
@@ -418,3 +415,6 @@ forkAppM action = do
       Left (ex :: SomeException) ->
         -- The IO action itself threw a raw exception. Log it.
         putStrLn $ "Exception in forked thread (IO): " ++ show ex
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''PaymentFlow)
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''ChatKey)
