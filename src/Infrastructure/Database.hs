@@ -96,6 +96,8 @@ module Infrastructure.Database
   , addMediaToFabric
   , fetchCancelledOrders
   , markedCancelledOrders
+    -- emergency case when order fails to be patched
+  , fetchOrderDetailsForYaml
   ) where
 
 
@@ -3076,3 +3078,120 @@ markedCancelledOrders ids pool =
        AND status = 'cancelled' 
        AND is_erased = FALSE
       |]
+
+fetchOrderDetailsForYaml :: Text -> Hasql.Pool -> AppM (Either Text OrderDetailsForYaml)
+fetchOrderDetailsForYaml orderId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (orderId) $
+     rmap (extractADT . convertFromJson @OrderDetailsForYaml)
+     [Hasql.singletonStatement|
+       SELECT
+        jsonb_build_object(
+         'customer_full_name', 
+         o.customer_full_name,
+         'customer_phone', 
+         o.customer_phone,
+         'delivery_provider_id', 
+         to_jsonb(o.delivery_provider_id),
+         'delivery_point_id', 
+         o.delivery_point_id,
+         'physical_dimensions',
+         jsonb_build_object(
+          'length', o.length,
+          'width', o.width,
+          'height', o.height),
+         'items',
+          array_agg(
+           jsonb_build_object(
+            'name', 
+             CASE 
+               WHEN pc.id IS NULL 
+               THEN f.name 
+               ELSE fpc.name 
+             END,
+            'fabric_type', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN 'roll' 
+              ELSE 'pre_cut' 
+             END,
+            'total_price', 
+             CASE 
+              WHEN pc.id IS NULL THEN 
+              ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
+              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+             END,
+            'length_m', COALESCE(ofb.length_m, pc.length_m),
+            'weight', 
+              COALESCE(ofb.length_m, pc.length_m) * 
+                       COALESCE(f.weight_per_metre, fpc.weight_per_metre)
+           ))) ::jsonb
+        FROM orders AS o
+        INNER JOIN order_fabric_bindings AS ofb
+        ON o.id = ofb.order_id
+        LEFT JOIN fabrics AS f
+        ON ofb.fabric_id = f.id
+        LEFT JOIN pre_cuts AS pc
+        ON ofb.pre_cut_id = pc.id
+        LEFT JOIN fabrics AS fpc
+        ON pc.fabric_id = fpc.id
+        WHERE o.id = $1 :: text
+        GROUP BY o.id, o.customer_full_name, o.customer_phone, o.delivery_provider_id, o.delivery_point_id, o.length, o.width, o.height
+
+        
+        UNION ALL
+
+        SELECT
+        jsonb_build_object(
+         'customer_full_name', 
+         o.customer_full_name,
+         'customer_phone', 
+         o.customer_phone,
+         'delivery_provider_id', 
+         to_jsonb(o.delivery_provider_id),
+         'delivery_point_id', 
+         o.delivery_point_id,
+         'physical_dimensions',
+         jsonb_build_object(
+          'length', o.length,
+          'width', o.width,
+          'height', o.height),
+         'items',
+          array_agg(
+           jsonb_build_object(
+            'name', 
+             CASE 
+               WHEN pc.id IS NULL 
+               THEN f.name 
+               ELSE fpc.name 
+             END,
+            'fabric_type', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN 'roll' 
+              ELSE 'pre_cut' 
+             END,
+            'total_price', 
+             CASE 
+              WHEN pc.id IS NULL THEN 
+              ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
+              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+             END,
+            'length_m', COALESCE(si.length_m, pc.length_m),
+            'weight', 
+              COALESCE(si.length_m, pc.length_m) * 
+                       COALESCE(f.weight_per_metre, fpc.weight_per_metre)
+           ))) ::jsonb
+        FROM orders AS o
+        INNER JOIN shelf_items AS si
+        ON o.id = si.main_order_id
+        LEFT JOIN fabrics AS f
+        ON si.fabric_id = f.id
+        LEFT JOIN pre_cuts AS pc
+        ON si.pre_cut_id = pc.id
+        LEFT JOIN fabrics AS fpc
+        ON pc.fabric_id = fpc.id
+        WHERE o.id = $1 :: text
+        GROUP BY o.id, o.customer_full_name, o.customer_phone, o.delivery_provider_id, o.delivery_point_id, o.length, o.width, o.height
+     |]

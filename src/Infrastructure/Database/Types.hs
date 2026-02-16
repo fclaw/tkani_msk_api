@@ -24,7 +24,7 @@ import Domain.Warehouse.Enums (FabricLifecycle)
 import Text (recordLabelModifier, encodeToText)
 import Infrastructure.Services.Types (PaymentProvider)
 import Domain.Warehouse.Types (FabricType, Fabric (..))
-import API.Types (RawIngestRequest (..), MediaType)
+import API.Types (RawIngestRequest (..), MediaType, Providers)
 
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -376,3 +376,35 @@ data CancelledOrders =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "co" } ''CancelledOrders)
+
+data OrderDetailsForYamlItem = 
+     OrderDetailsForYamlItem
+     { odfyiName       :: Text
+     , odfyiFabricType :: FabricType
+     , odfyiTotalPrice :: Double
+     , odfyiLengthM    :: Double
+     , odfyiWeight     :: Int32
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odfyi" } ''OrderDetailsForYamlItem)
+
+data OrderDetailsForYamlPhysicalDimensions =
+     OrderDetailsForYamlPhysicalDimensions 
+     { odfypdLength :: Int32
+     , odfypdWidth  :: Int32
+     , odfypdHeight :: Int32
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odfypd" } ''OrderDetailsForYamlPhysicalDimensions)
+
+data OrderDetailsForYaml = 
+     OrderDetailsForYaml
+     { odfyCustomerFullName   :: Text
+     , odfyCustomerPhone      :: Text
+     , odfyDeliveryProviderId :: Providers
+     , odfyDeliveryPointId    :: Text
+     , odfyItems              :: [OrderDetailsForYamlItem]
+     , odfyPhysicalDimensions :: OrderDetailsForYamlPhysicalDimensions
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odfy" } ''OrderDetailsForYaml)

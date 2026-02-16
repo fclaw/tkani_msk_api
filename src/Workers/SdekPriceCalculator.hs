@@ -19,6 +19,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics
 import Data.UUID (UUID)
+import qualified Data.Yaml as Yaml
 import qualified Data.ByteString.Lazy as BL
 import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Notification as PG
@@ -46,16 +47,16 @@ import Infrastructure.Database
        , getPatchedOrderDetails
        , getOrderDetailsForPricing
        , updateOrderStatus
+       , fetchOrderDetailsForYaml
        , PatchedOrderDetails (..)
        , PatchedOrderDetailsItem (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
 import Infrastructure.Services.Sdek.CachedCityCodes (fetchCityCodeForPvz)
 import Infrastructure.Services.Sdek.Types.Config (dropOffPoint, commissionRate)
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, sendDocument)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Sdek.Types.Enums (SdekVatRate (VatRate7, NoVat), vatToDouble)
 import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration, getOrderStatus)
-import qualified Infrastructure.Services.Sdek as Sdek (cancelOrder)
 import Infrastructure.Services.Sdek.Types
 import Concurrency (runJobWithCleanup)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
@@ -307,3 +308,14 @@ cancelOrder :: Text -> AppM ()
 cancelOrder orderId = do
   $(logTM) InfoS $ "Starting SDEK order cancellation process for order: " <> ls orderId
   void $ fmap _appDBPool ask >>= updateOrderStatus orderId Cancelled Nothing
+  -- make yaml file from order details for manual uploading
+  cfg <- ask
+  let pool = _appDBPool cfg
+  eDbRes <- fetchOrderDetailsForYaml orderId pool
+  for_ eDbRes $ \orderDetails -> do
+    let bytes = Yaml.encode $ toJSON orderDetails
+    let message = escapeMarkdownV2 $ "‼️ order " <> orderId <> " patch fails"
+    let file = orderId <> ".yaml"
+    void $ sendDocument ORDER message file bytes "application/x-yaml"
+  when (isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "fetchOrderDetailsForYaml resulted in error: " <> tshow eDbRes
+  
