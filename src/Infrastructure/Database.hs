@@ -860,7 +860,7 @@ searchFabricCardStatement =
             'description', f.description,
             'media_type', to_jsonb(f.media_type),
             'width', f.width,
-            'media', COALESCE(ml.pictures, '{}' :: jsonb[])
+            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
           ) :: jsonb AS item_json
         FROM pre_cuts AS pc
         LEFT JOIN cart_items AS ci
