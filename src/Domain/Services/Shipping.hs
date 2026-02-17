@@ -200,14 +200,25 @@ mkPickupOderRequest location dropOffPoint recipient orders =
             pkgHeight = Just $ fromIntegral ocpHeight
         in SdekPackage {..}
   in
+    -- Constructs a SdekOrderRequest for a "door-to-warehouse" (pickup to SDEK point) shipment.
+    --  This request defines the pickup details, the specific tariff, and the items being sent.
     SdekOrderRequest
-    { sorTariffCode    = 138 -- Courier pickup tariff code
-    , sorRecipient     = recipient
-    , sorPackages      = packages
-    , sorShipmentPoint = Nothing
-    , sorFromLocation  = Just location
-    , sorDeliveryPoint = dropOffPoint
-    , sorServices      = []
+    { sorTariffCode    = 158
+      -- ^ **CRITICAL NOTE:** Tariff code 158 corresponds to "Забор груза дверь-склад" (Courier pickup door-warehouse).
+      --   This code was determined via network inspection as it is not consistently
+      --   documented or appears as code 138 in some SDEK API versions/docs.
+      --   It is used to explicitly request a SDEK courier pickup service from our location.
+    
+    , sorRecipient     = recipient -- Details of the final recipient of the parcel.
+    , sorPackages      = packages  -- List of items to be picked up, including weight/dimensions.
+    
+    , sorShipmentPoint = Nothing   -- For 'дверь-склад', this means the pickup location is provided in 'fromLocation'.
+                                   -- This would be 'Just pointId' if shipping FROM a SDEK PVZ.
+    
+    , sorFromLocation  = Just location -- Our warehouse location for the pickup.
+    , sorDeliveryPoint = dropOffPoint  -- The SDEK pickup point (PVZ) where the customer will collect.
+    
+    , sorServices      = []        -- Additional SDEK services (e.g., insurance, fragile handling).
     }
 
 wrap action error = withExceptT error (ExceptT action)
