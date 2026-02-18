@@ -56,14 +56,14 @@ runSdekPickupAppStatusPoller = do
                     APPOINTED_COURIER -> do
                       $(logTM) InfoS $ "Courier assigned"
                       -- Send notification to customer etc.
-                      updatePickedUpOrdersStatus id PickedUpByCourier pool
+                      -- status hasn't changed
                       let msg = escapeMarkdownV2 $ "courier has been assigned to the order"
                       void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                     DONE -> do
                       $(logTM) InfoS $ "Pickup completed"
                       -- Handle order fulfillment etc.
                       -- Send notification to customer etc.
-                      updatePickedUpOrdersStatus id OnRoute pool
+                      updatePickedUpOrdersStatus id PickedUpByCourier pool
                       let msg = escapeMarkdownV2 $ "the fulfillment of the order has been completed"
                       void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                     PROBLEM_DETECTED -> do
