@@ -3,6 +3,6 @@
 BEGIN;
 
 -- XXX Add DDLs here.
-ALTER TABLE shelves ADD COLUMN preferred_sdek_point TEXT
+ALTER TABLE shelves ADD COLUMN preferred_sdek_point TEXT;
 
 COMMIT;
