@@ -711,8 +711,9 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sscd" } 
 
 data ShelfPersonalInfo =
      ShelfPersonalInfo
-     { spiFullName :: Maybe Text
-     , spiPhone    :: Maybe Text
+     { spiFullName           :: Maybe Text
+     , spiPhone              :: Maybe Text
+     , spiPreferredSdekPoint :: Maybe Text
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "spi" } ''ShelfPersonalInfo)
@@ -727,3 +728,11 @@ data FabricMediaRequest =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fmr" } ''FabricMediaRequest)
+
+data PreferredSdekPointWithAddress =
+     PreferredSdekPointWithAddress
+     { pswaCode    :: Text
+     , pswaAddress :: Text
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pswa" } ''PreferredSdekPointWithAddress)

@@ -56,3 +56,4 @@
 00052.courier_pickup_app_uuid 2026-02-09T04:53:57Z System Administrator <root@Sonny.local> # sdek: courier pickup
 00054.media_fabric 2026-02-13T06:09:36Z System Administrator <root@Sonny.local> # fabric media
 00055.order_is_erased 2026-02-15T15:51:08Z System Administrator <root@Sonny.local> # order: is_erased
+00056.shelf_preferred_sdek_point 2026-02-18T05:50:52Z System Administrator <root@Sonny.local> # shelf: preferred sdek point

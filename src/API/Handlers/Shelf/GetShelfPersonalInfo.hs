@@ -16,4 +16,4 @@ import API.Types(ApiResponse, ShelfPersonalInfo (..), mkError)
 handler :: Int64 -> AppM (ApiResponse ShelfPersonalInfo)
 handler userId = do
   pool <- fmap _appDBPool ask
-  fmap (bimap (const (mkError "server error")) (uncurry ShelfPersonalInfo)) $ getShelfPersonalInfo userId pool
+  fmap (bimap (const (mkError "server error")) (\(x, y, z) -> ShelfPersonalInfo x y z)) $ getShelfPersonalInfo userId pool

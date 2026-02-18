@@ -98,6 +98,8 @@ module Infrastructure.Database
   , markedCancelledOrders
     -- emergency case when order fails to be patched
   , fetchOrderDetailsForYaml
+  , fetchLostParcels
+  , fetchPreferredSdekPoint
   ) where
 
 
@@ -2940,16 +2942,16 @@ saveShelfSubmissionInfo submission pool =
         ON CONFLICT (chat_id, message_id) DO NOTHING
        |]
 
-getShelfPersonalInfo :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe Text, Maybe Text))
+getShelfPersonalInfo :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe Text, Maybe Text, Maybe Text))
 getShelfPersonalInfo userId pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
      Hasql.statement (userId) $
-     rmap (bimap Just Just) $
      [Hasql.singletonStatement|
       SELECT
-      user_initials :: text,
-      user_phone :: text
+      user_initials :: text?,
+      user_phone :: text?,
+      preferred_sdek_point :: text?
       FROM shelves
       WHERE telegram_user_id = $1 :: int8
      |]
@@ -2963,7 +2965,8 @@ editShelfPersonalInfo userId personalInfo pool =
      [Hasql.resultlessStatement|
       UPDATE shelves
       SET user_initials = COALESCE($2 :: text?, user_initials),
-          user_phone = COALESCE($3 :: text?, user_phone)
+          user_phone = COALESCE($3 :: text?, user_phone),
+          preferred_sdek_point = COALESCE($4 :: text?, preferred_sdek_point)
       WHERE telegram_user_id = $1 :: int8
      |]
 
@@ -3194,4 +3197,28 @@ fetchOrderDetailsForYaml orderId pool =
         ON pc.fabric_id = fpc.id
         WHERE o.id = $1 :: text
         GROUP BY o.id, o.customer_full_name, o.customer_phone, o.delivery_provider_id, o.delivery_point_id, o.length, o.width, o.height
+     |]
+
+fetchLostParcels :: Hasql.Pool -> AppM (Either Text [Text])
+fetchLostParcels pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement () $
+      rmap V.toList
+      [Hasql.vectorStatement|
+       SELECT id :: text
+       FROM orders 
+       WHERE status = 'picked_up_by_courier' 
+       AND NOW() - updated_at > interval '1 day'
+      |]
+
+fetchPreferredSdekPoint :: Int64 -> Hasql.Pool -> AppM (Either Text (Maybe Text))
+fetchPreferredSdekPoint userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+     Hasql.statement (userId) $
+     [Hasql.singletonStatement|
+      SELECT preferred_sdek_point :: text?
+      FROM shelves
+      WHERE telegram_user_id = $1 :: int8
      |]

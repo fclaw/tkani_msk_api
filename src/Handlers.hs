@@ -46,6 +46,9 @@ import qualified API.Handlers.Shelf.SaveShelfSubmissionInfo as SaveShelfSubmissi
 import qualified API.Handlers.Shelf.GetShelfPersonalInfo as GetShelfPersonalInfo
 import qualified API.Handlers.Shelf.EditShelfPersonalInfo as EditShelfPersonalInfo
 
+import qualified API.Handlers.GetSdekPointFullAddress as GetSdekPointFullAddress
+import qualified API.Handlers.GetPreferredSdekPointWithAddress as GetPreferredSdekPointWithAddress
+
 
 
 -- This is the implementation of our server.
@@ -86,4 +89,7 @@ apiHandlers = Routes
   , _saveShelfSubmissionInfo   = SaveShelfSubmissionInfo.handler
   , _getShelfPersonalInfo      = GetShelfPersonalInfo.handler
   , _editShelfPersonalInfo     = EditShelfPersonalInfo.handler
+
+  , _getSdekPointFullAddress          = GetSdekPointFullAddress.handler
+  , _getPreferredSdekPointWithAddress = GetPreferredSdekPointWithAddress.handler
   }

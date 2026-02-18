@@ -35,6 +35,8 @@ library
       Workers.ShelfSubmissionObserver
       Workers.SdekCourierStatusPoller
       Workers.SdekPickupAppStatusPoller
+      Workers.CancelledOrdersCleaner
+      Workers.ParcelDeliveryWatcher
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -50,7 +52,9 @@ library
       API.Handlers.GetCatalogSummary
       API.Handlers.GetDeliveryPoints
       API.Handlers.GetFabricPreview
+      API.Handlers.GetPreferredSdekPointWithAddress
       API.Handlers.GetProviders
+      API.Handlers.GetSdekPointFullAddress
       API.Handlers.MeasureOrder
       API.Handlers.PatchFabric
       API.Handlers.PlaceNewOrder
@@ -73,6 +77,7 @@ library
       API.Handlers.Shelf.SaveShelfSubmissionInfo
       API.Handlers.TallyUpExpenses
       API.Handlers.TrackOrder
+      API.Handlers.UploadMediaForFabric
       API.Handlers.ViewCart
       API.WithField
       Concurrency
@@ -89,6 +94,8 @@ library
       Infrastructure.Database.Fabric
       Infrastructure.Database.Types
       Infrastructure.Database.Utils
+      Infrastructure.Services.DaData
+      Infrastructure.Services.DaData.StandardisedAddress
       Infrastructure.Services.Dostavista
       Infrastructure.Services.Dostavista.Types
       Infrastructure.Services.Dostavista.Types.Enums
@@ -101,6 +108,7 @@ library
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedCityCodes
       Infrastructure.Services.Sdek.CachedDeliveryPoints
+      Infrastructure.Services.Sdek.CachedDeliveryPointsCodes
       Infrastructure.Services.Sdek.CachedTariffs
       Infrastructure.Services.Sdek.Geocode
       Infrastructure.Services.Sdek.Types.Courier
@@ -128,6 +136,7 @@ library
       Utils.Sql
       Utils.Telegram.Markdown
       Utils.Time
+      Workers.FabricLifecycleManager
       Paths_tkani_api
   hs-source-dirs:
       src

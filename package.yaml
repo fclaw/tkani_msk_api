@@ -32,6 +32,7 @@ library:
     - Workers.SdekCourierStatusPoller
     - Workers.SdekPickupAppStatusPoller
     - Workers.CancelledOrdersCleaner
+    - Workers.ParcelDeliveryWatcher
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

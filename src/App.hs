@@ -30,6 +30,7 @@ module App
     PaymentFlow (..),
     NormalizedRoute (..),
     SdekCourierJob (..),
+    SdekPointCode (..),
     currentTime,
     render,
     runAppM,
@@ -226,6 +227,44 @@ instance Ord NormalizedRoute where
     compare (normalizeTuple r1) (normalizeTuple r2)
 
 
+data SdekPointCode = 
+     SdekPointCode
+     { spcCode    :: Text
+     , spcAddress :: Text
+     } deriving Show
+
+-- Helper ADT for the nested 'location' object, extracting only what's needed.
+-- We can ignore most of its fields if only address_full is important.
+data SdekPointLocation = SdekPointLocation
+  { locAddressFull :: Text
+  -- You could add locLatitude :: Scientific, locLongitude :: Scientific here if needed
+  } deriving (Show, Generic)
+
+-- Custom FromJSON instance for the nested location.
+-- It's important that this maps 'address_full' to 'locAddressFull'.
+instance FromJSON SdekPointLocation where
+  parseJSON = withObject "SdekPointLocation" $ \v -> SdekPointLocation
+    <$> v .: "address_full"
+
+instance FromJSON SdekPointCode where
+  parseJSON = 
+    withObject "SdekPointCode" $ \o -> do
+    -- Extract 'code' from the top-level object 'o'.
+    code <- o .: "code"
+    
+    -- Extract the nested 'location' object from 'o'.
+    locationObj <- o .: "location"
+    
+    -- Parse the 'locationObj' into our SdekPointLocation helper type.
+    -- This uses the FromJSON instance for SdekPointLocation.
+    parsedLocation <- parseJSON locationObj
+    
+    -- Now, construct our SdekPointCode record.
+    pure $ SdekPointCode
+      { spcCode    = code
+      , spcAddress = locAddressFull parsedLocation -- Get the specific field from the parsed location.
+      }
+
 
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
@@ -241,6 +280,7 @@ data State = State
   , _metroStations      :: [MetroStation]
   , _dostavistaChan     :: TChan DostavistaJob
   , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
+  , _sdekPointsCodes    :: Maybe (UTCTime, [SdekPointCode])
   }
 
 

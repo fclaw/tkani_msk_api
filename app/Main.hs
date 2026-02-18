@@ -84,6 +84,7 @@ import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
 import Workers.SdekCourierStatusPoller (runSdekCourierStatusPoller)
 import Workers.SdekPickupAppStatusPoller (runSdekPickupAppStatusPoller)
 import Workers.CancelledOrdersCleaner (runCancelledOrdersCleaner)
+import Workers.ParcelDeliveryWatcher (runParcelDeliveryWatcher)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -114,6 +115,7 @@ data Workers =
       | SdekCourierStatusPoller
       | SdekPickupAppStatusPoller
       | CancelledOrdersCleaner
+      | ParcelDeliveryWatcher
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -136,6 +138,7 @@ instance Show Workers where
   show SdekCourierStatusPoller          = "SDEK Courier Status Poller"
   show SdekPickupAppStatusPoller        = "SDEK Pickup App Status Poller"
   show CancelledOrdersCleaner           = "Cancelled Orders Cleaner"
+  show ParcelDeliveryWatcher            = "Parcel Delivery Watcher"
 
 
 methodsCors :: Middleware
@@ -344,6 +347,7 @@ main = do
            , _dostavistaChan     = dostavistaChan
            , _allSdekPointsCache =  Nothing
            , _sdekTariffs        = mempty
+           , _sdekPointsCodes    = Nothing
            }
       initialState <- newTVarIO state
   
@@ -438,6 +442,11 @@ main = do
                    appMToHandler (runCancelledOrdersCleaner)
                      >>= showErrorInWorker
                             CancelledOrdersCleaner)
+              , (ParcelDeliveryWatcher,
+                 runForever 720 $
+                   appMToHandler (runParcelDeliveryWatcher)
+                     >>= showErrorInWorker
+                           ParcelDeliveryWatcher)
               ]
 
         let courierPickupTasks 
