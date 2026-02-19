@@ -14,7 +14,7 @@ import Control.Monad.Reader.Class (ask)
 import Text (tshow)
 import App (AppM, SdekPointCode (..), _appDBPool)
 import API.Types (ApiResponse, PreferredSdekPointWithAddress (..))
-import Infrastructure.Database (fetchPreferredSdekPoint, removePreferredSdekPoint)
+import Infrastructure.Database (fetchPreferredSdekPoint)
 import Infrastructure.Services.Sdek.CachedDeliveryPointsCodes (fetchCodes)
 
 
@@ -34,7 +34,5 @@ handler userId = do
             fmap spcAddress $
               flip find codes $
                 \SdekPointCode {..} -> 
-                   spcCode == code
-      when(isNothing address) $
-        void $ removePreferredSdekPoint userId pool         
+                   spcCode == code       
       return $ Right $ fmap (PreferredSdekPointWithAddress code) address
