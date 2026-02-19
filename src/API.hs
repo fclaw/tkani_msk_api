@@ -266,6 +266,13 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] ShelfPersonalInfo
        :> Patch '[JSON] (ApiResponse ())
+    , _getSdekPreferredPoint
+       :: route
+       :- "shelf"
+       :> Capture "user_id" Int64
+       :> "sdek-preferred-point"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Get '[JSON] (ApiResponse (Maybe PreferredSdekPointWithAddress))
 
     , _getSdekPointFullAddress
        :: route
@@ -275,15 +282,6 @@ data Routes route = Routes
        :> QueryParam "code" Text
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse (Maybe Text))
-
-     , _getPreferredSdekPointWithAddress
-       :: route
-       :- "sdek"
-       :> "point"
-       :> "preferred"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> Capture "user_id" Int64
-       :> Get '[JSON] (ApiResponse (Maybe PreferredSdekPointWithAddress))
 
   } deriving (Generic)
 

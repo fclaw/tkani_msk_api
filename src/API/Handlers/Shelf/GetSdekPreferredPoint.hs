@@ -2,18 +2,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module API.Handlers.GetPreferredSdekPointWithAddress(handler) where
+module API.Handlers.Shelf.GetSdekPreferredPoint(handler) where
 
 import Katip
 import Data.List (find)
 import Data.Int (Int64)
-import Data.Maybe (fromMaybe)
+import Control.Monad (when, void)
+import Data.Maybe (isNothing)
 import Control.Monad.Reader.Class (ask)
 
 import Text (tshow)
 import App (AppM, SdekPointCode (..), _appDBPool)
 import API.Types (ApiResponse, PreferredSdekPointWithAddress (..))
-import Infrastructure.Database (fetchPreferredSdekPoint)
+import Infrastructure.Database (fetchPreferredSdekPoint, removePreferredSdekPoint)
 import Infrastructure.Services.Sdek.CachedDeliveryPointsCodes (fetchCodes)
 
 
@@ -25,14 +26,15 @@ handler userId = do
   let pool = _appDBPool cfg
   eDbRes <- fetchPreferredSdekPoint userId pool
   case eDbRes of
-    Left err -> fmap undefined $ $(logTM) ErrorS $ "db error in Handlers.GetPreferredSdekPointWithAddress: " <> ls (tshow err)
+    Left err -> fmap undefined $ $(logTM) ErrorS $ "db error in Handlers.GetSdekPreferredPoint: " <> ls (tshow err)
     Right Nothing -> return $ Right Nothing
     Right (Just code) -> do
       codes <- fetchCodes
-      let address = 
-            spcAddress $
-              fromMaybe undefined $ 
-                flip find codes $ 
-                  \SdekPointCode {..} -> 
-                    spcCode == code
-      return $ Right $ Just $ PreferredSdekPointWithAddress code address
+      let address =
+            fmap spcAddress $
+              flip find codes $
+                \SdekPointCode {..} -> 
+                   spcCode == code
+      when(isNothing address) $
+        void $ removePreferredSdekPoint userId pool         
+      return $ Right $ fmap (PreferredSdekPointWithAddress code) address

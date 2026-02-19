@@ -100,6 +100,7 @@ module Infrastructure.Database
   , fetchOrderDetailsForYaml
   , fetchLostParcels
   , fetchPreferredSdekPoint
+  , removePreferredSdekPoint
   ) where
 
 
@@ -3220,5 +3221,16 @@ fetchPreferredSdekPoint userId pool =
      [Hasql.singletonStatement|
       SELECT preferred_sdek_point :: text?
       FROM shelves
+      WHERE telegram_user_id = $1 :: int8
+     |]
+    
+removePreferredSdekPoint :: Int64 -> Hasql.Pool -> AppM (Either Text ())
+removePreferredSdekPoint userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+     Hasql.statement (userId) $
+     [Hasql.singletonStatement|
+      UPDATE shelves
+      SET preferred_sdek_point = NULL
       WHERE telegram_user_id = $1 :: int8
      |]

@@ -45,9 +45,9 @@ import qualified API.Handlers.Shelf.RequestShelfStatus as RequestShelfStatus
 import qualified API.Handlers.Shelf.SaveShelfSubmissionInfo as SaveShelfSubmissionInfo
 import qualified API.Handlers.Shelf.GetShelfPersonalInfo as GetShelfPersonalInfo
 import qualified API.Handlers.Shelf.EditShelfPersonalInfo as EditShelfPersonalInfo
+import qualified API.Handlers.Shelf.GetSdekPreferredPoint as GetSdekPreferredPoint
 
 import qualified API.Handlers.GetSdekPointFullAddress as GetSdekPointFullAddress
-import qualified API.Handlers.GetPreferredSdekPointWithAddress as GetPreferredSdekPointWithAddress
 
 
 
@@ -89,7 +89,7 @@ apiHandlers = Routes
   , _saveShelfSubmissionInfo   = SaveShelfSubmissionInfo.handler
   , _getShelfPersonalInfo      = GetShelfPersonalInfo.handler
   , _editShelfPersonalInfo     = EditShelfPersonalInfo.handler
+  , _getSdekPreferredPoint     = GetSdekPreferredPoint.handler
 
-  , _getSdekPointFullAddress          = GetSdekPointFullAddress.handler
-  , _getPreferredSdekPointWithAddress = GetPreferredSdekPointWithAddress.handler
+  , _getSdekPointFullAddress   = GetSdekPointFullAddress.handler
   }
