@@ -3036,7 +3036,7 @@ fetchCancelledOrders pool =
          SELECT
            jsonb_build_object(
             'order_id', id,
-            'channel', to_jsonb('main' :: text), 
+            'channel', to_jsonb('order' :: text), 
             'message_id', COALESCE(internal_notification_message_id, 0))
             :: jsonb
          FROM orders
