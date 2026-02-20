@@ -189,8 +189,12 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pibi" } 
 
 data PriceInfoBot =
      PriceInfoBot 
-     { pibTariff :: Int
-     , pibPickUpPoint :: Text
+     { pibTariff            :: Int
+     , pibPickUpPoint       :: Text
+     , pibLength            :: Int
+     , pibWidth             :: Int
+     , pibHeight            :: Int
+     , packagingWeightGrams :: Int
      , pibItems :: [PriceInfoBotItem] 
      } deriving (Show, Eq, Generic)
 
@@ -202,18 +206,12 @@ reducePriceInfoBot PriceInfoBot {..} =
       getTotalWeight old (PriceInfoBotItem {..} : xs) =
         let new = estimatePackedWeight old pibiWeightPerMetre pibiLength
         in getTotalWeight new xs
-      (lengthXs, widthXs, heightXs) = 
-        unzip3 [ estimatePackedDimensions 
-                 pibiDensity 
-                 pibiWidth 
-                 pibiLength 
-               | PriceInfoBotItem {..} <- pibItems ] 
       piTariff      = pibTariff
       piPickUpPoint = pibPickUpPoint
       piWeight      = getTotalWeight packagingWeightGrams pibItems
-      piLength      = maximum lengthXs
-      piWidth       = maximum widthXs
-      piHeight      = sum heightXs
+      piLength      = pibLength
+      piWidth       = pibWidth
+      piHeight      = pibHeight
       piPrice       = sum (map pibiPrice pibItems)
   in PriceInfo {..}
 

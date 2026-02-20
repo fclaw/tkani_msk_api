@@ -1632,11 +1632,17 @@ getOrderDetailsForPricing orderId pool =
             jsonb_build_object(
               'pick_up_point', r.pick_up_point,
               'tariff', r.tariff,
+              'length', r.length,
+              'width', r.width,
+              'height', r.height,
               'items', r.items) :: jsonb
           FROM    
           (SELECT 
             TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
             o.tariff,
+            o.length,
+            o.width,
+            o.height,
             array_agg(
              jsonb_build_object(
               'density', f.density,
@@ -1658,13 +1664,16 @@ getOrderDetailsForPricing orderId pool =
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff
+          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height
           
           UNION ALL
           
           SELECT
             TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
             o.tariff,
+            o.length,
+            o.width,
+            o.height,
             array_agg(
              jsonb_build_object(
               'density', f.density,
@@ -1686,7 +1695,7 @@ getOrderDetailsForPricing orderId pool =
           LEFT JOIN pre_cuts AS pc
           ON si.pre_cut_id = pc.id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff          
+          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height      
           ) AS r
         |]
         
