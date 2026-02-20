@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass    #-}
 
 module Infrastructure.Services.Sdek.Types.Config where
 
@@ -12,6 +13,7 @@ import Data.Function (on)
 import GHC.Generics (Generic)
 import Text.Read (readMaybe)
 import Data.Aeson (withScientific, FromJSON (..))
+import Data.Time.Calendar.OrdinalDate (Day)
 import Data.Aeson.Types (camelTo2, defaultOptions, genericParseJSON, parseJSON, fieldLabelModifier)
 
 
@@ -93,6 +95,12 @@ data SdekSenderLocation = SdekSenderLocation
 instance FromJSON SdekSenderLocation where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
 
+data Holiday = 
+     Holiday 
+     { month :: Int
+     , day   :: Int
+     } deriving (Show, Generic, FromJSON)
+
 
 -- | The main SdekConfig record
 data SdekConfig = 
@@ -109,6 +117,7 @@ data SdekConfig =
      , commissionRate      :: Double
      , consolidationTime   :: Int
      , senderLocation      :: SdekSenderLocation
+     , holidays            :: [Holiday]
      } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where

@@ -58,3 +58,9 @@ sender_location:
   
   # Postal code is often mandatory
   postal_code: "111123"
+
+holidays:
+  - month: 2
+    day: 23
+  - month: 3
+    day: 8

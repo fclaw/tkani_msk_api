@@ -9,6 +9,7 @@ import Data.Time -- for time-of-day checking
 import Data.Text (Text)
 import Control.Monad.IO.Class (liftIO)
 import Data.Time.Calendar.WeekDate (dayOfWeek)
+import Data.Time.Calendar (addDays, toGregorian)
 import Data.Time.LocalTime (localTimeOfDay, TimeOfDay(..), utcToLocalTime, zonedTimeToUTC, TimeZone(..))
 import Control.Monad.Reader.Class (ask)
 import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically)
@@ -18,6 +19,7 @@ import Control.Monad (when, void)
 import App (AppM, _sdekConfig)
 import Domain.Services.Shipping (prepareAndSchedulePickup)
 import Infrastructure.Services.Sdek.Types.Config
+import qualified Infrastructure.Services.Sdek.Types.Config as Cfg
 
 
 -- | The main loop for the scheduled SDEK pickup job.
@@ -43,13 +45,18 @@ runSdekPickUpScheduler lastRunVar = do
   let isRightTime = hour == consolidationTime sdekCfg
   let days = Sunday : [Monday .. Thursday]
   let isWeekday = day `elem` days
+ 
+  let tomorrow = addDays 1 today
+  let (_, tMonth, tDay) = toGregorian tomorrow -- returns (Year, Month, Day)
+  let isTomorrowHoliday = any (\h -> Cfg.month h == tMonth && Cfg.day h == tDay) (holidays sdekCfg)
 
   -- D. Atomically check the lock
   shouldRun <- liftIO $ atomically $ do
     lastRun <- readTVar lastRunVar
     -- Condition: We should run if it's the right time and we haven't already run today.
     if isRightTime && 
-       isWeekday && 
+       isWeekday &&
+       not isTomorrowHoliday &&
        lastRun /= Just today
     then do
       -- If we decide to run, we immediately "take the lock"
