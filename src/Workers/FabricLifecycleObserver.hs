@@ -48,6 +48,8 @@ data FabricLifecycleEvent = FabricLifecycleEvent
 --                  THE HELPER FUNCTIONS
 -- ==========================================================
 
+importantNote = "Примечание: Данное сообщение является уведомлением. Кнопка ниже открывает общий список товаров, где можно найти указанную ткань."
+
 -- | Generates the call-to-action button text for a given lifecycle.
 buttonText :: FabricLifecycle -> Text
 buttonText lifecycle =
@@ -70,7 +72,7 @@ notificationText lifecycle fabricName =
       Advertised -> "🔔 Анонсирован новый товар"
       _          -> "✅ В каталог добавлен новый товар" -- Fallback for Regular, etc.
 
-  in introPhrase <> ": *" <> fabricName <> "*!"
+  in introPhrase <> ": *" <> fabricName <> "*!\n\n" <> importantNote
 
 
 runFabricLifecycleObserver :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
