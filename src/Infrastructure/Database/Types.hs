@@ -189,13 +189,12 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pibi" } 
 
 data PriceInfoBot =
      PriceInfoBot 
-     { pibTariff            :: Int
-     , pibPickUpPoint       :: Text
-     , pibLength            :: Int
-     , pibWidth             :: Int
-     , pibHeight            :: Int
-     , packagingWeightGrams :: Int
-     , pibItems :: [PriceInfoBotItem] 
+     { pibTariff      :: Int
+     , pibPickUpPoint :: Text
+     , pibLength      :: Int
+     , pibWidth       :: Int
+     , pibHeight      :: Int
+     , pibItems       :: [PriceInfoBotItem] 
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pib" } ''PriceInfoBot)
