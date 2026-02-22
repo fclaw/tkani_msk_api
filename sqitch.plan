@@ -57,3 +57,4 @@
 00054.media_fabric 2026-02-13T06:09:36Z System Administrator <root@Sonny.local> # fabric media
 00055.order_is_erased 2026-02-15T15:51:08Z System Administrator <root@Sonny.local> # order: is_erased
 00056.shelf_preferred_sdek_point 2026-02-18T05:50:52Z System Administrator <root@Sonny.local> # shelf: preferred sdek point
+00057.delivery_cost_event 2026-02-22T16:08:49Z System Administrator <root@Sonny.local> # delivery cost event

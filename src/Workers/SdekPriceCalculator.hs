@@ -48,6 +48,7 @@ import Infrastructure.Database
        , getOrderDetailsForPricing
        , updateOrderStatus
        , fetchOrderDetailsForYaml
+       , setDeliveryCost
        , PatchedOrderDetails (..)
        , PatchedOrderDetailsItem (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
@@ -193,6 +194,7 @@ processSingleJob (Right PriceJob {..}) = do
                               , porpItems  = items
                               , porpNumber = orderId
                               }
+                void $ setDeliveryCost orderId (round (tsrTotalSum * commissionRate (_sdekConfig cfg))) pool
                 let patchedOrderReq = PatchedOrderRequest podSdekUuid [package]
                 $(logTM) InfoS $ ls $ "PatchedOrderRequest: \n" <> encodePretty patchedOrderReq
                 eResp <- patchOrder patchedOrderReq
@@ -220,7 +222,7 @@ processSingleJob (Right PriceJob {..}) = do
                                tshow podSdekUuid
                              eReqReq <- registerReceipt podSdekUuid
                              extractFromEither eReqReq $ \receiptUuid -> do
-                               eDbRes <- setReceiptReady orderId receiptUuid pool 
+                               eDbRes <- setReceiptReady orderId receiptUuid pool
                                extractValue eDbRes $ \_ -> 
                                  $(logTM) InfoS $ ls $ "order " <> orderId <> " has been successfully patched"
                                when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "order " <> orderId <> ", db failure " <> tshow eDbRes

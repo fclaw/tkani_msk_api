@@ -85,6 +85,7 @@ import Workers.SdekCourierStatusPoller (runSdekCourierStatusPoller)
 import Workers.SdekPickupAppStatusPoller (runSdekPickupAppStatusPoller)
 import Workers.CancelledOrdersCleaner (runCancelledOrdersCleaner)
 import Workers.ParcelDeliveryWatcher (runParcelDeliveryWatcher)
+import Workers.DeliveryCostListener (runDeliveryCostListener)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -116,6 +117,7 @@ data Workers =
       | SdekPickupAppStatusPoller
       | CancelledOrdersCleaner
       | ParcelDeliveryWatcher
+      | DeliveryCostListener
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -139,6 +141,10 @@ instance Show Workers where
   show SdekPickupAppStatusPoller        = "SDEK Pickup App Status Poller"
   show CancelledOrdersCleaner           = "Cancelled Orders Cleaner"
   show ParcelDeliveryWatcher            = "Parcel Delivery Watcher"
+  show DeliveryCostListener             = "Delivery Cost Listener"
+
+
+--
 
 
 methodsCors :: Middleware
@@ -402,11 +408,17 @@ main = do
                    >>= showErrorInWorker 
                         SdekStatusPoller)
               , (SdekPriceCalculator,
-                  appMToHandler (runSdekPriceCalculator connInfo appMToHandler)
+                  appMToHandler (
+                    runSdekPriceCalculator 
+                    connInfo 
+                    appMToHandler)
                    >>= showErrorInWorker
                         SdekPriceCalculator)
               , (SdekGenerateReceipt, 
-                  appMToHandler (runSdekGenerateReceipt connInfo appMToHandler)
+                  appMToHandler (
+                    runSdekGenerateReceipt 
+                    connInfo 
+                    appMToHandler)
                    >>= showErrorInWorker
                         SdekGenerateReceipt)
               , (OrderDeliveryScheduler, do
@@ -421,11 +433,17 @@ main = do
                    >>= showErrorInWorker
                         SpecialPostManager)
               , (SdekOrderCancellationHandler,
-                 appMToHandler (runSdekOrderCancellationHandler connInfo appMToHandler)
+                 appMToHandler (
+                   runSdekOrderCancellationHandler 
+                   connInfo 
+                   appMToHandler)
                    >>= showErrorInWorker
                         SdekOrderCancellationHandler)
               , (FabricLifecycleObserver,
-                 appMToHandler (runFabricLifecycleObserver connInfo appMToHandler)
+                 appMToHandler (
+                   runFabricLifecycleObserver 
+                   connInfo 
+                   appMToHandler)
                    >>= showErrorInWorker
                         FabricLifecycleObserver)
               , (DailyCleanupNotificationsJanitor,
@@ -434,7 +452,10 @@ main = do
                      >>= showErrorInWorker
                            DailyCleanupNotificationsJanitor)
               , (ShelfSubmissionObserver,
-                 appMToHandler (runShelfSubmissionObserver connInfo appMToHandler)
+                 appMToHandler (
+                   runShelfSubmissionObserver 
+                   connInfo 
+                   appMToHandler)
                    >>= showErrorInWorker
                         ShelfSubmissionObserver)
               , (CancelledOrdersCleaner,
@@ -447,18 +468,28 @@ main = do
                    appMToHandler (runParcelDeliveryWatcher)
                      >>= showErrorInWorker
                            ParcelDeliveryWatcher)
+              , (DeliveryCostListener,
+                   appMToHandler (
+                     runDeliveryCostListener 
+                     connInfo 
+                     appMToHandler)
+                     >>= showErrorInWorker
+                           DeliveryCostListener)
               ]
 
         let courierPickupTasks 
               | configIsCourierNeeded =
                 let weightTrackerWorker =
                      (DailyWeightTracker,
-                      appMToHandler (runDailyWeightTracker connInfo appMToHandler)
+                      appMToHandler (
+                        runDailyWeightTracker 
+                        connInfo 
+                        appMToHandler)
                         >>= showErrorInWorker
                              DailyWeightTracker)
                     dostavistaWorker =
                      (DostavistaOrderStatusPoller,
-                      appMToHandler runDostavistaOrderStatusPoller 
+                      appMToHandler runDostavistaOrderStatusPoller
                         >>= showErrorInWorker 
                              DostavistaOrderStatusPoller)         
                 in [weightTrackerWorker, dostavistaWorker]

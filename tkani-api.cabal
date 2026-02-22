@@ -37,6 +37,7 @@ library
       Workers.SdekPickupAppStatusPoller
       Workers.CancelledOrdersCleaner
       Workers.ParcelDeliveryWatcher
+      Workers.DeliveryCostListener
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

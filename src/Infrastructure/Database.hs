@@ -57,6 +57,7 @@ module Infrastructure.Database
   , getOrderDetailsForPricing
   , getPatchedOrderDetails
   , setReceiptReady
+  , setDeliveryCost
   , refreshAndFetchDailyStats
   , fetchOrderDeliveryItem
   , insertTelegramOrderDeliveryPost
@@ -3230,4 +3231,15 @@ fetchPreferredSdekPoint userId pool =
       SELECT preferred_sdek_point :: text?
       FROM shelves
       WHERE telegram_user_id = $1 :: int8
+     |]
+
+setDeliveryCost :: Text -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+setDeliveryCost orderId deliveryCost pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (orderId, deliveryCost) $
+     [Hasql.resultlessStatement|
+      UPDATE orders
+      SET delivery_cost = $2 :: int4
+      WHERE id = $1 :: text
      |]
