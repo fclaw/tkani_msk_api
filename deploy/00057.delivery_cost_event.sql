@@ -26,7 +26,7 @@ BEGIN
             PERFORM pg_notify(
                 'delivery_cost_jobs', -- Channel name
                 jsonb_build_object(
-                    'order_id', NEW.order_id,      -- The readable order ID string
+                    'order_id', NEW.id,      -- The readable order ID string
                     'delivery_cost', NEW.delivery_cost,
                     'chat_id', binding_record.chat_id,
                     'message_id', binding_record.message_id

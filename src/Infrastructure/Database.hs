@@ -2728,10 +2728,11 @@ setFirstItemAddedStatement =
     UPDATE shelves
     SET first_item_added_at =
      CASE WHEN
-      (SELECT COUNT(*) 
+      (SELECT COUNT(*)
        FROM shelf_items 
-       WHERE shelf_id = 
-       (SELECT shelf_id FROM shelf_ident)) = 0 
+       WHERE shelf_id =
+       (SELECT shelf_id FROM shelf_ident) 
+       AND status = 'ON_SHELF') = 0
       THEN
       NOW()
       ELSE first_item_added_at
