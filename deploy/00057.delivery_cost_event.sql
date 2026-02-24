@@ -18,7 +18,7 @@ BEGIN
         SELECT chat_id, message_id 
         INTO binding_record
         FROM order_telegram_bindings
-        WHERE order_id = NEW.id OR shelf_order_id = NEW.id
+        WHERE order_id = NEW.id
         LIMIT 1;
 
         -- 3. Only notify if we found an existing Telegram chat to reply to

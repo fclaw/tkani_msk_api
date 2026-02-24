@@ -29,6 +29,7 @@ module Infrastructure.Services.Sdek
        , registerCourierCall
        , getPickupApplication
        , getPickupApplicationStatus
+       , cancelPickupApplication
        ) where
 
 import Data.Text (Text)
@@ -467,3 +468,13 @@ getPickupApplicationStatus uuid = do
   let httpManager = _configHttpManager cfg
   let pickupReq = withToken (_getReq' httpManager fullUrl mempty [])
   makeRequestWithRetries @SdekPickupAppStatusResponse (Just (void $ getValidSdekToken)) pickupReq
+
+cancelPickupApplication :: UUID -> AppM (Either HttpError ())
+cancelPickupApplication uuid = do
+  $(logTM) DebugS $ "SDEK: cancelling pickup application UUID: " <> ls (UUID.toText uuid)
+  cfg <- ask
+  let url = (T.unpack . Sdek.url . _sdekConfig) cfg
+  let fullUrl = show HTTPS <> url <> "/v2/intakes/" <> UUID.toString uuid
+  let httpManager = _configHttpManager cfg
+  let pickupCancelReq = withToken (_deleteReq' httpManager fullUrl mempty)
+  fmap (second (const ())) $ makeRequestWithRetries @SdekCourierResponse (Just (void $ getValidSdekToken)) pickupCancelReq

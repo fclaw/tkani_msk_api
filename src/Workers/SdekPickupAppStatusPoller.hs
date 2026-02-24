@@ -14,7 +14,7 @@ import Text (tshow)
 import API.Types (OrderStatus (..))
 import App (AppM, _appDBPool, ChatKey(PICKUP))
 import Infrastructure.Database (getAppStatusDetails, updatePickupAppStatus, updatePickedUpOrdersStatus)
-import Infrastructure.Services.Sdek (getPickupApplicationStatus)
+import Infrastructure.Services.Sdek (getPickupApplicationStatus, cancelPickupApplication)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus (..), status, statusRank)
@@ -68,7 +68,10 @@ runSdekPickupAppStatusPoller = do
                       void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
                     PROBLEM_DETECTED -> do
                       $(logTM) WarningS $ "Problem detected for pickup"
-                    -- Send alert to admin channel.
+                      -- erase pickup application in SDEK system
+                      cancelRes <- cancelPickupApplication app_uuid
+                      for_ cancelRes $ const $ $(logTM) InfoS "Pickup application cancelled in SDEK system"
+                      -- Send alert to admin channel.
                       updatePickedUpOrdersStatus id PickupFailed pool
                       let error = escapeMarkdownV2 $ "‼️ Problems detected. orders are marked as PickupFailed"
                       void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
