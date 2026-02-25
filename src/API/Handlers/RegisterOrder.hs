@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TupleSections  #-}
 
-module API.Handlers.PlaceNewOrder(handler, mkInitRequest, formatOrderItemLine, fetchOrderPollerRes, PlaceOrderError (..)) where
+module API.Handlers.RegisterOrder(handler, mkInitRequest, formatOrderItemLine, fetchOrderPollerRes, PlaceOrderError (..)) where
 
 import Katip
 import Control.Monad.IO.Class (liftIO)
@@ -33,6 +33,7 @@ import System.Timeout (timeout)
 import Data.List (find)
 import Data.Coerce (coerce)
 import Data.Int (Int64)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -84,9 +85,12 @@ data PlaceOrderError
 
 wrap action error = withExceptT error (ExceptT action)
 
+wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
+wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
+{-# INLINE wrapOrCancel #-}
 
-placeOrder :: OrderRequest -> MVar MessageIdResponse -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
-placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
+placeOrder :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
+placeOrder orderRequest@OrderRequest {..} = do
 
   cfg <- lift ask
   st <- lift get
@@ -101,33 +105,36 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   when (length items == 0) $ except $ Left CartEmpty
 
    -- STEP A. Register with SDEK (assuming this function returns Either SdekError ...)
-  (trackingUuid, optimalTariff) <- tryTariffs orderRequest shipmentPoint tariffCodes items
+  (sdekUuid, optimalTariff) <- tryTariffs orderRequest shipmentPoint tariffCodes items
   orderId <- liftIO generateOrderId
-  lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText trackingUuid)
+  lift $ $(logTM) InfoS $ "SDEK request accepted. Waiting for final confirmation for UUID: " <> ls (UUID.toText sdekUuid)
 
   -- This is the action for our background poller thread.
   lift $ $(logTM) InfoS $ "poller tries calling sdek for the final confirmation"
-  ePollerRes <- fetchOrderPollerRes trackingUuid
+  ePollerRes <- fetchOrderPollerRes sdekUuid
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
-  
+
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
   let initReq = mkInitRequest orderId items orCustomerPhone tinkoffCred
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
-  tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
+  tinkoffResp :: Tinkoff.InitResponse <- 
+    wrapOrCancel (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError $ void $ Sdek.cancelOrder sdekUuid
 
   $(logTM) InfoS $ "Tinkoff response received. " <> ls (show tinkoffResp)
 
   when (Tinkoff.irSuccess tinkoffResp == False) $ do
+    lift $ void $ Sdek.cancelOrder sdekUuid
     let errMsg = "Tinkoff Init API call failed: " <> fromMaybe "Unknown error" (Tinkoff.irMessage tinkoffResp)
     void $ wrap (pure (Left ())) (const $ TinkoffPaymentLinkFailed errMsg)
 
-  paymentLink <- wrap ( 
+  paymentLink <- wrapOrCancel ( 
     case Tinkoff.irPaymentURL tinkoffResp of
       Just link  -> pure (Right link)
       Nothing -> pure (Left ())
-    ) (const $ TinkoffPaymentLinkFailed "Tinkoff Init API did not return a payment URL.")
+    ) (const $ TinkoffPaymentLinkFailed "Tinkoff Init API did not return a payment URL.") $
+      void $ Sdek.cancelOrder sdekUuid
    
   let tinkoffPaymentId = fromJust (Tinkoff.irPaymentId tinkoffResp)
 
@@ -147,7 +154,11 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
 
   
   $(logTM) InfoS $ ls $ "QR req: " <> encodePretty qrReq
-  tinkoffQrResp :: Tinkoff.GetQrResponse <- wrap (Tinkoff.getTinkoffQRCode qrReq) TinkoffHttpError   
+  tinkoffQrResp :: Tinkoff.GetQrResponse <- 
+    wrapOrCancel 
+    (Tinkoff.getTinkoffQRCode qrReq) 
+    TinkoffHttpError $ 
+      void $ Sdek.cancelOrder sdekUuid
 
   when(Tinkoff.gqrrSuccess tinkoffQrResp == False) $
     $(logTM) ErrorS $ "Tinkoff QR fails. " <> ls (show tinkoffQrResp)
@@ -155,12 +166,18 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   let linkToQr = Tinkoff.gqrrData tinkoffQrResp
 
   -- STEP D. Notify the telegram channel
-  telegramMsgId <- wrap (notifyOrdersChannel (orderRequest { orTariff = optimalTariff }) items orderId) NotificationSendFailed
-  liftIO $ telegramIdVar `putMVar` telegramMsgId
+  telegramMsgId <- 
+    wrapOrCancel 
+    (notifyOrdersChannel (orderRequest { orTariff = optimalTariff }) items orderId) 
+    NotificationSendFailed $
+    void $ Sdek.cancelOrder sdekUuid
 
   -- STEP E. Save the order in database
-  let dbOrder = mkDbOrder (orderRequest { orTariff = optimalTariff }) trackingUuid orderId trackingNumber telegramMsgId
-  void $ wrap (placeNewOrder dbOrder pool) $ DatabaseFailed
+  let dbOrder = mkDbOrder (orderRequest { orTariff = optimalTariff }) sdekUuid orderId trackingNumber telegramMsgId
+  let clearArtifacts = do
+        void $ Sdek.cancelOrder sdekUuid
+        void $ deleteMessage (coerce telegramMsgId) ORDER
+  void $ wrapOrCancel (placeNewOrder dbOrder pool) DatabaseFailed clearArtifacts
 
   let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
   let newPaymentRecord = 
@@ -175,7 +192,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
         , nprPaymentFlow       = encodeToText ShipNow
         , nprShelfOrderId       = Nothing
         }
-  void $ wrap (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed
+  void $ wrapOrCancel (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed clearArtifacts
 
   -- STEP F. forward paymentId to the poller
   let getStateRequest = 
@@ -193,7 +210,7 @@ placeOrder orderRequest@OrderRequest {..} telegramIdVar = do
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (ShipNow, orderId, getStateRequest)) . _tinkoffPaymentChan)
 
   -- clear out the cart
-  void $ wrap (clearCart orTelegramUserId pool) DatabaseFailed
+  void $ wrapOrCancel (clearCart orTelegramUserId pool) DatabaseFailed clearArtifacts
 
   return OrderConfirmationDetails {..}
 
@@ -226,7 +243,6 @@ fetchOrderPollerRes uuid = do
   case mResult of
     -- Timeout occurred
     Nothing -> throwE SdekConfirmationTimeout
-        
     -- We got a result from the poller
     Just result -> return result
 
@@ -237,9 +253,8 @@ handler newOrderRequest@OrderRequest {..} = do
   -- 1. Log the incoming request
   $(logTM) DebugS "Request received for creating a new order"
   $(logTM) InfoS "Handling new order request..."
-  telegramIdVar <- liftIO newEmptyMVar
   -- 1. Run the core business logic.
-  eResult <- runExceptT (placeOrder newOrderRequest telegramIdVar)
+  eResult <- runExceptT $ placeOrder newOrderRequest
   -- 2. Pattern match on the result to build the final API response.
   case eResult of
     -- THE SUCCESS CASE
@@ -251,11 +266,7 @@ handler newOrderRequest@OrderRequest {..} = do
     Left err -> do
       -- Log the specific internal error
       $(logTM) ErrorS $ "Failed to place order: " <> ls (show err)
-      -- Return a user-friendly, generic failure response
-      mMessageId <- liftIO $ tryTakeMVar telegramIdVar
-      for_ (fmap coerce mMessageId) (flip deleteMessage ORDER)
       return $ Left $ mkError "Failed to place order. See server logs for details."  
-
 
 notifyOrdersChannel :: OrderRequest -> [DB.OrderItem] -> Text -> AppM (Either T.Text MessageIdResponse)
 notifyOrdersChannel order items orderId = do

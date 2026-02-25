@@ -30,18 +30,21 @@ import TH.Location (currentModule)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import App (AppM, _appDBPool, _sdekConfig, Config, currentTime, render, ChatKey (SHELF))
-import API.Handlers.PlaceNewOrder(fetchOrderPollerRes, PlaceOrderError (..), formatOrderItemLine)
+import API.Handlers.RegisterOrder(fetchOrderPollerRes, PlaceOrderError (..), formatOrderItemLine)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
 import API.Types (ApiResponse, ShelfShipmentDetails (..), InitiateShelfShipment (..), mkError)
 import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, ShelfItemsForShipment (..), Order (..))
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse (..))
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 
 
 wrap action error = withExceptT error (ExceptT action)
 
+wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
+wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
+{-# INLINE wrapOrCancel #-}
 
 handler :: Int64 -> InitiateShelfShipment -> AppM (ApiResponse ShelfShipmentDetails)
 handler userId init = do
@@ -75,10 +78,13 @@ registerOrder userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForS
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
   ssdOrderId <- liftIO generateOrderId
 
-  telegramMsgId <- wrap (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed
+  telegramMsgId <- wrapOrCancel (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed $ void (Sdek.cancelOrder uuid)
   let dbOrder = mkDbOrder userId init shipment uuid trackingNumber ssdOrderId telegramMsgId optimalTariff
   pool <- fmap _appDBPool $ lift ask
-  void $ wrap (placeNewShelfOrder dbOrder pool) $ DatabaseFailed
+  let clearArtifacts = do 
+        void $ Sdek.cancelOrder uuid
+        void $ deleteMessage (coerce telegramMsgId) SHELF
+  void $ wrapOrCancel (placeNewShelfOrder dbOrder pool) DatabaseFailed clearArtifacts
 
   let ssdTrackingNumber = trackingNumber
   let ssdDeliveryProvider = issProvider

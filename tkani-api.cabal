@@ -57,9 +57,9 @@ library
       API.Handlers.GetSdekPointFullAddress
       API.Handlers.MeasureOrder
       API.Handlers.PatchFabric
-      API.Handlers.PlaceNewOrder
       API.Handlers.PlaceYamlOrder
       API.Handlers.PutNewFabric
+      API.Handlers.RegisterOrder
       API.Handlers.ReportDailySales
       API.Handlers.ReportMonthlySales
       API.Handlers.SdekDeliveryPointUUID

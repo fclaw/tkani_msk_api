@@ -69,17 +69,17 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "provider" Providers 
        :> "delivery-points" 
-       :> QueryParam "city" Text 
+       :> QueryParam "city" Text
        :> Get '[JSON] (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
   , _getProviders
        :: route
        :- "providers"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse [ProviderInfo])
-  , _placeNewOrder
+  , _registerOrder
        :: route
        :- "order"
-       :> "create"
+       :> "register"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] OrderRequest
        :> Post '[JSON] (ApiResponse OrderConfirmationDetails)

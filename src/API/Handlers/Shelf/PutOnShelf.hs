@@ -33,12 +33,11 @@ import Infrastructure.Database
 import Text (tshow, encodeToText)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError)
-import API.Handlers.PlaceNewOrder(mkInitRequest)
+import API.Handlers.RegisterOrder(mkInitRequest, formatOrderItemLine)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
-import API.Handlers.PlaceNewOrder(formatOrderItemLine)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, message_id)
 import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError, ShelfStatus (..), mkDefPutOnShelfPaymentOptions)
 import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
