@@ -86,6 +86,8 @@ import Workers.SdekPickupAppStatusPoller (runSdekPickupAppStatusPoller)
 import Workers.CancelledOrdersCleaner (runCancelledOrdersCleaner)
 import Workers.ParcelDeliveryWatcher (runParcelDeliveryWatcher)
 import Workers.DeliveryCostListener (runDeliveryCostListener)
+import Workers.SimpleOrderOrchestrator (runSimpleOrderOrchestrator)
+import Workers.ShelfOrderRegister (runShelfOrderRegister)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -118,6 +120,9 @@ data Workers =
       | CancelledOrdersCleaner
       | ParcelDeliveryWatcher
       | DeliveryCostListener
+      | SimpleOrderOrchestrator
+      | ShelfOrderRegister
+
 
 instance Show Workers where
   show WebServer                        = "Web Server"
@@ -142,6 +147,8 @@ instance Show Workers where
   show CancelledOrdersCleaner           = "Cancelled Orders Cleaner"
   show ParcelDeliveryWatcher            = "Parcel Delivery Watcher"
   show DeliveryCostListener             = "Delivery Cost Listener"
+  show SimpleOrderOrchestrator          = "Simple Order Orchestrator"
+  show ShelfOrderRegister               = "Shelf Order Register"
 
 
 --
@@ -332,13 +339,14 @@ main = do
             }
 
       tinkoffPaymentChan <- newTChanIO
-      sdekOrderChan <- newTChanIO
-      sdekCourierChan <- newTChanIO
+      sdekOrderChan      <- newTChanIO
+      sdekCourierChan    <- newTChanIO
+      simpleOrdersChan   <- newTChanIO
+      shelfOrdersChan    <- newTChanIO
+      dostavistaChan     <- newTChanIO
 
       cityCacheVar <- newTVarIO M.empty
       pvzCacheVar <- newTVarIO M.empty
-
-      dostavistaChan <- newTChanIO
 
       let state =
            State 
@@ -354,6 +362,8 @@ main = do
            , _allSdekPointsCache =  Nothing
            , _sdekTariffs        = mempty
            , _sdekPointsCodes    = Nothing
+           , _simpleOrdersChan   = simpleOrdersChan
+           , _shelfOrdersChan    = shelfOrdersChan
            }
       initialState <- newTVarIO state
   
@@ -475,6 +485,16 @@ main = do
                      appMToHandler)
                      >>= showErrorInWorker
                            DeliveryCostListener)
+              , (SimpleOrderOrchestrator,
+                   appMToHandler
+                     runSimpleOrderOrchestrator
+                     >>= showErrorInWorker
+                           SimpleOrderOrchestrator)
+              , (ShelfOrderRegister,
+                   appMToHandler
+                     runShelfOrderRegister
+                     >>= showErrorInWorker
+                           ShelfOrderRegister)
               ]
 
         let courierPickupTasks 

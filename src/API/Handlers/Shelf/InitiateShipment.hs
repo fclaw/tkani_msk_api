@@ -53,7 +53,7 @@ handler userId init = do
   eDbRes <- fetchShelfItemsForShipment userId pool
   case eDbRes of 
     Left err ->
-      fmap (const (Left (mkError "server error"))) $ 
+      fmap (const (Left (mkError "server error"))) $
         $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
     Right Nothing -> pure $ Left $ mkError "you have no items to be shipped"
     Right (Just shipment) -> do

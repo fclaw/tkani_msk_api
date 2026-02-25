@@ -47,6 +47,10 @@ module App
   ) where
 
 
+
+import Katip
+import Control.Applicative (pure)
+import Data.Monoid (mempty)
 import Data.Int (Int64, Int32)
 import Control.Monad (void)
 import Servant (Handler, ServerError)
@@ -77,19 +81,15 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM.TMVar (TMVar)
 import Control.Monad.Except (MonadError, ExceptT)
 import Language.Haskell.TH (loc_module, location)
+import Data.Aeson (Value, FromJSON, parseJSON, withObject, (.:))
 import Control.Monad.RWS (RWST (..), MonadState, withRWST) -- Important
 import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, asks, local)
 import Control.Concurrent.STM (TVar, TChan, readTVar, modifyTVar', atomically, readTChan, writeTChan)
 
--- Katip imports
-import Katip
-import Data.Aeson (Value, FromJSON, parseJSON, withObject, (.:))
-import Control.Applicative (pure)
-import Data.Monoid (mempty)
-import Text (recordLabelModifier, camelToSnake)
-import API.Types (ProviderInfo, DeliveryPoint)
-import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import API.WithField (WithField)
+import Text (recordLabelModifier, camelToSnake)
+import API.Types (ProviderInfo, DeliveryPoint, OrderRequest, InitiateShelfShipment)
+import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
 import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
@@ -281,6 +281,8 @@ data State = State
   , _dostavistaChan     :: TChan DostavistaJob
   , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
   , _sdekPointsCodes    :: Maybe (UTCTime, [SdekPointCode])
+  , _simpleOrdersChan   :: TChan OrderRequest
+  , _shelfOrdersChan    :: TChan (Int64, InitiateShelfShipment)
   }
 
 

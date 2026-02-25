@@ -34,6 +34,8 @@ library:
     - Workers.CancelledOrdersCleaner
     - Workers.ParcelDeliveryWatcher
     - Workers.DeliveryCostListener
+    - Workers.SimpleOrderOrchestrator
+    - Workers.ShelfOrderRegister
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit
