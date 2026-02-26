@@ -20,6 +20,7 @@ module Infrastructure.Database
   , getOrderItems
   , placeNewOrder
   , storeTelegramMessageDetails
+  , setPaymentMessageDetails
   , getChatDetails
   , updateOrderStatusStatement
   , updateShelfOrderStatusStatement
@@ -459,6 +460,17 @@ placeNewOrderStatement =
 
 placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
 placeNewOrder order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
+
+setPaymentMessageDetailsStatement :: Hasql.Statement PaymentMessageDetailsRequest Int64
+setPaymentMessageDetailsStatement =
+   lmap $(recordToTuple ''PaymentMessageDetailsRequest)
+   [Hasql.rowsAffectedStatement| 
+     INSERT INTO order_telegram_bindings 
+     (order_id, shelf_order_id, chat_id, message_id) 
+     VALUES (NULL, $1 :: text, $2 :: int8, $3 :: int8)|]
+
+setPaymentMessageDetails :: PaymentMessageDetailsRequest -> Hasql.Pool -> AppM (Either Text Int64)
+setPaymentMessageDetails message pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ message `Hasql.statement` setPaymentMessageDetailsStatement
 
 storeTelegramMessageDetails :: TelegramMessageDetails -> Hasql.Pool -> AppM (Either Text Int64)
 storeTelegramMessageDetails details pool = 

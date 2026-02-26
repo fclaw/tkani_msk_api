@@ -31,7 +31,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] RawIngestRequest
        :> Put '[JSON] (ApiResponse NewFabric)
-  , _patchFabric
+   , _patchFabric
        :: route
        :- "warehouse"
        :> "fabric"
@@ -39,7 +39,7 @@ data Routes route = Routes
        :> Capture "fabric_id" Int64
        :> ReqBody '[JSON] RawIngestRequest
        :> Patch '[JSON] (ApiResponse NewFabric)
-  , _deleteFabric
+   , _deleteFabric
        :: route
        :- "warehouse"
        :> "fabric"
@@ -47,7 +47,7 @@ data Routes route = Routes
        :> Capture "fabric_id" Int64
        :> Capture "fabric_type" FabricType
        :> Delete '[JSON] (ApiResponse ())
-  , _uploadMediaForFabric
+   , _uploadMediaForFabric
        :: route
        :- "warehouse"
        :> "fabric"
@@ -55,7 +55,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] FabricMediaRequest
        :> Post '[JSON] (ApiResponse ())
-  , _getFabricPreview 
+   , _getFabricPreview 
        :: route 
        :- "fabric"
        :> "preview"
@@ -63,7 +63,7 @@ data Routes route = Routes
        :> QueryParam "fabric_id" Int64
        :> QueryParam "fabric_type" FabricType
        :> Get '[JSON] (ApiResponse FabricPreview)
-  , _getDeliveryPoints
+   , _getDeliveryPoints
        :: route 
        :- "providers"
        :> RateLimitPerUser (Second 1) 'Nothing
@@ -71,19 +71,19 @@ data Routes route = Routes
        :> "delivery-points" 
        :> QueryParam "city" Text
        :> Get '[JSON] (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
-  , _getProviders
+   , _getProviders
        :: route
        :- "providers"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse [ProviderInfo])
-  , _registerOrder
+   , _registerOrder
        :: route
        :- "order"
        :> "register"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] OrderRequest
        :> Post '[JSON] (ApiResponse ())
-  , _trackOrder
+   , _trackOrder
        :: route
        :- "order"
        :> "track"
@@ -105,14 +105,14 @@ data Routes route = Routes
        :> Capture "type" FabricType
        :> Capture "id" Int64
        :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
-  , _cancelOrder
+   , _cancelOrder
        :: route
        :- "order"
        :> "cancel"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] CancelOrder
        :> Post '[JSON] (ApiResponse ())
-  , _checkCartItem
+   , _checkCartItem
        :: route
        :- "cart"
        :> "check-item"
@@ -121,27 +121,27 @@ data Routes route = Routes
        :> QueryParam "fabric_id" Int64
        :> QueryParam "fabric_type" FabricType
        :> Get '[JSON] (ApiResponse CheckItemInCart)
-  , _addToCart 
+   , _addToCart 
        :: route
        :- "cart"
        :> "add"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] CartNewFabric
        :> Post '[JSON] (ApiResponse CartCheckStatus)
-  , _clearCart
+   , _clearCart
        :: route
        :- "cart"
        :> "clear"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ())
-  , _viewCart
+   , _viewCart
        :: route
        :- "cart"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ViewCart)
-  , _measureOrder
+   , _measureOrder
        :: route
        :- "warehouse"
        :> "orders"
@@ -149,7 +149,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] MeasureRequest
        :> Post '[JSON] (ApiResponse MeasureResponse)
-  , _placeYamlOrder
+   , _placeYamlOrder
        :: route
        :- "warehouse"
        :> "orders"
@@ -157,21 +157,21 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] YamlOrderRequest
        :> Put '[JSON] (ApiResponse YamlOrderResponse)
-  , _reportDailySales
+   , _reportDailySales
       :: route
       :- "warehouse"
       :> "reports"
       :> "daily-sales"
       :> RateLimitPerUser (Second 1) 'Nothing
       :> Post '[JSON] (ApiResponse ())
-  , _reportMonthlySales
+   , _reportMonthlySales
       :: route
       :- "warehouse"
       :> "reports"
       :> "monthly-sales"
       :> RateLimitPerUser (Second 1) 'Nothing
       :> Post '[JSON] (ApiResponse ())
-  , _tallyUpExpenses
+   , _tallyUpExpenses
       :: route
       :- "warehouse"
       :> "expenses"
@@ -179,7 +179,7 @@ data Routes route = Routes
       :> RateLimitPerUser (Second 1) 'Nothing
       :> ReqBody '[JSON] Expenses
       :> Put '[JSON] (ApiResponse ())
-  , _setOrderDimensions
+   , _setOrderDimensions
       :: route
       :- "warehouse"
       :> "orders"
@@ -215,14 +215,21 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfItemsResponse)
-    , _putOnShelf
+   , _setPaymentMessageDetails
+      :: route
+      :- "shelf"
+      :> "payment_message"
+      :> RateLimitPerUser (Second 1) 'Nothing
+      :> ReqBody '[JSON] PaymentMessageDetailsRequest
+      :> Post '[JSON] (ApiResponse ())
+   , _putOnShelf
        :: route
        :- "shelf"
        :> "checkout"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Post '[JSON] (ApiResponse PutOnShelfPaymentOptions)
-    , _initiateShipment
+   , _initiateShipment
        :: route
        :- "shelf"
        :> "ship"
@@ -230,28 +237,28 @@ data Routes route = Routes
        :> Capture "user_id" Int64
        :> ReqBody '[JSON] (WithField "chat_id" Int64 InitiateShelfShipment)
        :> Post '[JSON] (ApiResponse ())
-    , _requestShelfStatus
+   , _requestShelfStatus
        :: route
        :- "shelf"
        :> "status"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfStatusResponse)
-    , _saveShelfSubmissionInfo
+   , _saveShelfSubmissionInfo
        :: route
        :- "shelf"
        :> "submission"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] ShelfSubmissionChatDetails
        :> Post '[JSON] (ApiResponse ())
-    , _getShelfPersonalInfo
+   , _getShelfPersonalInfo
        :: route
        :- "shelf"
        :> "personal-info"
        :> Capture "user_id" Int64
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse ShelfPersonalInfo)
-    , _editShelfPersonalInfo
+   , _editShelfPersonalInfo
        :: route
        :- "shelf"
        :> "personal-info"
@@ -259,7 +266,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] ShelfPersonalInfo
        :> Patch '[JSON] (ApiResponse ())
-    , _getSdekPreferredPoint
+   , _getSdekPreferredPoint
        :: route
        :- "shelf"
        :> Capture "user_id" Int64
@@ -267,7 +274,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse (Maybe PreferredSdekPointWithAddress))
 
-    , _getSdekPointFullAddress
+   , _getSdekPointFullAddress
        :: route
        :- "sdek"
        :> "point"

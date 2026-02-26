@@ -68,6 +68,7 @@ library
       API.Handlers.SearchFabricCard
       API.Handlers.SearchFabrics
       API.Handlers.SetOrderDimensions
+      API.Handlers.SetPaymentMessageDetails
       API.Handlers.Shelf.EditShelfPersonalInfo
       API.Handlers.Shelf.FetchShelfItems
       API.Handlers.Shelf.GetSdekPreferredPoint
