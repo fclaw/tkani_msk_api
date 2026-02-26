@@ -80,7 +80,7 @@ RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
     echo "export SYSTEM_CERTIFICATE_PATH=/app/cacert.pem" >> /app/entrypoint.sh && \
     echo "export NIX_SSL_CERT_FILE=/app/cacert.pem" >> /app/entrypoint.sh && \
     # Run
-    echo "exec ./server -- no-metro" >> /app/entrypoint.sh && \
+    echo "exec ./server" >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
 
 # or move shell.nix and nix-shell ./shell.nix -- stack exec tkani-api-exe -- no-metro

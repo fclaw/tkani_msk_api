@@ -246,7 +246,7 @@ waitAnyNamed namedAsyncs = do
 main :: IO ()
 main = do
   args <- getArgs
-  let isMetroMode = not ("no-metro" `elem` args)
+  let isMetroMode = False -- not ("no-metro" `elem` args)
 
   -- Step 1: Create a new TLS-enabled manager using our custom settings.
   -- This is where the magic from 'http-client-tls' happens.
