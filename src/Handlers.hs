@@ -17,7 +17,6 @@ import qualified API.Handlers.UploadMediaForFabric as UploadMediaForFabric
 import qualified API.Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified API.Handlers.GetProviders as GetProviders
 import qualified API.Handlers.RegisterOrder as RegisterOrder
-import qualified API.Handlers.SetTelegramMessage as SetTelegramMessage
 import qualified API.Handlers.TrackOrder as TrackOrder
 import qualified API.Handlers.SearchFabrics as SearchFabrics
 import qualified API.Handlers.SearchFabricCard as SearchFabricCard
@@ -61,7 +60,6 @@ apiHandlers = Routes
   , _uploadMediaForFabric      = UploadMediaForFabric.handler
   , _getProviders              = GetProviders.handler
   , _registerOrder             = RegisterOrder.handler
-  , _setTelegramMessage        = SetTelegramMessage.handler
   , _trackOrder                = TrackOrder.handler
   , _searchFabrics             = SearchFabrics.handler
   , _searchFabricCard          = SearchFabricCard.handler

@@ -405,3 +405,11 @@ data OrderDetailsForYaml =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "odfy" } ''OrderDetailsForYaml)
+
+data TelegramMessageDetails =
+     TelegramMessageDetails
+     { tmdSingleOrderId :: Maybe Text
+     , tmdShelfOrderId  :: Maybe Text
+     , tmdChatId        :: Int64
+     , tmdMessageId     :: Int64
+     } deriving (Show)

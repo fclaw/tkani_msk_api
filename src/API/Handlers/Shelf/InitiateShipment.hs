@@ -1,150 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE DataKinds         #-}
 
 module API.Handlers.Shelf.InitiateShipment (handler) where
 
-
-import Katip
-import Data.Text (Text)
 import Data.Int (Int64)
-import Data.UUID (UUID)
-import Data.Coerce (coerce)
-import Control.Monad (void)
-import Data.Foldable (for_)
-import Data.Maybe (fromMaybe)
-import qualified Data.Text as T
-import Data.Bifunctor (first, second)
-import qualified Data.HashMap.Strict as HM
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader.Class (ask)
-import Data.Time (formatTime, defaultTimeLocale, LocalTime)
-import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
+import Katip (logTM, Severity(..))
+import Control.Monad.State.Class (get)
 
- 
-import Text (tshow, encodeToText)
-import TH.Location (currentModule)
-import Utils.Telegram.Markdown (escapeMarkdownV2)
-import Infrastructure.Utils.OrderId (generateOrderId)
-import App (AppM, _appDBPool, _sdekConfig, Config, currentTime, render, ChatKey (SHELF))
-import API.Handlers.RegisterOrder(fetchOrderPollerRes, PlaceOrderError (..), formatOrderItemLine)
-import qualified Infrastructure.Services.Sdek as Sdek
-import qualified Infrastructure.Services.Sdek.Types as Sdek
-import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
-import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
-import API.Types (ApiResponse, ShelfShipmentDetails (..), InitiateShelfShipment (..), mkError)
-import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, ShelfItemsForShipment (..), Order (..))
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
+import API.WithField (WithField)
+import API.Types (InitiateShelfShipment, ApiResponse)
+import App (AppM, readTVarIO, writeTChanIO, _shelfOrdersChan)
 
 
-wrap action error = withExceptT error (ExceptT action)
 
-wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
-wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
-{-# INLINE wrapOrCancel #-}
-
-handler :: Int64 -> InitiateShelfShipment -> AppM (ApiResponse ShelfShipmentDetails)
+handler :: Int64 -> WithField "chat_id" Int64 InitiateShelfShipment -> AppM (ApiResponse ())
 handler userId init = do
-  cfg <- ask
-  let pool = _appDBPool cfg
-  eDbRes <- fetchShelfItemsForShipment userId pool
-  case eDbRes of 
-    Left err ->
-      fmap (const (Left (mkError "server error"))) $
-        $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
-    Right Nothing -> pure $ Left $ mkError "you have no items to be shipped"
-    Right (Just shipment) -> do
-      eRes <- runExceptT $ registerOrder userId cfg init shipment
-      case eRes of
-        Left err -> 
-          fmap (const (Left (mkError "server error"))) $  
-            $(logTM) ErrorS $ "db failure " <> ls (tshow (err))
-        Right shipmentDetails -> pure $ Right shipmentDetails
-
-registerOrder :: Int64 -> Config -> InitiateShelfShipment -> ShelfItemsForShipment -> ExceptT PlaceOrderError AppM ShelfShipmentDetails
-registerOrder userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..} = do
-  let sdekConfig = _sdekConfig cfg
-  let shipmentPoint = Sdek.dropOffPoint sdekConfig
-  let tariffCodes = Sdek.tariffs sdekConfig
-
-
-  (uuid, optimalTariff) <- tryTariffs init shipment shipmentPoint tariffCodes
-
-
-  ePollerRes <- fetchOrderPollerRes uuid
-  trackingNumber <- except $ (first SdekPollerError) ePollerRes
-  ssdOrderId <- liftIO generateOrderId
-
-  telegramMsgId <- wrapOrCancel (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed $ void (Sdek.cancelOrder uuid)
-  let dbOrder = mkDbOrder userId init shipment uuid trackingNumber ssdOrderId telegramMsgId optimalTariff
-  pool <- fmap _appDBPool $ lift ask
-  let clearArtifacts = do 
-        void $ Sdek.cancelOrder uuid
-        void $ deleteMessage (coerce telegramMsgId) SHELF
-  void $ wrapOrCancel (placeNewShelfOrder dbOrder pool) DatabaseFailed clearArtifacts
-
-  let ssdTrackingNumber = trackingNumber
-  let ssdDeliveryProvider = issProvider
-  return ShelfShipmentDetails {..}
-
-
-tryTariffs :: InitiateShelfShipment -> ShelfItemsForShipment -> Text -> [Sdek.Tariff] -> ExceptT PlaceOrderError AppM (UUID, Int)
-tryTariffs InitiateShelfShipment {..} ShelfItemsForShipment {..} shipmentPoint tariffs = do 
-  maybeSdekRes <- wrap(getTariffs shipmentPoint issPointId) TariffNetworkError
-  let eSdekRes = maybe (Left "getTariffs:empty list") Right maybeSdekRes
-  availableTariffs <- except $ (first TariffError) eSdekRes
-  let optimalTariff = Sdek.findOptimalTariff tariffs availableTariffs
-  let minOderReq = Sdek.makeMinimalShelfRequestData sifsUserInitials sifsPhone issPointId optimalTariff sifsItems (Just shipmentPoint)
-  wrap (fmap (second (,optimalTariff)) (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq))) SdekRegistrationFailed
-
-
-notifyShelfChannel :: ShelfItemsForShipment -> Text -> AppM (Either Text MessageIdResponse)
-notifyShelfChannel shipment orderId = do
-  tm <- currentTime
-  tz <- liftIO getCurrentTimeZone
-  let localTime = utcToLocalTime tz tm
-  messageText <- render $currentModule $ buildTemplateData orderId shipment localTime
-  fmap (first (T.pack . show)) $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 messageText) SHELF Nothing Nothing Nothing
-
-buildTemplateData :: Text -> ShelfItemsForShipment -> LocalTime -> HM.HashMap Text Text
-buildTemplateData orderId ShelfItemsForShipment {..} localTime =
-  let
-    -- 1. Format common values
-    timeStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" localTime
-    itemCount = T.pack $ show $ length sifsItems
-
-    -- 2. Build the 'itemsBlock' by mapping over the list
-    itemLines = map formatOrderItemLine sifsItems
-    itemsBlock = T.unlines itemLines
-    
-  in
-    -- 3. Construct the final HashMap
-    HM.fromList
-      [ ("orderId", orderId)
-      , ("shelfId", tshow sifsShelfId)
-      , ("timestamp", timeStr)
-      , ("customerName", sifsUserInitials)
-      , ("customerPhone", sifsPhone)
-      
-      -- NEW: Variables for the item list
-      , ("itemCount", itemCount)
-      , ("itemsBlock", itemsBlock)
-      ]
-
-mkDbOrder :: Int64 -> InitiateShelfShipment -> ShelfItemsForShipment -> UUID -> Text -> Text -> MessageIdResponse -> Int -> Order
-mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} uuid trackingNumber orderId telegramMsgId tariff =
-  Order 
-  { _orderTariff                        = fromIntegral tariff
-  , _orderId                            = orderId
-  , _orderCustomerFullName              = sifsUserInitials
-  , _orderCustomerPhone                 = sifsPhone
-  , _orderDeliveryProviderId            = encodeToText issProvider
-  , _orderDeliveryPointId               = issPointId
-  , _orderSdekRequestUuid               = uuid
-  , _orderSdekTrackingNumber            = trackingNumber
-  , _orderInternalNotificationMessageId = coerce telegramMsgId
-  , _orderTelegramUserId                = userId
-  }
+  $(logTM) InfoS "Request received for initiating shelf shipment."
+  stVar <- get
+  st <- readTVarIO stVar
+  let inChan = _shelfOrdersChan st
+  fmap Right $ writeTChanIO inChan (userId, init)

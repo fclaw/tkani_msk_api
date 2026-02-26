@@ -1,17 +1,40 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Workers.ShelfOrderRegister (runShelfOrderRegister) where
 
+
+import Katip (logTM, Severity(..), ls)
 import Data.Int (Int64)
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Foldable (for_)
+import Data.Aeson ((.=), object)
 import Katip (logTM, Severity(..))
-import Control.Monad (forever, void)
+import Data.Either (isLeft)
+import Control.Monad (forever, void, when)
+import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Control.Concurrent.Async.Lifted (async)
+import Control.Monad.IO.Class (liftIO)
+import Network.Wreq (postWith, defaults, manager, responseBody)
+import Control.Lens ((&), (.~), (^.))
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as M
 
 
-import API.Types (InitiateShelfShipment)
-import App (AppM, readTVarIO, readTChanIO, _shelfOrdersChan)
+import Text (tshow)
+import TH.Location (currentModule)
+import API.WithField (WithField (..))
+import Concurrency (runJobWithCleanup)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+import API.Types (InitiateShelfShipment, ShelfShipmentDetails (..), Providers (SDEK))
+import qualified Workers.ShelfOrderRegister.Order as Order
+import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2))
+import Workers.SimpleOrderOrchestrator (notifyOrderChannelAboutError, sendErrorMessageToUser, try')
+import App (AppM, readTVarIO, readTChanIO, _shelfOrdersChan, render, _bots, ChatKey (MAIN), _configHttpManager)
 
 
 runShelfOrderRegister :: AppM ()
@@ -22,8 +45,55 @@ runShelfOrderRegister = do
   let inChan = _shelfOrdersChan st
   forever $ do
     -- Block and wait for a new order to appear in the channel
-    order <- readTChanIO inChan
-    void $ async $ uncurry runSingleRegister order
+    readTChanIO inChan >>= (void . async . runJobWithCleanup . uncurry runSingleRegister)
 
-runSingleRegister :: Int64 -> InitiateShelfShipment -> AppM ()
-runSingleRegister _ _ = undefined
+runSingleRegister :: Int64 -> WithField "chat_id" Int64 InitiateShelfShipment -> AppM ()
+runSingleRegister userId (WithField chatId init) = do
+  $(logTM) InfoS $ ls $ "Processing shelf order for user " <> show userId
+  eRes <- Order.place userId init
+  case eRes of
+    Left err -> do
+      $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
+      msg <- render ($currentModule <> ".Error") mempty
+      sendErrorMessageToUser chatId msg
+      notifyOrderChannelAboutError err
+    Right maybeDetails -> for_ maybeDetails $ \details@ShelfShipmentDetails {..} -> do
+      $(logTM) InfoS $ ls $ "Successfully registered shelf order for user " <> show userId <> " with details: " <> show details
+      bots <- fmap _bots ask
+      let (bot,_) = (M.!) bots MAIN
+      let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+      let templateData = 
+            HM.fromList 
+            [ ("orderId", ssdOrderId)
+            , ("trackingNumber", ssdTrackingNumber)
+            , ("provider", tshow ssdDeliveryProvider)
+            ]
+      message <- fmap escapeMarkdownV2 $ render $currentModule templateData
+      let trackUrl = 
+            case ssdDeliveryProvider of
+              SDEK -> "https://www.cdek.ru/ru/tracking?order_id=" <> ssdTrackingNumber
+              _    -> undefined -- We currently only support SDEK, but this is where you'd add more providers in the future. 
+      let button = 
+           object [
+            "inline_keyboard" .=
+            [[ object 
+             [ "text" .= ("Отследить на сайте " <> tshow ssdDeliveryProvider)
+             , "url"  .= trackUrl
+             ]
+            ]]
+           ]
+      let payload =
+            object
+            [ "chat_id"              .= chatId
+            , "text"                 .= message
+            , "parse_mode"           .= tshow MarkdownV2
+            , "link_preview_options" .= 
+                disableLinkPreviewOption
+            , "reply_markup"         .= button
+            ]
+      httpManager <- fmap _configHttpManager ask
+      eTelMsgId <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+      when (isLeft eTelMsgId) $ do
+        $(logTM) ErrorS $ "telegram failed to deliver message " <> ls (show eTelMsgId)
+        notifyOrderChannelAboutError $ tshow eTelMsgId
+

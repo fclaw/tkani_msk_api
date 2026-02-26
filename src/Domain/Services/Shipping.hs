@@ -38,7 +38,7 @@ import Infrastructure.Services.Sdek.Types.Courier
 import Workers.SdekPriceCalculator (registerReceipt)
 import Workers.SdekGenerateReceipt (getSdekReceipt, downloadSdekPdf)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
-import API.Handlers.RegisterOrder (PlaceOrderError (..), fetchOrderPollerRes)
+import Workers.SimpleOrderOrchestrator.Order (PlaceOrderError (..), fetchOrderPollerRes)
 import Infrastructure.Services.Sdek  (registerOrder, registerCourierCall)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig (..), Sender (..), SdekSenderLocation (..))
 import Infrastructure.Database (OrdersForCourierPickup (..), OrdersForCourierPickupItem (..), fetchOrdersForCourierPickup, createCourierPickupPromise)

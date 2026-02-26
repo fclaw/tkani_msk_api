@@ -19,7 +19,7 @@ module Infrastructure.Database
   , putNewFabric
   , getOrderItems
   , placeNewOrder
-  , setTelegramMessage
+  , storeTelegramMessageDetails
   , getChatDetails
   , updateOrderStatusStatement
   , updateShelfOrderStatusStatement
@@ -460,16 +460,17 @@ placeNewOrderStatement =
 placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
 placeNewOrder order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
 
-setTelegramMessageStatement :: Hasql.Statement SetTelegramMessageRequest Int64
-setTelegramMessageStatement =
-   lmap $(recordToTuple ''SetTelegramMessageRequest)
-   [Hasql.rowsAffectedStatement| 
-     INSERT INTO order_telegram_bindings 
-     (order_id, shelf_order_id, chat_id, message_id) 
-     VALUES ($1 :: text?, $2 :: text?, $3 :: int8, $4 :: int8)|]
-
-setTelegramMessage :: SetTelegramMessageRequest -> Hasql.Pool -> AppM (Either Text Int64)
-setTelegramMessage message pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ message `Hasql.statement` setTelegramMessageStatement
+storeTelegramMessageDetails :: TelegramMessageDetails -> Hasql.Pool -> AppM (Either Text Int64)
+storeTelegramMessageDetails details pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ 
+      Hasql.statement details $
+      lmap $(recordToTuple ''TelegramMessageDetails)
+      [Hasql.rowsAffectedStatement|
+       INSERT INTO order_telegram_bindings 
+       (order_id, shelf_order_id, chat_id, message_id) 
+       VALUES ($1 :: text?, $2 :: text?, $3 :: int8, $4 :: int8)
+      |]
 
 getChatDetailsStatement :: Hasql.Statement Text (Maybe (Int64, Int64))
 getChatDetailsStatement = 

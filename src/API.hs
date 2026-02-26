@@ -82,13 +82,6 @@ data Routes route = Routes
        :> "register"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] OrderRequest
-       :> Post '[JSON] (ApiResponse OrderConfirmationDetails)
-  , _setTelegramMessage
-       :: route
-       :- "order"
-       :> "set_telegram_message"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> ReqBody '[JSON] SetTelegramMessageRequest
        :> Post '[JSON] (ApiResponse ())
   , _trackOrder
        :: route
@@ -235,8 +228,8 @@ data Routes route = Routes
        :> "ship"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
-       :> ReqBody '[JSON] InitiateShelfShipment
-       :> Post '[JSON] (ApiResponse ShelfShipmentDetails)
+       :> ReqBody '[JSON] (WithField "chat_id" Int64 InitiateShelfShipment)
+       :> Post '[JSON] (ApiResponse ())
     , _requestShelfStatus
        :: route
        :- "shelf"

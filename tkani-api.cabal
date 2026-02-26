@@ -68,7 +68,6 @@ library
       API.Handlers.SearchFabricCard
       API.Handlers.SearchFabrics
       API.Handlers.SetOrderDimensions
-      API.Handlers.SetTelegramMessage
       API.Handlers.Shelf.EditShelfPersonalInfo
       API.Handlers.Shelf.FetchShelfItems
       API.Handlers.Shelf.GetSdekPreferredPoint
@@ -140,6 +139,8 @@ library
       Utils.Telegram.Markdown
       Utils.Time
       Workers.FabricLifecycleManager
+      Workers.ShelfOrderRegister.Order
+      Workers.SimpleOrderOrchestrator.Order
       Paths_tkani_api
   hs-source-dirs:
       src

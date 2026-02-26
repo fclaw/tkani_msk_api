@@ -33,7 +33,7 @@ import Infrastructure.Database
 import Text (tshow, encodeToText)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError)
-import API.Handlers.RegisterOrder(mkInitRequest, formatOrderItemLine)
+import Workers.SimpleOrderOrchestrator.Order (mkInitRequest, formatOrderItemLine)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff

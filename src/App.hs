@@ -282,7 +282,7 @@ data State = State
   , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
   , _sdekPointsCodes    :: Maybe (UTCTime, [SdekPointCode])
   , _simpleOrdersChan   :: TChan OrderRequest
-  , _shelfOrdersChan    :: TChan (Int64, InitiateShelfShipment)
+  , _shelfOrdersChan    :: TChan (Int64, WithField "chat_id" Int64 InitiateShelfShipment)
   }
 
 
