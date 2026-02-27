@@ -17,7 +17,8 @@ import Data.Text (Text, unlines, pack)
 import Control.Monad (when, void, join)
 import Data.Either (fromRight)
 import Data.Functor ((<&>))
-import Data.Bifunctor (first)
+import Data.Foldable (for_)
+import Data.Bifunctor (first, bimap)
 import qualified Data.Text as T
 import Data.Text as T (unpack, pack)
 import Data.Maybe (isNothing, fromJust, isJust)
@@ -83,17 +84,19 @@ handler userId PutOnShelfRequest {posrChatId=chatId} = do
         case eMessageId of
           Left err -> do
             $(logTM) ErrorS $ "Failed to send Telegram message for payment link: " <> ls (show err)
-          Right msgIdResp@MessageIdResponse{..} -> do
-            $(logTM) InfoS $ "Successfully sent Telegram message for payment link, message ID: " <> ls (show msgIdResp)
-            pool <- fmap _appDBPool ask
-            let details =
-                 TelegramMessageDetails
-                 { tmdSingleOrderId = Nothing
-                 , tmdShelfOrderId  = pspoOrderId options
-                 , tmdChatId        = chatId
-                 , tmdMessageId     = message_id
-                 }
-            void $ storeTelegramMessageDetails details pool
+          Right maybeMessageId ->
+            for_ maybeMessageId $ \msgIdResp -> do
+              let MessageIdResponse{..} = msgIdResp
+              $(logTM) InfoS $ "Successfully sent Telegram message for payment link, message ID: " <> ls (show msgIdResp)
+              pool <- fmap _appDBPool ask
+              let details =
+                    TelegramMessageDetails
+                    { tmdSingleOrderId = Nothing
+                    , tmdShelfOrderId  = pspoOrderId options
+                    , tmdChatId        = chatId
+                    , tmdMessageId     = message_id
+                    }
+              void $ storeTelegramMessageDetails details pool
     -- THE FAILURE CASES
     Left err -> do
       case err of
@@ -251,7 +254,7 @@ onSuccess userId = do
   return putOnShelfPaymentOptions
 
 
-sendMessage :: Int64 -> PutOnShelfPaymentOptions -> AppM (Either Text MessageIdResponse)
+sendMessage :: Int64 -> PutOnShelfPaymentOptions -> AppM (Either Text (Maybe MessageIdResponse))
 sendMessage chatId PutOnShelfPaymentOptions {..} = do
   bots <- fmap _bots ask
   let (bot,_) = (M.!) bots MAIN
@@ -288,15 +291,17 @@ sendMessage chatId PutOnShelfPaymentOptions {..} = do
                   disableLinkPreviewOption
               , "reply_markup"         .= buttons
               ]
-        liftIO $ try @SomeException $ postWith (defaults & manager .~ Right httpManager) url payload
+        liftIO $ try @SomeException $ fmap Just $ postWith (defaults & manager .~ Right httpManager) url payload
       status -> do
         messageText <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> tshow status) HM.empty
         let payload =
               object
               [ "chat_id"              .= chatId
-              , "text"                 .= escapeMarkdownV2 messageText
+              , "text"                 .= messageText
               , "parse_mode"           .= T.pack (show MarkdownV2)
               ]
-        liftIO $ try @SomeException $ postWith (defaults & manager .~ Right httpManager) url payload
-  return $ join $ first tshow $ eTelResp <&> \r -> first pack $ eitherDecode @MessageIdResponse (r ^. responseBody) 
+        liftIO $ try @SomeException $ fmap (const Nothing) $ postWith (defaults & manager .~ Right httpManager) url payload
+  case eTelResp of
+    Left err            -> return $ Left (tshow err)
+    Right maybeResponse -> return $ sequenceA $ maybeResponse <&> \response -> first pack (eitherDecode @MessageIdResponse (response ^. responseBody))
   
