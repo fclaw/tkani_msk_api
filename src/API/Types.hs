@@ -656,6 +656,17 @@ data ShelfItemsResponse =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } ''ShelfItemsResponse)
 
+
+
+data PutOnShelfRequest =
+     PutOnShelfRequest
+     { posrChatId   :: Int64
+     } deriving (Show, Eq)
+
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "posr" } ''PutOnShelfRequest)
+
+
 data ShelfStatus = Requested | Waitlisted | Active | Absent
   deriving (Show, Generic)
 

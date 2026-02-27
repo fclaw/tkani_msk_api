@@ -4,26 +4,35 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 
 
 module API.Handlers.Shelf.PutOnShelf (handler) where
 
 
 import Katip
+import Data.Either (isLeft)
 import Data.Int (Int64)
-import Data.Text (Text, unlines)
-import Control.Monad (when, void)
+import Data.Text (Text, unlines, pack)
+import Control.Monad (when, void, join)
 import Data.Either (fromRight)
+import Data.Functor ((<&>))
+import Data.Bifunctor (first)
 import qualified Data.Text as T
 import Data.Text as T (unpack, pack)
-import Data.Maybe (isNothing, fromJust)
+import Data.Maybe (isNothing, fromJust, isJust)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
 import Data.Time (formatTime, defaultTimeLocale)
 import qualified Data.HashMap.Strict as HM
+import Network.Wreq (postWith, defaults, manager, responseBody)
+import Control.Lens ((&), (.~), (^.))
+import qualified Data.Map.Strict as M
 import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
 import Control.Monad.State.Class (get)
+import Control.Exception (SomeException, try)
+import Data.Aeson ((.=), object, eitherDecode, Value (Null))
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Control.Monad.Trans.Except (withExceptT, ExceptT (..), runExceptT, except)
@@ -37,15 +46,15 @@ import Workers.SimpleOrderOrchestrator.Order (mkInitRequest, formatOrderItemLine
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
+import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
-import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, message_id)
-import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError, ShelfStatus (..), mkDefPutOnShelfPaymentOptions)
 import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Enum as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.GetState as Tinkoff
-
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, message_id, ParseMode(MarkdownV2), MessageIdResponse (..), disableLinkPreviewOption)
+import API.Types (ApiResponse, PutOnShelfPaymentOptions (..), mkError, ShelfStatus (..), mkDefPutOnShelfPaymentOptions, PutOnShelfRequest (..))
 
 data PutOnShelfError
   = TinkoffHttpError HttpError       -- Failed to create a payment link
@@ -59,8 +68,8 @@ data PutOnShelfError
 
 wrap action error = withExceptT error (ExceptT action)
 
-handler :: Int64 -> AppM (ApiResponse PutOnShelfPaymentOptions)
-handler userId = do
+handler :: Int64 -> PutOnShelfRequest -> AppM (ApiResponse ())
+handler userId PutOnShelfRequest {posrChatId=chatId} = do
   -- 1. Run the core business logic.
   eResult <- runExceptT (putOnShelf userId)
   -- 2. Pattern match on the result to build the final API response.
@@ -69,7 +78,22 @@ handler userId = do
     Right options -> do
       $(logTM) InfoS $ "payment options has been acquired: " <> ls (tshow options)
       -- Return the successful response payload for the bot
-      return $ Right options
+      fmap Right $ forkAppM $ do 
+        eMessageId <- sendMessage chatId options
+        case eMessageId of
+          Left err -> do
+            $(logTM) ErrorS $ "Failed to send Telegram message for payment link: " <> ls (show err)
+          Right msgIdResp@MessageIdResponse{..} -> do
+            $(logTM) InfoS $ "Successfully sent Telegram message for payment link, message ID: " <> ls (show msgIdResp)
+            pool <- fmap _appDBPool ask
+            let details =
+                 TelegramMessageDetails
+                 { tmdSingleOrderId = Nothing
+                 , tmdShelfOrderId  = pspoOrderId options
+                 , tmdChatId        = chatId
+                 , tmdMessageId     = message_id
+                 }
+            void $ storeTelegramMessageDetails details pool
     -- THE FAILURE CASES
     Left err -> do
       case err of
@@ -225,3 +249,54 @@ onSuccess userId = do
        , pspoShelfStatus = Active
        }
   return putOnShelfPaymentOptions
+
+
+sendMessage :: Int64 -> PutOnShelfPaymentOptions -> AppM (Either Text MessageIdResponse)
+sendMessage chatId PutOnShelfPaymentOptions {..} = do
+  bots <- fmap _bots ask
+  let (bot,_) = (M.!) bots MAIN
+  let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+  httpManager <- fmap _configHttpManager ask
+  eTelResp <-
+    case pspoShelfStatus of
+      Active -> do
+        let templateData = HM.fromList [("amount", tshow (fromJust pspoTotalPrice))]
+        message <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> tshow Active) templateData
+        let buttons = 
+              object [
+                "inline_keyboard" .=
+                  [[ object 
+                    [ "text" .= ("💳 Оплатить картой" :: Text)
+                    , "url"  .= fromJust pspoPaymentLink
+                    ]
+                  ],
+                  [if isJust pspoLinkToQr then
+                      object 
+                      [ "text" .= ("📱 Оплатить СПБ" :: Text)
+                      , "url"  .= fromJust pspoLinkToQr
+                      ]
+                    else Null
+                  ]
+                  ]
+                ]
+        let payload =
+              object
+              [ "chat_id"              .= chatId
+              , "text"                 .= message
+              , "parse_mode"           .= tshow MarkdownV2
+              , "link_preview_options" .= 
+                  disableLinkPreviewOption
+              , "reply_markup"         .= buttons
+              ]
+        liftIO $ try @SomeException $ postWith (defaults & manager .~ Right httpManager) url payload
+      status -> do
+        messageText <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> tshow status) HM.empty
+        let payload =
+              object
+              [ "chat_id"              .= chatId
+              , "text"                 .= escapeMarkdownV2 messageText
+              , "parse_mode"           .= T.pack (show MarkdownV2)
+              ]
+        liftIO $ try @SomeException $ postWith (defaults & manager .~ Right httpManager) url payload
+  return $ join $ first tshow $ eTelResp <&> \r -> first pack $ eitherDecode @MessageIdResponse (r ^. responseBody) 
+  

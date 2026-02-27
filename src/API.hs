@@ -215,6 +215,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
        :> Get '[JSON] (ApiResponse ShelfItemsResponse)
+      -- deprecated, to be removed after the bot update
    , _setPaymentMessageDetails
       :: route
       :- "shelf"
@@ -228,7 +229,8 @@ data Routes route = Routes
        :> "checkout"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "user_id" Int64
-       :> Post '[JSON] (ApiResponse PutOnShelfPaymentOptions)
+       :> ReqBody '[JSON] PutOnShelfRequest
+       :> Post '[JSON] (ApiResponse ())
    , _initiateShipment
        :: route
        :- "shelf"
