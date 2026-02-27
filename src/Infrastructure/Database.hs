@@ -2995,13 +2995,13 @@ editShelfPersonalInfo userId personalInfo pool =
      |]
 
 
-getAppStatusDetails :: [SdekPickupAppStatus] -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, UUID, SdekPickupAppStatus)))
+getAppStatusDetails :: [SdekPickupAppStatus] -> Hasql.Pool -> AppM (Either Text [(Int64, UUID, SdekPickupAppStatus)])
 getAppStatusDetails statuses pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
     Hasql.statement (map encodeToText statuses) $
-     dimap V.fromList (fmap (app3 (extractADT . convertFromJson @SdekPickupAppStatus))) $
-     [Hasql.maybeStatement|
+     dimap V.fromList (map (app3 (extractADT . convertFromJson @SdekPickupAppStatus)) . V.toList) $
+     [Hasql.vectorStatement|
        SELECT
         id :: int8,
         app_uuid :: uuid,

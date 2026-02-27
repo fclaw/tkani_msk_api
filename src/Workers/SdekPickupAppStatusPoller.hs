@@ -27,58 +27,58 @@ runSdekPickupAppStatusPoller = do
   eDbRes <- getAppStatusDetails [READY_FOR_APPOINTMENT, APPOINTED_COURIER] pool
   case eDbRes of 
     Left err -> $(logTM) ErrorS $ ls $ "getAppStatusDetails resulted in error " <> tshow err
-    Right Nothing -> pure ()
-    Right (Just (id, app_uuid, oldStatus)) -> do
-      eSdekRes <- getPickupApplicationStatus app_uuid
-      case eSdekRes of
-        Left err -> $(logTM) ErrorS $ ls $ "getPickupApplicationStatus resulted in error " <> tshow err
-        Right appStatus -> do
-          let newStatus = compareStatus oldStatus (status appStatus)
-          case newStatus of
-            Nothing -> do
-              $(logTM) InfoS $ ls $ "pickup app status hasn't changed  " <> tshow oldStatus
-            Just newStatus -> do
-              $(logTM) InfoS $ ls $ "pickup app status changed from " <> tshow oldStatus <> " to " <> tshow newStatus
-              let msg = escapeMarkdownV2 $ "pickup status changed from " <> tshow oldStatus <> " to " <> tshow newStatus
-              void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
+    Right applications ->
+      for_ applications $ \(id, app_uuid, oldStatus) -> do
+        eSdekRes <- getPickupApplicationStatus app_uuid
+        case eSdekRes of
+          Left err -> $(logTM) ErrorS $ ls $ "getPickupApplicationStatus resulted in error " <> tshow err
+          Right appStatus -> do
+            let newStatus = compareStatus oldStatus (status appStatus)
+            case newStatus of
+              Nothing -> do
+                $(logTM) InfoS $ ls $ "pickup app status hasn't changed  " <> tshow oldStatus
+              Just newStatus -> do
+                $(logTM) InfoS $ ls $ "pickup app status changed from " <> tshow oldStatus <> " to " <> tshow newStatus
+                let msg = escapeMarkdownV2 $ "pickup status changed from " <> tshow oldStatus <> " to " <> tshow newStatus
+                void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
-              -- CRITICAL: Update your database with the new status.
-              -- This is a very important step missing from your original code.
-              eDbRes <- updatePickupAppStatus id newStatus pool
-              when (isLeft eDbRes) $ do
-                $(logTM) ErrorS $ ls $ "updatePickupAppStatus resulted in error " <> tshow eDbRes
-                let error = escapeMarkdownV2 $ "‼️ updatePickupAppStatus resulted in error " <> tshow eDbRes
-                void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-              
-              for_ eDbRes $ \_ ->
-                -- Add specific actions based on the *new, valid* status
-                case newStatus of
-                    APPOINTED_COURIER -> do
-                      $(logTM) InfoS $ "Courier assigned"
-                      -- Send notification to customer etc.
-                      -- status hasn't changed
-                      let msg = escapeMarkdownV2 $ "courier has been assigned to the order"
-                      void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
-                    DONE -> do
-                      $(logTM) InfoS $ "Pickup completed"
-                      -- Handle order fulfillment etc.
-                      -- Send notification to customer etc.
-                      updatePickedUpOrdersStatus id PickedUpByCourier pool
-                      let msg = escapeMarkdownV2 $ "the fulfillment of the order has been completed"
-                      void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
-                    PROBLEM_DETECTED -> do
-                      $(logTM) WarningS $ "Problem detected for pickup"
-                      -- erase pickup application in SDEK system
-                      cancelRes <- cancelPickupApplication app_uuid
-                      for_ cancelRes $ const $ $(logTM) InfoS "Pickup application cancelled in SDEK system"
-                      -- Send alert to admin channel.
-                      updatePickedUpOrdersStatus id PickupFailed pool
-                      let error = escapeMarkdownV2 $ "‼️ Problems detected. orders are marked as PickupFailed"
-                      void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
-                    REMOVED -> do
-                      $(logTM) WarningS $ "Pickup removed. Processing cancellation."
-                    -- Trigger internal cancellation process if needed.
-                    _ -> pure () -- Do nothing for other statuses, or add more logic           
+                -- CRITICAL: Update your database with the new status.
+                -- This is a very important step missing from your original code.
+                eDbRes <- updatePickupAppStatus id newStatus pool
+                when (isLeft eDbRes) $ do
+                  $(logTM) ErrorS $ ls $ "updatePickupAppStatus resulted in error " <> tshow eDbRes
+                  let error = escapeMarkdownV2 $ "‼️ updatePickupAppStatus resulted in error " <> tshow eDbRes
+                  void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                
+                for_ eDbRes $ \_ ->
+                  -- Add specific actions based on the *new, valid* status
+                  case newStatus of
+                      APPOINTED_COURIER -> do
+                        $(logTM) InfoS $ "Courier assigned"
+                        -- Send notification to customer etc.
+                        -- status hasn't changed
+                        let msg = escapeMarkdownV2 $ "courier has been assigned to the order"
+                        void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
+                      DONE -> do
+                        $(logTM) InfoS $ "Pickup completed"
+                        -- Handle order fulfillment etc.
+                        -- Send notification to customer etc.
+                        updatePickedUpOrdersStatus id PickedUpByCourier pool
+                        let msg = escapeMarkdownV2 $ "the fulfillment of the order has been completed"
+                        void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
+                      PROBLEM_DETECTED -> do
+                        $(logTM) WarningS $ "Problem detected for pickup"
+                        -- erase pickup application in SDEK system
+                        cancelRes <- cancelPickupApplication app_uuid
+                        for_ cancelRes $ const $ $(logTM) InfoS "Pickup application cancelled in SDEK system"
+                        -- Send alert to admin channel.
+                        updatePickedUpOrdersStatus id PickupFailed pool
+                        let error = escapeMarkdownV2 $ "‼️ Problems detected. orders are marked as PickupFailed"
+                        void $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                      REMOVED -> do
+                        $(logTM) WarningS $ "Pickup removed. Processing cancellation."
+                      -- Trigger internal cancellation process if needed.
+                      _ -> pure () -- Do nothing for other statuses, or add more logic           
 
 
 
