@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Workers.ShelfOrderRegister (runShelfOrderRegister) where
 
@@ -11,7 +12,7 @@ import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Foldable (for_)
-import Data.Aeson ((.=), object)
+import Data.Aeson ((.=), object, eitherDecode)
 import Katip (logTM, Severity(..))
 import Data.Either (isLeft)
 import Control.Monad (forever, void, when)
@@ -32,9 +33,10 @@ import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import API.Types (InitiateShelfShipment, ShelfShipmentDetails (..), Providers (SDEK))
 import qualified Workers.ShelfOrderRegister.Order as Order
-import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2))
+import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
+import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2), MessageIdResponse (..))
 import Workers.SimpleOrderOrchestrator (notifyOrderChannelAboutError, sendErrorMessageToUser, try')
-import App (AppM, readTVarIO, readTChanIO, _shelfOrdersChan, render, _bots, ChatKey (MAIN), _configHttpManager)
+import App (AppM, readTVarIO, readTChanIO, _shelfOrdersChan, render, _bots, ChatKey (MAIN), _configHttpManager, _appDBPool)
 
 
 runShelfOrderRegister :: AppM ()
@@ -93,7 +95,26 @@ runSingleRegister userId (WithField chatId init) = do
             ]
       httpManager <- fmap _configHttpManager ask
       eTelMsgId <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
-      when (isLeft eTelMsgId) $ do
-        $(logTM) ErrorS $ "telegram failed to deliver message " <> ls (show eTelMsgId)
-        notifyOrderChannelAboutError $ tshow eTelMsgId
-
+      case eTelMsgId of
+        Left err -> do
+          $(logTM) ErrorS $ "telegram failed to deliver message " <> ls (show eTelMsgId)
+          notifyOrderChannelAboutError $ tshow eTelMsgId
+        Right response -> do 
+          $(logTM) InfoS $ "Successfully sent shelf order registration message to user " <> ls (show userId)
+          let eitherMessageId = eitherDecode @MessageIdResponse (response ^. responseBody)
+          case eitherMessageId of
+            Left err -> do
+              $(logTM) ErrorS $ "Failed to decode Telegram response: " <> ls (tshow err)
+              notifyOrderChannelAboutError $ tshow err
+            Right (MessageIdResponse msgId) -> do
+              $(logTM) InfoS $ "Successfully decoded Telegram message ID: " <> ls (show msgId)
+              -- Here you would typically want to save the msgId along with the order details in your database for future reference (e.g. if you want to edit or delete the message later). 
+              pool <- fmap _appDBPool ask
+              let details = 
+                   TelegramMessageDetails
+                   { tmdSingleOrderId = Just ssdOrderId
+                   , tmdShelfOrderId  = Nothing
+                   , tmdChatId        = chatId
+                   , tmdMessageId     = msgId
+                   }
+              void $ storeTelegramMessageDetails details pool

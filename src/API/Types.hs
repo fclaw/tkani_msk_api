@@ -600,6 +600,7 @@ data SetOrderDimensionsRequest =
      { sodrLength  :: Int
      , sodrWidth   :: Int
      , sodrHeight  :: Int
+     , sodWeight   :: Maybe Int
      } deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sodr" } ''SetOrderDimensionsRequest)

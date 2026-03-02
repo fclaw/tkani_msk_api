@@ -2157,6 +2157,7 @@ setOrderDimensions orderId dimensions pool =
         lmap ( app3 fromIntegral 
              . app2 fromIntegral
              . app4 fromIntegral
+             . app5 (fmap fromIntegral)
              . consT orderId 
              . ($(recordToTuple ''SetOrderDimensionsRequest)))
         [Hasql.resultlessStatement|
@@ -2164,7 +2165,8 @@ setOrderDimensions orderId dimensions pool =
          SET
           length = $2 :: int4,
           width = $3 :: int4,
-          height = $4 :: int4
+          height = $4 :: int4,
+          actual_weight_grams = COALESCE($5 :: int4?, actual_weight_grams)
          WHERE id = $1 :: text
        |]
 
