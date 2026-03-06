@@ -1657,6 +1657,7 @@ getOrderDetailsForPricing orderId pool =
             o.length,
             o.width,
             o.height,
+            o.actual_weight_grams as weight,
             array_agg(
              jsonb_build_object(
               'density', f.density,
@@ -1688,6 +1689,7 @@ getOrderDetailsForPricing orderId pool =
             o.length,
             o.width,
             o.height,
+            o.actual_weight_grams as weight,
             array_agg(
              jsonb_build_object(
               'density', f.density,
