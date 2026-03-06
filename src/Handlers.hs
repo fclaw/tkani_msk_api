@@ -14,7 +14,6 @@ import API (Routes (..)) -- Import our new ApiWithDocs
 import qualified API.Handlers.GetFabricPreview as GetFabricPreview
 import qualified API.Handlers.PutNewFabric as PutNewFabric
 import qualified API.Handlers.UploadMediaForFabric as UploadMediaForFabric
-import qualified API.Handlers.GetDeliveryPoints as GetDeliveryPoints
 import qualified API.Handlers.GetProviders as GetProviders
 import qualified API.Handlers.RegisterOrder as RegisterOrder
 import qualified API.Handlers.SetPaymentMessageDetails as SetPaymentMessageDetails
@@ -47,7 +46,13 @@ import qualified API.Handlers.Shelf.GetShelfPersonalInfo as GetShelfPersonalInfo
 import qualified API.Handlers.Shelf.EditShelfPersonalInfo as EditShelfPersonalInfo
 import qualified API.Handlers.Shelf.GetSdekPreferredPoint as GetSdekPreferredPoint
 
+import qualified API.Handlers.Sdek.ListPickupPoints as Sdek.ListPickupPoints
 import qualified API.Handlers.GetSdekPointFullAddress as GetSdekPointFullAddress
+
+
+import qualified API.Handlers.Yandex.DetectLocation as Yandex.DetectLocation
+import qualified API.Handlers.Yandex.ListPickupPoints as Yandex.ListPickupPoints
+
 
 
 
@@ -57,7 +62,6 @@ apiHandlers :: Routes (AsServerT AppM)
 apiHandlers = Routes
   { _getFabricPreview          = GetFabricPreview.handler -- Assign the handler function to the field
   , _putNewFabric              = PutNewFabric.handler
-  , _getDeliveryPoints         = GetDeliveryPoints.handler
   , _uploadMediaForFabric      = UploadMediaForFabric.handler
   , _getProviders              = GetProviders.handler
   , _registerOrder             = RegisterOrder.handler
@@ -92,4 +96,11 @@ apiHandlers = Routes
   , _getSdekPreferredPoint     = GetSdekPreferredPoint.handler
 
   , _getSdekPointFullAddress   = GetSdekPointFullAddress.handler
+
+    -- SDEK
+  , _listSdekPickupPoints       = Sdek.ListPickupPoints.handler
+
+    -- Yandex 
+  , _detectLocation            = Yandex.DetectLocation.handler
+  , _listYandexPickupPoints    = Yandex.ListPickupPoints.handler -- Placeholder, replace with actual handler when implemented
   }

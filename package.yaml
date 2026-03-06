@@ -40,6 +40,7 @@ library:
     - Application.Cart
     - Lib.Servant.RateLimit
     - Infrastructure.Services.Sdek.Types
+    - Infrastructure.Services.Yandex.Config
     - Infrastructure.Services.Sdek.Types.Config
     - Infrastructure.Services.Dostavista.Types.Config
   dependencies:

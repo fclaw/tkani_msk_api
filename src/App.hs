@@ -91,6 +91,7 @@ import Text (recordLabelModifier, camelToSnake)
 import API.Types (ProviderInfo, DeliveryPoint, OrderRequest, InitiateShelfShipment)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import Domain.Warehouse.Enums (FabricLifecycle)
+import Infrastructure.Services.Yandex.Config (YandexConfig)
 import Infrastructure.Services.Sdek.Types.Geocode (SdekPoint)
 import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
 import Infrastructure.Services.Sdek.Types (SdekConfirmation, SdekError, Location, mkLocation)
@@ -100,7 +101,7 @@ import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
-
+import Infrastructure.Services.Yandex.Types (GeoId, PickupPoint)
 
 
 data Scheme = HTTP | HTTPS
@@ -273,6 +274,7 @@ data State = State
   , _pointCache         :: PointCache
   , _cityCodeByPVZCache :: CityCodeByPVZCache
   , _sdekTariffs        :: M.Map NormalizedRoute (UTCTime, [Int])
+  , _yandexPickupPoints :: M.Map GeoId (UTCTime, [WithField "metros" [Text] PickupPoint])
   , _sdekPromises       :: SdekPromiseMap
   , _tinkoffPaymentChan :: TChan (PaymentFlow, Text, GetStateRequest)
   , _sdekOrderChan      :: TChan SdekJob
@@ -309,6 +311,7 @@ data Config = Config
   , _providers              :: [ProviderInfo]
   , _tinkoffCred            :: TinkoffCredentials
   , _sdekConfig             :: SdekConfig
+  , _yandexConfig           :: YandexConfig
   , _bots                   :: Bots
   , _configHttpManager      :: Manager
   , configTemplateMap       :: TemplateMap

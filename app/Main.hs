@@ -92,6 +92,7 @@ import Workers.ShelfOrderRegister (runShelfOrderRegister)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
+import Infrastructure.Services.Yandex.Config (YandexConfig, apiUrl, apiKey)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig (..))
 import qualified Infrastructure.Services.Dostavista.Types.Config as Dostativsta
 
@@ -255,9 +256,10 @@ main = do
     eProviders <- decodeFileEither @[ProviderInfo] "providers.yaml"
     eMetroCities <- decodeFileEither @[MetroCity] "data/metro_cities.yaml"
     eSdekConfig <- decodeFileEither @SdekConfig "config/sdek.yaml"
+    eYandexConfig <- decodeFileEither @YandexConfig "config/yandex.yaml"
     eDostavistaConfig <- decodeFileEither @DostavistaConfig "config/dostavista.yaml"
-    let res = (,,,) <$> eProviders <*> eMetroCities <*> eSdekConfig <*> eDostavistaConfig
-    handleYamlResult res $ \(providers, cities, sdekConfig, dostavistaConfig) -> do
+    let res = (,,,,) <$> eProviders <*> eMetroCities <*> eSdekConfig <*> eYandexConfig <*> eDostavistaConfig
+    handleYamlResult res $ \(providers, cities, sdekConfig, yandexConfig, dostavistaConfig) -> do
       tplMap <- loadTemplatesFromDirectory "templates"
 
       -- 2. Load configuration from environment variables
@@ -297,6 +299,11 @@ main = do
                    configSdekClientSecret
                  , tariffs = sort (tariffs sdekConfig)
                  }
+            , _yandexConfig = 
+               yandexConfig
+               { apiUrl = fromMaybe (apiUrl yandexConfig) configYandexApiUrl
+               , apiKey = fromMaybe (apiKey yandexConfig) configYandexApiKey
+               }
             , _bots =
                 M.fromList
                   [(CONCIERGE, (configConciergeBotToken, configConciergeChatId)),
@@ -364,6 +371,7 @@ main = do
            , _sdekPointsCodes    = Nothing
            , _simpleOrdersChan   = simpleOrdersChan
            , _shelfOrdersChan    = shelfOrdersChan
+           , _yandexPickupPoints = mempty
            }
       initialState <- newTVarIO state
   

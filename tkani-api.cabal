@@ -44,6 +44,7 @@ library
       Application.Cart
       Lib.Servant.RateLimit
       Infrastructure.Services.Sdek.Types
+      Infrastructure.Services.Yandex.Config
       Infrastructure.Services.Sdek.Types.Config
       Infrastructure.Services.Dostavista.Types.Config
   other-modules:
@@ -53,7 +54,6 @@ library
       API.Handlers.ClearCart
       API.Handlers.DeleteFabric
       API.Handlers.GetCatalogSummary
-      API.Handlers.GetDeliveryPoints
       API.Handlers.GetFabricPreview
       API.Handlers.GetProviders
       API.Handlers.GetSdekPointFullAddress
@@ -64,6 +64,7 @@ library
       API.Handlers.RegisterOrder
       API.Handlers.ReportDailySales
       API.Handlers.ReportMonthlySales
+      API.Handlers.Sdek.ListPickupPoints
       API.Handlers.SdekDeliveryPointUUID
       API.Handlers.SearchFabricCard
       API.Handlers.SearchFabrics
@@ -82,6 +83,8 @@ library
       API.Handlers.TrackOrder
       API.Handlers.UploadMediaForFabric
       API.Handlers.ViewCart
+      API.Handlers.Yandex.DetectLocation
+      API.Handlers.Yandex.ListPickupPoints
       API.WithField
       Concurrency
       Domain.Error
@@ -130,6 +133,10 @@ library
       Infrastructure.Services.Tinkoff.Types.Init
       Infrastructure.Services.Tinkoff.Types.QR
       Infrastructure.Services.Types
+      Infrastructure.Services.Yandex
+      Infrastructure.Services.Yandex.CachedPickupPoints
+      Infrastructure.Services.Yandex.Types
+      Infrastructure.Services.Yandex.Types.Enums
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId
       Text

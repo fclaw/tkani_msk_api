@@ -160,7 +160,7 @@ data FabricPreview = FabricPreview
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricPreview)
 
 
-data Providers = SDEK | OZON | NONE
+data Providers = SDEK | YANDEX | NONE
   deriving (Show, Eq, Read)
 
 $(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''Providers)
@@ -171,7 +171,7 @@ instance FromHttpApiData Providers where
     -- We'll make it case-insensitive for robustness
     case T.toLower text of
       "sdek"     -> Right SDEK
-      "ozon"     -> Right OZON
+      "yandex"   -> Right YANDEX
       _          -> Left "Unknown provider"
 
 -- Convert from our Providers type TO a URL path segment
@@ -179,7 +179,7 @@ instance ToHttpApiData Providers where
   toUrlPiece provider =
     case provider of
       SDEK     -> "sdek"
-      OZON     -> "ozon"
+      YANDEX   -> "yandex"
 
 data DeliveryPoint = DeliveryPoint
   {   dpCode            :: Text
@@ -240,7 +240,6 @@ data OrderRequest = OrderRequest
   , orDeliveryProviderId :: Providers  -- The code for the provider, e.g., "sdek".
   , orDeliveryPointId    :: Text       -- The unique ID of the chosen delivery point.
   , orChatId             :: Int64
-  , orTariff             :: Int
   } deriving (Show, Generic)
 
 -- We'll need ToJSON/FromJSON instances for this to be sent over the API
@@ -747,3 +746,19 @@ data PreferredSdekPointWithAddress =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pswa" } ''PreferredSdekPointWithAddress)
+
+data YandexDeliveryCity = 
+     YandexDeliveryCity
+     { ydcCode    :: Int
+     , ydcName    :: Text
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ydc" } ''YandexDeliveryCity)
+
+data YandexPickupPointsResp = 
+     YandexPickupPointsResp
+     { ypprTotal  :: Int
+     , ypprPoints :: [WithField "dpMetros" [Text] DeliveryPoint]
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yppr" } ''YandexPickupPointsResp)

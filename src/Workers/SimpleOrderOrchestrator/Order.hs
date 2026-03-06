@@ -169,12 +169,12 @@ place orderRequest@OrderRequest {..} = do
   -- STEP D. Notify the telegram channel
   telegramMsgId <- 
     wrapOrCancel 
-    (notifyOrdersChannel (orderRequest { orTariff = optimalTariff }) items orderId) 
+    (notifyOrdersChannel orderRequest items orderId) 
     NotificationSendFailed $
     void $ Sdek.cancelOrder sdekUuid
 
   -- STEP E. Save the order in database
-  let dbOrder = mkDbOrder (orderRequest { orTariff = optimalTariff }) sdekUuid orderId trackingNumber telegramMsgId
+  let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId trackingNumber telegramMsgId
   let clearArtifacts = do
         void $ Sdek.cancelOrder sdekUuid
         void $ deleteMessage (coerce telegramMsgId) ORDER
@@ -317,8 +317,8 @@ formatOrderItemLine item =
            thumbnailUrl <> "\n"
 
 
-mkDbOrder :: OrderRequest -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
-mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
+mkDbOrder :: OrderRequest -> Int -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
+mkDbOrder OrderRequest {..} optimalTariff trackingUuid orderId trackingNumber telegramMsgId =
   DB.Order 
   { DB._orderId = orderId
   , DB._orderCustomerFullName = orCustomerFullName
@@ -329,7 +329,7 @@ mkDbOrder OrderRequest {..} trackingUuid orderId trackingNumber telegramMsgId =
   , DB._orderSdekTrackingNumber = trackingNumber
   , DB._orderInternalNotificationMessageId = coerce telegramMsgId
   , DB._orderTelegramUserId = orTelegramUserId
-  , DB._orderTariff = fromIntegral orTariff
+  , DB._orderTariff = fromIntegral optimalTariff
   }
 
 

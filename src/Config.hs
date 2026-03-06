@@ -81,6 +81,8 @@ data Config = Config
   , configTotalShelves           :: Int32
   , configPickupChatId           :: Int64
   , configSpecialPostChatId      :: Int64
+  , configYandexApiUrl           :: Maybe Text
+  , configYandexApiKey           :: Maybe Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -190,6 +192,9 @@ loadConfig = do
 
   -- 3. Parse the port number
   let configApiPort = fromMaybe 8080 (readMaybe $ unpack apiPortStr)
+
+  let configYandexApiUrl = (Map.!?) env "YANDEX_API_URL"
+  let configYandexApiKey = (Map.!?) env "YANDEX_API_KEY"
 
   -- 4. Construct the database connection string
   let configDBConnString =

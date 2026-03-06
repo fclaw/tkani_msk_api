@@ -18,6 +18,7 @@ import Lib.Servant.RateLimit (RateLimitPerUser)
 import API.WithField (WithField)
 import Domain.Warehouse.Types (FabricType)
 import Domain.Warehouse.Enums (FabricLifecycle)
+import Infrastructure.Services.Yandex.Types (LocationDetectReq, GeoId)
 
 
 -- This 'data' definition IS our new API ADT.
@@ -63,12 +64,11 @@ data Routes route = Routes
        :> QueryParam "fabric_id" Int64
        :> QueryParam "fabric_type" FabricType
        :> Get '[JSON] (ApiResponse FabricPreview)
-   , _getDeliveryPoints
+   , _listSdekPickupPoints
        :: route 
-       :- "providers"
+       :- "sdek"
+       :> "pickup-points"
        :> RateLimitPerUser (Second 1) 'Nothing
-       :> Capture "provider" Providers 
-       :> "delivery-points" 
        :> QueryParam "city" Text
        :> Get '[JSON] (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
    , _getProviders
@@ -285,6 +285,21 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Get '[JSON] (ApiResponse (Maybe Text))
 
+     -- Yandex API
+   , _detectLocation
+       :: route
+       :- "yandex"
+       :> "detect-location"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> QueryParam "location" Text
+       :> Get '[JSON] (ApiResponse [YandexDeliveryCity])
+    , _listYandexPickupPoints
+       :: route
+       :- "yandex"
+       :> "pickup-points"
+       :> RateLimitPerUser (Minute 10) ('Just "user")
+       :> QueryParam "geocode" Int
+       :> Get '[JSON] (ApiResponse YandexPickupPointsResp)
   } deriving (Generic)
 
 
