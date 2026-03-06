@@ -101,11 +101,6 @@ getDeliveryPoints city = do
     [] -> do
       $(logTM) InfoS $ logStr $ "SDEK city not found for: " <> city
       pure $ Right [] -- Return an empty list, which is a valid success case.
-    res@(_:_:_) -> do 
-      $(logTM) InfoS $ 
-        logStr $ "SDEK city not found (no exact match): " <> city <> 
-                 ". API returned multiple cities: " <> tshow res
-      pure $ Right []
     (firstCity:_) -> do
         stateTVar <- get
         now <- currentTime
