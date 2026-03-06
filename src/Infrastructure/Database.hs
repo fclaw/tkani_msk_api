@@ -1649,6 +1649,7 @@ getOrderDetailsForPricing orderId pool =
               'length', r.length,
               'width', r.width,
               'height', r.height,
+              'weight', r.weight,
               'items', r.items) :: jsonb
           FROM    
           (SELECT 
@@ -1679,7 +1680,7 @@ getOrderDetailsForPricing orderId pool =
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height
+          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height, o.actual_weight_grams
           
           UNION ALL
           
@@ -1711,7 +1712,7 @@ getOrderDetailsForPricing orderId pool =
           LEFT JOIN pre_cuts AS pc
           ON si.pre_cut_id = pc.id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height      
+          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height, o.actual_weight_grams
           ) AS r
         |]
         
