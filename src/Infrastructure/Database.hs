@@ -1649,6 +1649,7 @@ getOrderDetailsForPricing orderId pool =
               'length', r.length,
               'width', r.width,
               'height', r.height,
+              'weight', r.weight,
               'items', r.items) :: jsonb
           FROM    
           (SELECT 
