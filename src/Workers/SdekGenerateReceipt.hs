@@ -52,8 +52,8 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 data ReceiptJob = 
      ReceiptJob 
      { receiptUuid :: UUID
-     , orderId :: Text
-     , customer :: Text 
+     , orderId     :: Text
+     , customer    :: Text 
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''ReceiptJob)

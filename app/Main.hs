@@ -71,7 +71,7 @@ import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
 import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
-import Workers.SdekPriceCalculator (runSdekPriceCalculator)
+import Workers.PriceCalculator (runPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
 import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
 import Workers.DailyWeightTracker (runDailyWeightTracker)
@@ -106,7 +106,7 @@ data Workers =
       | CartsCleaner
       | SdekPickUpScheduler
       | SdekStatusPoller
-      | SdekPriceCalculator
+      | PriceCalculator
       | SdekGenerateReceipt
       | OrderDeliveryScheduler
       | DailyWeightTracker
@@ -133,7 +133,7 @@ instance Show Workers where
   show CartsCleaner                     = "Carts Cleaner"
   show SdekPickUpScheduler              = "SDEK Pickup Scheduler"
   show SdekStatusPoller                 = "SDEK Status Poller"
-  show SdekPriceCalculator              = "SDEK Price Calculator"
+  show PriceCalculator                  = "Price Calculator"
   show SdekGenerateReceipt              = "SDEK Generate Receipt"
   show OrderDeliveryScheduler           = "Order Delivery Scheduler"
   show DailyWeightTracker               = "Daily Weight Tracker"
@@ -425,13 +425,13 @@ main = do
                  appMToHandler runSdekStatusPoller 
                    >>= showErrorInWorker 
                         SdekStatusPoller)
-              , (SdekPriceCalculator,
+              , (PriceCalculator,
                   appMToHandler (
-                    runSdekPriceCalculator 
+                    runPriceCalculator 
                     connInfo 
                     appMToHandler)
                    >>= showErrorInWorker
-                        SdekPriceCalculator)
+                        PriceCalculator)
               , (SdekGenerateReceipt, 
                   appMToHandler (
                     runSdekGenerateReceipt 

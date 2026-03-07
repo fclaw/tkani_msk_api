@@ -35,7 +35,7 @@ import Infrastructure.Services.Sdek.Types
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, sendDocument)
 import Infrastructure.Services.Sdek.Types.Courier
-import Workers.SdekPriceCalculator (registerReceipt)
+import Workers.PriceCalculator (registerSdekReceipt)
 import Workers.SdekGenerateReceipt (getSdekReceipt, downloadSdekPdf)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
 import Workers.SimpleOrderOrchestrator.Order (PlaceOrderError (..), fetchOrderPollerRes)
@@ -123,11 +123,11 @@ prepareAndSchedulePickup = do
                       let error = escapeMarkdownV2 $ "‼️ Error in calling createCourierPickupPromise: " <> tshow dbErr
                       fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                     Right _ -> do
-                      eReceiptRes <- registerReceipt order_uuid
+                      eReceiptRes <- registerSdekReceipt order_uuid
                       case eReceiptRes of
                         Left err -> do
-                          $(logTM) ErrorS $ ls $ "registerReceipt failed: " <> tshow err
-                          let error = escapeMarkdownV2 $ "‼️ Error in calling registerReceipt: " <> tshow err
+                          $(logTM) ErrorS $ ls $ "registerSdekReceipt failed: " <> tshow err
+                          let error = escapeMarkdownV2 $ "‼️ Error in calling registerSdekReceipt: " <> tshow err
                           fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                         Right receipt_uuid -> do
                           eUrlRes <-getSdekReceipt receipt_uuid

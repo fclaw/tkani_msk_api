@@ -7,7 +7,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Workers.SdekPriceCalculator (runSdekPriceCalculator, registerReceipt) where
+module Workers.PriceCalculator (runPriceCalculator, registerSdekReceipt) where
 
 import Katip
 import Data.Aeson
@@ -37,7 +37,7 @@ import Data.Foldable (foldl')
 import Data.Bifunctor (second)
 
 
-import API.Types (OrderStatus (Cancelled))
+import API.Types (OrderStatus (Cancelled), Providers (SDEK))
 import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER))
 import Text (camelToSnake, tshow)
 import Infrastructure.Database 
@@ -65,15 +65,20 @@ import Infrastructure.Services.Sdek.Types.Error
 
 
 -- ADT to parse the notification payload
-data PriceJob = PriceJob { orderId :: Text, isBot :: Bool }
+data PriceJob = 
+     PriceJob 
+     { orderId  :: Text
+     , isBot    :: Bool
+     , provider :: Providers 
+     }
   deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''PriceJob)
 
 
-runSdekPriceCalculator :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
-runSdekPriceCalculator connInfo appMToHandler = do 
-  $(logTM) InfoS "SDEK Price Calculation Listener started."
+runPriceCalculator :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
+runPriceCalculator connInfo appMToHandler = do 
+  $(logTM) InfoS "Price Calculation Listener started."
   liftIO $ PG.withConnect connInfo $ \conn -> do
     -- 1. Subscribe to the channel. This must be done on the connection.
     void $ PG.execute_ conn "LISTEN price_calculation_jobs"
@@ -94,8 +99,13 @@ runSdekPriceCalculator connInfo appMToHandler = do
 
 processSingleJob :: Either String PriceJob -> AppM ()
 processSingleJob (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (PriceJob), error: " <> err
-processSingleJob (Right PriceJob {..}) = do 
-  $(logTM) InfoS $ ls $ "Received price calculation job for order: " <> orderId
+processSingleJob (Right PriceJob {..}) 
+  | provider == SDEK = doSdekCalculation orderId isBot
+  | otherwise = doYandexCalculation orderId -- Placeholder for future Yandex implementation
+
+doSdekCalculation :: Text -> Bool -> AppM ()
+doSdekCalculation orderId isBot = do
+  $(logTM) InfoS $ ls $ "Received price calculation job for SDEK order: " <> orderId
   cfg <- ask
   let pool = _appDBPool cfg
   let fromPVZ = dropOffPoint $ _sdekConfig cfg
@@ -220,7 +230,7 @@ processSingleJob (Right PriceJob {..}) = do
                                orderId <> 
                                ", sdek uuid: " <> 
                                tshow podSdekUuid
-                             eReqReq <- registerReceipt podSdekUuid
+                             eReqReq <- registerSdekReceipt podSdekUuid
                              extractFromEither eReqReq $ \receiptUuid -> do
                                eDbRes <- setReceiptReady orderId receiptUuid pool
                                extractValue eDbRes $ \_ -> 
@@ -254,8 +264,8 @@ calculateGrandTotal TotalSumResponse {..} =
 
 
 -- requestReceiptGeneration
-registerReceipt :: UUID -> AppM (Either Text UUID)
-registerReceipt sdekUuid = do
+registerSdekReceipt :: UUID -> AppM (Either Text UUID)
+registerSdekReceipt sdekUuid = do
   $(logTM) InfoS $ "Starting SDEK receipt generation process for order UUID: " <> ls (show sdekUuid)        
   eResponse <- requestReceiptGeneration sdekUuid
   case eResponse of
@@ -321,3 +331,6 @@ cancelOrder orderId = do
     void $ sendDocument ORDER message file bytes "application/x-yaml"
   when (isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "fetchOrderDetailsForYaml resulted in error: " <> tshow eDbRes
   
+
+doYandexCalculation :: Text -> AppM ()
+doYandexCalculation orderId = $(logTM) WarningS $ ls $ "Received price calculation job for unsupported provider (Yandex): " <> orderId

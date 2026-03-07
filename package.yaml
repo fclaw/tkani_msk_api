@@ -19,7 +19,7 @@ library:
     - Workers.TinkoffPaymentStatusPoller
     - Workers.SdekPickUpScheduler
     - Workers.SdekStatusPoller
-    - Workers.SdekPriceCalculator
+    - Workers.PriceCalculator
     - Workers.SdekGenerateReceipt
     - Workers.OrderDeliveryScheduler
     - Workers.DailyWeightTracker

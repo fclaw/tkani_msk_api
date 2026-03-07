@@ -1677,17 +1677,20 @@ getYamlOrderDetailsForPricing orderId pool =
         [Hasql.singletonStatement|
           SELECT
             jsonb_build_object(
-              'pick_up_point', TRIM(REGEXP_REPLACE(delivery_point_id, 'sdek_', '')),
-              'weight', actual_weight_grams,
-              'length', length,
-              'width', width,
-              'height', height,
-              'tariff', tariff,
+              'pick_up_point', TRIM(REGEXP_REPLACE(so.delivery_point, 'sdek_', '')),
+              'weight', o.actual_weight_grams,
+              'length', o.length,
+              'width', o.width,
+              'height', o.height,
+              'tariff', so.tariff,
               'price', (
                 SELECT SUM(CAST(total_price AS int)) 
                 FROM manual_order_items
                 WHERE order_id = $1 :: text)) :: jsonb
-          FROM orders WHERE id = $1 :: text|]
+          FROM orders AS o
+          INNER JOIN sdek_orders AS so
+          ON so.id = o.sdek_order_id
+          WHERE o.id = $1 :: text|]
 
 
 getOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text PriceInfo)
@@ -1711,8 +1714,8 @@ getOrderDetailsForPricing orderId pool =
               'items', r.items) :: jsonb
           FROM    
           (SELECT 
-            TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
-            o.tariff,
+            TRIM(REGEXP_REPLACE(so.delivery_point, 'sdek_', '')) AS pick_up_point,
+            so.tariff,
             o.length,
             o.width,
             o.height,
@@ -1737,14 +1740,16 @@ getOrderDetailsForPricing orderId pool =
           ON f.id = ofb.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
+          INNER JOIN sdek_orders AS so
+          ON so.id = o.sdek_order_id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height, o.actual_weight_grams
+          GROUP BY so.delivery_point, so.tariff, o.length, o.width, o.height, o.actual_weight_grams
           
           UNION ALL
           
           SELECT
-            TRIM(REGEXP_REPLACE(o.delivery_point_id, 'sdek_', '')) AS pick_up_point,
-            o.tariff,
+            TRIM(REGEXP_REPLACE(so.delivery_point, 'sdek_', '')) AS pick_up_point,
+            so.tariff,
             o.length,
             o.width,
             o.height,
@@ -1769,8 +1774,10 @@ getOrderDetailsForPricing orderId pool =
           ON f.id = si.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON si.pre_cut_id = pc.id
+          INNER JOIN sdek_orders AS so
+          ON so.id = o.sdek_order_id
           WHERE o.id = $1 :: text
-          GROUP BY o.delivery_point_id, o.tariff, o.length, o.width, o.height, o.actual_weight_grams
+          GROUP BY so.delivery_point, so.tariff, o.length, o.width, o.height, o.actual_weight_grams
           ) AS r
         |]
         
@@ -1847,7 +1854,7 @@ getPatchedOrderDetails orderId pool =
           )
           SELECT 
             jsonb_build_object(
-             'sdek_uuid', o.sdek_request_uuid,
+             'sdek_uuid', so.order_uuid,
              'items', array_agg(
                jsonb_build_object(
                 'name', moi.item_name,
@@ -1857,16 +1864,18 @@ getPatchedOrderDetails orderId pool =
                ) ORDER BY moi.article)
             ) :: jsonb
           FROM orders AS o
+          INNER JOIN sdek_orders AS so
+          ON so.id = o.sdek_order_id
           INNER JOIN manual_order_items AS moi
           ON o.id = moi.order_id 
           WHERE o.id = $1 :: text
-          GROUP BY o.sdek_request_uuid
+          GROUP BY so.order_uuid
          
           UNION
 
           SELECT 
           jsonb_build_object(
-           'sdek_uuid', o.sdek_request_uuid,
+           'sdek_uuid', so.order_uuid,
            'items', array_agg(
              jsonb_build_object(
               'name', items.name,
@@ -1876,23 +1885,42 @@ getPatchedOrderDetails orderId pool =
              ) ORDER BY items.article)
           ) :: jsonb
           FROM orders AS o
+          INNER JOIN sdek_orders AS so
+          ON so.id = o.sdek_order_id
           INNER JOIN all_items_for_order AS items
           ON o.id = items.order_id
           WHERE o.id = $1 :: text
-          GROUP BY o.sdek_request_uuid
+          GROUP BY so.order_uuid
         |]
 
 setReceiptReady :: Text -> UUID -> Hasql.Pool -> AppM (Either Text ())
 setReceiptReady orderId uuid pool =
   fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      Hasql.statement (orderId, uuid) $
-      [Hasql.resultlessStatement|
-        UPDATE orders 
-        SET receipt_ready = TRUE,
-        receipt_uuid = $2 :: uuid
-        WHERE id = $1 :: text|]
+    runTransactionM pool Hasql.Write $ do
+      -- 1. Find the link first
+      sdekOrderId <-
+        Hasql.statement orderId
+         [Hasql.singletonStatement|
+          SELECT sdek_order_id :: int8
+          FROM orders 
+          WHERE id = $1 :: text
+         |]
 
+      -- 2. UPDATE DETAILS FIRST (So data exists in DB)
+      Hasql.statement (sdekOrderId, uuid) $
+       [Hasql.resultlessStatement|
+        UPDATE sdek_orders
+        SET receipt_uuid = $2 :: uuid
+        WHERE id = $1 :: int8
+       |] 
+
+      -- 3. FLIP THE TRIGGER SWITCH LAST
+      Hasql.statement orderId $
+       [Hasql.resultlessStatement|
+        UPDATE orders 
+        SET receipt_ready = TRUE
+        WHERE id = $1 :: text
+       |]
 
 type DailyStatsRow = (Day, Int32, Double, Int32, Int32, Maybe Double, Either Text [DailyExpensesStat])
 

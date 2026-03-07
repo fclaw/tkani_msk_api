@@ -50,14 +50,15 @@ runSdekOrderStatusPoller = do
        ]
   eDbRes <- getSdekOrdersInTransit requiredStatuses pool
   for_ eDbRes $ \xs ->
-    for_ xs $ \(orderId, sdekOrderId, uuid, status) -> do 
-      $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
-      eSdekRes <- Sdek.getOrdersInTransit uuid
-      handleWorkerApiResponse 
-        $(currentModule) 
-        eSdekRes 
-        (handleSdekFailure orderId uuid) 
-        (onSdekSuccess orderId sdekOrderId status)
+    void $ pooledForConcurrentlyN 5 xs $ 
+      \(orderId, sdekOrderId, uuid, status) -> do 
+        $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
+        eSdekRes <- Sdek.getOrdersInTransit uuid
+        handleWorkerApiResponse 
+          $(currentModule) 
+          eSdekRes
+          (handleSdekFailure orderId uuid) 
+          (onSdekSuccess orderId sdekOrderId status)
 
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eDbRes
 
