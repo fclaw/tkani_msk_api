@@ -16,7 +16,7 @@ CREATE TABLE sdek_orders (
   keep_free_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   -- Temporary column to link back to orders during migration
-  temp_original_order_id INTEGER 
+  temp_original_order_id TEXT 
 );
 
 CREATE TABLE yandex_orders (
