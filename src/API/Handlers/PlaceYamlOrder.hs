@@ -34,7 +34,7 @@ import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Utils.OrderId (generateOrderId)
-import Infrastructure.Database (placeNewYamlOrder, YamlOrder (..))
+import Infrastructure.Database (placeNewYamlOrder, YamlOrder (..), YamlSdekOrder (..))
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
@@ -71,13 +71,14 @@ handler yamlOrderReq = do
           $(logTM) InfoS $ "Successfully received tracking number from SDEK: " <> ls trackingNumber
           -- Now we can store the order in our database.
           orderId <- liftIO $ generateOrderId
-          let yamlDbOrder = mkYamlDbOrder orderId yamlOrderReq trackingUuid trackingNumber tariff
+          let yamlDbOrder = mkYamlDbOrder orderId yamlOrderReq
+          let yamlSdekOrder = mkYamlSdekOrder yamlOrderReq trackingUuid trackingNumber tariff
           let mkResponse (Right _) = 
                 Right $ YamlOrderResponse 
                 { yorOrderId = orderId }
               mkResponse (Left dbErr) = 
                 Left $ mkError $ "Failed to store order in DB: " <> dbErr  
-          eDbRes <- placeNewYamlOrder yamlDbOrder (yorItems yamlOrderReq) pool
+          eDbRes <- placeNewYamlOrder yamlDbOrder yamlSdekOrder (yorItems yamlOrderReq) pool
           when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "YamlOrderRequest: db failure " <> show eDbRes
           for_ eDbRes $ const $ do 
             tm <- currentTime
@@ -104,21 +105,26 @@ fetchOrderPollerRes uuid = do
   fmap handleRes $ liftIO $ timeout (30 * 1000000) $ atomically $ takeTMVar replyVar
 
 
-mkYamlDbOrder :: Text -> YamlOrderRequest -> UUID.UUID -> Text -> Int -> YamlOrder
-mkYamlDbOrder orderId YamlOrderRequest {..} trackingUuid trackingNumber tariff =
+mkYamlDbOrder :: Text -> YamlOrderRequest -> YamlOrder
+mkYamlDbOrder orderId YamlOrderRequest {..} =
   YamlOrder 
-  { _yamlOrderId = orderId
+  { _yamlOrderId               = orderId
   , _yamlOrderCustomerFullName = yorCustomerFullName
-  , _yamlOrderCustomerPhone =  yorCustomerPhone
-  , _yamlOrderDeliveryProviderId = encodeToText yorDeliveryProviderId
-  , _yamlOrderDeliveryPointId = yorDeliveryPointId
-  , _yamlOrderSdekRequestUuid = trackingUuid
-  , _yamlOrderSdekTrackingNumber = trackingNumber
-  , _yamlOrderTariff = fromIntegral tariff
-  , _yamlOrderWeight = sum (map (fromIntegral . yoiWeight) yorItems) + 50        
-  , _yamlOrderLength = fromIntegral $ pdWidth yorPhysicalDimensions
-  , _yamlOrderWidth = fromIntegral $ pdLength yorPhysicalDimensions
-  , _yamlOrderHeight = fromIntegral $ pdHeight yorPhysicalDimensions
+  , _yamlOrderCustomerPhone    = yorCustomerPhone
+  , _yamlOrderWeight           = sum (map (fromIntegral . yoiWeight) yorItems) + 50        
+  , _yamlOrderLength           = fromIntegral $ pdWidth yorPhysicalDimensions
+  , _yamlOrderWidth            = fromIntegral $ pdLength yorPhysicalDimensions
+  , _yamlOrderHeight           = fromIntegral $ pdHeight yorPhysicalDimensions
+  , _yamlSdekOrderId           = 0
+  }
+
+mkYamlSdekOrder :: YamlOrderRequest -> UUID.UUID -> Text -> Int -> YamlSdekOrder
+mkYamlSdekOrder YamlOrderRequest {..} trackingUuid trackingNumber tariff =
+  YamlSdekOrder
+  { yamlDeliveryPointId = yorDeliveryPointId
+  , yamlTariff          = fromIntegral tariff
+  , yamlTrackingNumber  = trackingNumber
+  , yamlOrderUuid       = trackingUuid
   }
 
 -- buildTemplateData :: Text -> LocalTime -> Text -> YamlOrderRequest -> TemplateData

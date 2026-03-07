@@ -1577,22 +1577,38 @@ createCourierPickupPromise order_uuid app_uuid status orders date pool =
       -- STEP 2: Update all associated orders to link them to this pickup.
       Hasql.statement (pickupId, ScheduledForPickup, V.fromList orders) updateOrdersWithPickupUuidStatement
 
-placeNewYamlOrder :: YamlOrder -> [YamlOrderItem] -> Hasql.Pool -> AppM (Either Text Text)
-placeNewYamlOrder order items pool =
+placeNewYamlOrder :: YamlOrder -> YamlSdekOrder -> [YamlOrderItem] -> Hasql.Pool -> AppM (Either Text Text)
+placeNewYamlOrder order sdekOrder items pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
-      orderId <- Hasql.statement order $
-        lmap ($(recordToTuple ''YamlOrder))
+      
+      sdekOrderId <-
+        Hasql.statement sdekOrder $
+        lmap ($(recordToTuple ''YamlSdekOrder)) $
         [Hasql.singletonStatement|
+          INSERT INTO sdek_orders (
+              delivery_point,
+              tracking_number,
+              tariff,
+              order_uuid
+            ) VALUES (
+              $1 :: text,
+              $2 :: text,
+              $3 :: int4,
+              $4 :: uuid
+            )
+          RETURNING id :: int8
+        |]
+
+      orderId <- 
+        Hasql.statement 
+         (order { _yamlSdekOrderId = sdekOrderId}) $
+         lmap ($(recordToTuple ''YamlOrder))
+         [Hasql.singletonStatement|
           INSERT INTO orders (
             id,
             customer_full_name,
             customer_phone,
-            delivery_provider_id,
-            delivery_point_id,
-            sdek_request_uuid,
-            sdek_tracking_number,
-            tariff,
             actual_weight_grams,
             length,
             width,
@@ -1600,27 +1616,24 @@ placeNewYamlOrder order items pool =
             created_at,
             updated_at,
             status,
-            is_bot
+            is_bot,
+            sdek_order_id
             ) VALUES (
             $1 :: text,
             $2 :: text,
             $3 :: text,
-            $4 :: text,
-            $5 :: text,
-            $6 :: uuid,
-            $7 :: text,
-            $8 :: int4,
-            $9 :: int4,
-            $10 :: int4,
-            $11 :: int4,
-            $12 :: int4,
+            $4 :: int4,
+            $5 :: int4,
+            $6 :: int4,
+            $7 :: int4,
             now(),
             now(),
             'paid',
-            false
+            false,
+            $8 :: int8
             )
             RETURNING id :: text
-        |]
+          |]
 
       let params =
            snocT (V.fromList (map (\idx -> "ART-" <> tshow idx) [1 .. length items])) $

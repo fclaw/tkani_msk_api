@@ -216,20 +216,25 @@ data  YamlOrder =
       { _yamlOrderId                  :: Text
       , _yamlOrderCustomerFullName    :: Text
       , _yamlOrderCustomerPhone       :: Text
-      , _yamlOrderDeliveryProviderId  :: Text
-      , _yamlOrderDeliveryPointId     :: Text
-      , _yamlOrderSdekRequestUuid     :: UUID
-      , _yamlOrderSdekTrackingNumber  :: Text
-      , _yamlOrderTariff              :: Int32
       , _yamlOrderWeight              :: Int32
       , _yamlOrderLength              :: Int32
       , _yamlOrderWidth               :: Int32
       , _yamlOrderHeight              :: Int32
+      , _yamlSdekOrderId              :: Int64
       } deriving (Show, Eq, Generic)
 
 makeLenses ''YamlOrder
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "_yamlOrder" } ''YamlOrder)
+
+
+data YamlSdekOrder =
+     YamlSdekOrder
+     { yamlDeliveryPointId :: Text
+     , yamlTrackingNumber  :: Text
+     , yamlTariff          :: Int32
+     , yamlOrderUuid       :: UUID
+     } deriving (Show, Eq, Generic)
 
 
 data PatchedOrderDetailsItem = 
