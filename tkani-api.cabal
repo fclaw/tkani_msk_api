@@ -29,7 +29,7 @@ library
       Workers.DailyWeightTracker
       Workers.DostavistaOrderStatusPoller
       Workers.SpecialPostManager
-      Workers.SdekOrderCancellationHandler
+      Workers.OrderCancellationHandler
       Workers.FabricLifecycleObserver
       Workers.DailyCleanupNotificationsJanitor
       Workers.ShelfSubmissionObserver

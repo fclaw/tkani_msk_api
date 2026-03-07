@@ -77,7 +77,7 @@ import Workers.OrderDeliveryScheduler (runOrderDeliveryScheduler)
 import Workers.DailyWeightTracker (runDailyWeightTracker)
 import Workers.DostavistaOrderStatusPoller (runDostavistaOrderStatusPoller)
 import Workers.SpecialPostManager (runSpecialPostManager)
-import Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler)
+import Workers.OrderCancellationHandler (runOrderCancellationHandler)
 import Workers.FabricLifecycleObserver (runFabricLifecycleObserver)
 import Workers.DailyCleanupNotificationsJanitor (runDailyCleanupNotificationsJanitor)
 import Workers.ShelfSubmissionObserver (runShelfSubmissionObserver)
@@ -112,7 +112,7 @@ data Workers =
       | DailyWeightTracker
       | DostavistaOrderStatusPoller
       | SpecialPostManager
-      | SdekOrderCancellationHandler
+      | OrderCancellationHandler
       | FabricLifecycleObserver
       | DailyCleanupNotificationsJanitor
       | ShelfSubmissionObserver
@@ -139,7 +139,7 @@ instance Show Workers where
   show DailyWeightTracker               = "Daily Weight Tracker"
   show DostavistaOrderStatusPoller      = "Dostavista Order Status Poller"
   show SpecialPostManager               = "Special Post Manager"
-  show SdekOrderCancellationHandler     = "SDEK Order Cancellation Handler"
+  show OrderCancellationHandler         = "Order Cancellation Handler"
   show FabricLifecycleObserver          = "Fabric Lifecycle Observer"
   show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
   show ShelfSubmissionObserver          = "Shelf Submission Observer"
@@ -450,13 +450,13 @@ main = do
                  appMToHandler (runSpecialPostManager)
                    >>= showErrorInWorker
                         SpecialPostManager)
-              , (SdekOrderCancellationHandler,
+              , (OrderCancellationHandler,
                  appMToHandler (
-                   runSdekOrderCancellationHandler 
+                   runOrderCancellationHandler 
                    connInfo 
                    appMToHandler)
                    >>= showErrorInWorker
-                        SdekOrderCancellationHandler)
+                        OrderCancellationHandler)
               , (FabricLifecycleObserver,
                  appMToHandler (
                    runFabricLifecycleObserver 

@@ -19,7 +19,6 @@ BEGIN
 
     -- For an AFTER trigger, the return value is ignored, but it's required syntax.
     -- Returning NEW is standard practice.
-    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 

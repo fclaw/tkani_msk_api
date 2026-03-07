@@ -7,7 +7,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 
-module Workers.SdekOrderCancellationHandler (runSdekOrderCancellationHandler) where
+module Workers.OrderCancellationHandler (runOrderCancellationHandler) where
 
 import Katip
 import Data.Maybe (isJust)
@@ -29,6 +29,7 @@ import Text (tshow)
 import Concurrency (runJobWithCleanup)
 import TH.Location (currentModule)
 import Text (tshow, encodeToText)
+import API.Types (Providers (SDEK))
 import App (AppM, ChatKey (ORDER), extractFromEither)
 import Infrastructure.Services.Sdek (cancelOrder)
 import Infrastructure.Services.Sdek.Types (corErrors)
@@ -39,14 +40,16 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 -- The payload from your pg_notify trigger
 data CancellationEventPayload = 
      CancellationEventPayload
-     { order_id  :: Text
-     , sdek_uuid :: UUID -- Or Text, depending on your type
+     { order_id          :: Text
+     , delivery_provider :: Providers
+     , sdek_order_uuid   :: Maybe UUID
+      -- for future use, in case we want to support other providers' cancellations through the same channel
+    --  , yandex_order_id   :: Text
      } deriving (Show, Generic, FromJSON)
 
-
-runSdekOrderCancellationHandler :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
-runSdekOrderCancellationHandler connInfo appMToHandler = do
-  $(logTM) InfoS "SDEK Cancellation Listener started."
+runOrderCancellationHandler :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
+runOrderCancellationHandler connInfo appMToHandler = do
+  $(logTM) InfoS "Order Cancellation Listener started."
   liftIO $ PG.withConnect connInfo $ \conn -> do
     -- 1. Subscribe to the channel. This must be done on the connection.
     void $ PG.execute_ conn "LISTEN order_cancel_events"
@@ -64,16 +67,19 @@ runSdekOrderCancellationHandler connInfo appMToHandler = do
 
 processSingleJob :: Either String CancellationEventPayload -> AppM ()
 processSingleJob (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (ReceiptJob), error: " <> err
-processSingleJob (Right CancellationEventPayload {..}) = do 
-  $(logTM) InfoS $ ls $ "Received cancellation job for order: " <> order_id
-  eSdekResp <- cancelOrder sdek_uuid
-  extractFromEither eSdekResp $ \resp -> do
-    if isJust (corErrors resp) then do
-      let errMsg = 
-           escapeMarkdownV2 $ 
-             "order " <> order_id <> 
-             " cannot be deleted from SDEK.\
-             \ Manual intervention is required. errors: " <>
-             tshow (corErrors resp)
-      void $ sendOrEditTelegramMessage mempty errMsg ORDER Nothing Nothing Nothing
-    else $(logTM) InfoS $ "Successfully sent cancellation request to SDEK for order UUID: " <> ls (tshow sdek_uuid)
+processSingleJob (Right CancellationEventPayload {..}) 
+  | delivery_provider == SDEK, 
+    Just sdek_uuid <- sdek_order_uuid = do
+      $(logTM) InfoS $ ls $ "Received cancellation job for order: " <> order_id
+      eSdekResp <- cancelOrder sdek_uuid
+      extractFromEither eSdekResp $ \resp -> do
+        if isJust (corErrors resp) then do
+          let errMsg = 
+                escapeMarkdownV2 $ 
+                  "order " <> order_id <> 
+                  " cannot be deleted from SDEK.\
+                  \ Manual intervention is required. errors: " <>
+                  tshow (corErrors resp)
+          void $ sendOrEditTelegramMessage mempty errMsg ORDER Nothing Nothing Nothing
+        else $(logTM) InfoS $ "Successfully sent cancellation request to SDEK for order UUID: " <> ls (tshow sdek_uuid)
+  | otherwise = $(logTM) InfoS $ "provider not supported or missing provider-specific ID, skipping cancellation for order: " <> ls order_id
