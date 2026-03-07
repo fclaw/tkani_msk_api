@@ -59,14 +59,11 @@ orchestrateSingleOrder order = do
   eitherRes <- (fmap (first tshow) . runExceptT . Order.place) order
   case eitherRes of
     Left err -> do
+      $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
       msg <- render ($currentModule <> ".Error") mempty
       sendErrorMessageToUser (orChatId order) msg
       notifyOrderChannelAboutError err
-      $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
-    Right confirmationDetails -> 
-      buildAndSendPaymentDetailsMessage
-      (orChatId order)
-      confirmationDetails
+    Right confirmationDetails -> buildAndSendPaymentDetailsMessage (orChatId order) confirmationDetails
 
 buildAndSendPaymentDetailsMessage :: Int64 -> OrderConfirmationDetails -> AppM ()
 buildAndSendPaymentDetailsMessage chatId OrderConfirmationDetails {..} = do

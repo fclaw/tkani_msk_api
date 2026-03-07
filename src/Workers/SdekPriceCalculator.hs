@@ -309,7 +309,7 @@ pollForPatchCompletion orderUuid = go 1
 cancelOrder :: Text -> AppM ()
 cancelOrder orderId = do
   $(logTM) InfoS $ "Starting SDEK order cancellation process for order: " <> ls orderId
-  void $ fmap _appDBPool ask >>= updateOrderStatus orderId Cancelled Nothing
+  void $ fmap _appDBPool ask >>= updateOrderStatus orderId Cancelled
   -- make yaml file from order details for manual uploading
   cfg <- ask
   let pool = _appDBPool cfg

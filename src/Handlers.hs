@@ -27,7 +27,6 @@ import qualified API.Handlers.ClearCart as ClearCart
 import qualified API.Handlers.ViewCart as ViewCart
 import qualified API.Handlers.PatchFabric as PatchFabric
 import qualified API.Handlers.DeleteFabric as DeleteFabric
-import qualified API.Handlers.MeasureOrder as MeasureOrder
 import qualified API.Handlers.PlaceYamlOrder as PlaceYamlOrder
 import qualified API.Handlers.ReportDailySales as ReportDailySales
 import qualified API.Handlers.ReportMonthlySales as ReportMonthlySales
@@ -76,7 +75,6 @@ apiHandlers = Routes
   , _viewCart                  = ViewCart.handler
   , _patchFabric               = PatchFabric.handler
   , _deleteFabric              = DeleteFabric.handler
-  , _measureOrder              = MeasureOrder.handler
   , _placeYamlOrder            = PlaceYamlOrder.handler
   , _reportDailySales          = ReportDailySales.handler
   , _reportMonthlySales        = ReportMonthlySales.handler

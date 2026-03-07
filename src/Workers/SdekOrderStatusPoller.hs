@@ -6,8 +6,9 @@
 
 module Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller) where
 
-import Control.Monad (when)
 import Katip
+import Control.Monad (when)
+import Data.Int (Int64)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
 import Data.UUID (UUID)
@@ -20,11 +21,12 @@ import Network.HTTP.Client (HttpException (..), HttpExceptionContent( StatusCode
 import Network.HTTP.Types.Status (statusCode, status400)
 import qualified Data.HashMap.Strict as HM
 
+import Text (tshow)
 import App (AppM, _appDBPool, render, ChatKey (..))
 import API.Types (OrderStatus (..))
-import Infrastructure.Database (getOrdersInTransit, updateOrderStatus, markOrderAsInvalid)
+import Infrastructure.Database (getSdekOrdersInTransit, updateSdekOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
-import Infrastructure.Services.Sdek.Types.OrderInTransit (SdekShipmentState (..), respEntity, entityCdekStatus, entityKeepFreeUntil)
+import Infrastructure.Services.Sdek.Types.OrderInTransit
 import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
@@ -46,41 +48,18 @@ runSdekOrderStatusPoller = do
        , PickedUpByCourier
        , PickupFailed
        ]
-  eUuids <- getOrdersInTransit requiredStatuses pool
-  for_ eUuids $ \uuids ->
-    void $ pooledForConcurrentlyN 5 uuids $ \(orderId, uuid, status) -> do 
+  eDbRes <- getSdekOrdersInTransit requiredStatuses pool
+  for_ eDbRes $ \xs ->
+    for_ xs $ \(orderId, sdekOrderId, uuid, status) -> do 
       $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
-      eRes <- Sdek.getOrdersInTransit uuid
-      handleWorkerApiResponse $(currentModule) eRes
-        -- ON ERROR (The complex part)
-        (\ex -> handleSdekFailure orderId uuid ex)
-        (\res ->
-            for_ (respEntity res) $ \entity -> do
-              let newStatus = mapSdekToInternal (entityCdekStatus entity) status
-              if newStatus == status
-              then 
-                $(logTM) InfoS $ ls $ 
-                  "order " <> 
-                  orderId <> 
-                  " has not changed status, status: " <> 
-                  pack (show status) <> 
-                  ", SDEK status: " <> 
-                  pack (show (entityCdekStatus entity))
-              else 
-                $(logTM) InfoS $ ls $ 
-                  "order " <> 
-                  orderId <> 
-                  " has changed status from " <> 
-                  pack (show status) <> " to " <> 
-                  pack (show newStatus) <>
-                  ", SDEK status: " <> 
-                  pack (show (entityCdekStatus entity))
-              let keepUntil | newStatus == Delivered =
-                              entityKeepFreeUntil entity
-                            | otherwise = Nothing
-              void $ updateOrderStatus orderId newStatus keepUntil pool)
+      eSdekRes <- Sdek.getOrdersInTransit uuid
+      handleWorkerApiResponse 
+        $(currentModule) 
+        eSdekRes 
+        (handleSdekFailure orderId uuid) 
+        (onSdekSuccess orderId sdekOrderId status)
 
-  when(isLeft eUuids) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eUuids
+  when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eDbRes
 
 handleSdekFailure :: Text -> UUID -> HttpError -> AppM ()
 handleSdekFailure _ _ (JsonDecodeError err) = $(logTM) ErrorS $ ls $ "aeson error " <> err
@@ -104,6 +83,35 @@ handleSdekFailure orderId uuid (NetworkError ex) =
       else
         $(logTM) WarningS $ ls $ "SDEK Server Error (" <> pack (show code) <> "). Will retry next loop."
     _ -> $(logTM) WarningS $ "SDEK Network Fail. Will retry next loop."
+
+
+onSdekSuccess :: Text -> Int64 -> OrderStatus -> SdekOrderInTransitResponse -> AppM ()
+onSdekSuccess orderId sdekOrderId status resp =
+  for_ (respEntity resp) $ \entity -> do
+    let newStatus = mapSdekToInternal (entityCdekStatus entity) status
+    if newStatus == status
+    then 
+      $(logTM) InfoS $ ls $ 
+        "order " <> 
+        orderId <> 
+        " has not changed status, status: " <> 
+        pack (show status) <> 
+        ", SDEK status: " <> 
+        pack (show (entityCdekStatus entity))
+    else do
+      $(logTM) InfoS $ ls $ 
+        "order " <> 
+        orderId <> 
+        " has changed status from " <> 
+        pack (show status) <> " to " <> 
+        pack (show newStatus) <>
+        ", SDEK status: " <> 
+        pack (show (entityCdekStatus entity))
+      let keepUntil | newStatus == Delivered =
+                      entityKeepFreeUntil entity
+                    | otherwise = Nothing
+      pool <- fmap _appDBPool ask
+      void $ updateSdekOrderStatus orderId sdekOrderId newStatus (tshow (entityCdekStatus entity)) keepUntil pool
 
 
   -- | Logic to map SDEK state (which might be missing) to your Internal Status.

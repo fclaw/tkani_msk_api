@@ -141,14 +141,6 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "user_id" Int64
        :> Get '[JSON] (ApiResponse ViewCart)
-   , _measureOrder
-       :: route
-       :- "warehouse"
-       :> "orders"
-       :> "measure"
-       :> RateLimitPerUser (Second 1) 'Nothing
-       :> ReqBody '[JSON] MeasureRequest
-       :> Post '[JSON] (ApiResponse MeasureResponse)
    , _placeYamlOrder
        :: route
        :- "warehouse"

@@ -264,7 +264,7 @@ processWeightEvent stateVar (Right WeighedOrderEvent{..}) = do
         ]
 
   pool <- fmap _appDBPool ask
-  void $ updateOrderStatus orderId AddedToPickupQueue Nothing pool
+  void $ updateOrderStatus orderId AddedToPickupQueue pool
 
   msg <- fmap escapeMarkdownV2 $ render ($currentModule <> ".AddWeight") templateData
   void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing

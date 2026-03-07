@@ -25,10 +25,11 @@ module Infrastructure.Database
   , updateOrderStatusStatement
   , updateShelfOrderStatusStatement
   , updateOrderStatus
+  , updateSdekOrderStatus
   , adjustFabric
   , runTransaction
   , fetchOrderStatus
-  , getOrdersInTransit
+  , getSdekOrdersInTransit
   , markOrderAsInvalid
   , fetchCatalogSummaryItem
   , checkFabricPreCuts
@@ -51,7 +52,6 @@ module Infrastructure.Database
   , deleteFabric
   , fetchOrdersForCourierPickup
   , createCourierPickupPromise
-  , markedOrderAsMeasured
    -- yaml order
   , placeNewYamlOrder
   , getYamlOrderDetailsForPricing
@@ -387,36 +387,27 @@ getOrderItems userId pool =
     runTransactionM pool Hasql.Write $ 
       userId `Hasql.statement` getOrderItemsStatement
 
-placeNewOrderStatement :: Hasql.Statement Order Int64
-placeNewOrderStatement = 
-  lmap $(recordToTuple ''Order)
+placeNewOrderStatement :: Hasql.Statement (Text, Text, Text, Text, Int64, Int64, Maybe Int64) Int64
+placeNewOrderStatement =
   [Hasql.rowsAffectedStatement|
     WITH inserted_order AS (
       INSERT INTO orders (
        id,
        customer_full_name,
        customer_phone,
-       delivery_provider_id,
-       delivery_point_id,
-       sdek_request_uuid,
-       sdek_tracking_number,
        internal_notification_message_id,
-       tariff,
        created_at,
        updated_at,
        status,
        is_bot,
-       actual_weight_grams
+       actual_weight_grams,
+       sdek_order_id,
+       yandex_order_id
       ) VALUES (
-       $1 :: text,
+       $1 :: text, 
        $2 :: text,
        $3 :: text,
-       $4 :: text,
-       $5 :: text,
-       $6 :: uuid,
-       $7 :: text,
-       $8 :: int8,
-       $10 :: int4,
+       $5 :: int8,
        now(),
        now(),
        'registered',
@@ -436,8 +427,15 @@ placeNewOrderStatement =
         ON ci.pre_cut_id = pc.id
         LEFT JOIN fabrics AS pc_parent_fabric 
         ON pc.fabric_id = pc_parent_fabric.id
-        WHERE c.telegram_user_id = $9 :: int8)
-        , 0))
+        WHERE c.telegram_user_id = $6 :: int8)
+        , 0),
+        CASE WHEN $4 :: text = 'sdek' THEN
+          $7 :: int8?
+        ELSE NULL END,
+        CASE WHEN $4 :: text = 'yandex' THEN
+          $7 :: int8?
+        ELSE NULL END
+        )
       RETURNING id)
     INSERT INTO order_fabric_bindings (
         order_id, 
@@ -455,11 +453,52 @@ placeNewOrderStatement =
     ON c.id = ci.cart_id
     LEFT JOIN pre_cuts AS pc
     ON pc.id = ci.pre_cut_id
-    WHERE c.telegram_user_id = $9 :: int8 
+    WHERE c.telegram_user_id = $6 :: int8 
+  |]
+
+createSdekOrderStatement :: Hasql.Statement (Text, UUID, Text, Int32) Int64
+createSdekOrderStatement =
+  [Hasql.singletonStatement|
+    INSERT INTO sdek_orders (
+      delivery_point,
+      order_uuid,
+      tracking_number,
+      tariff
+    ) VALUES (
+      $1 :: text,
+      $2 :: uuid,
+      $3 :: text,
+      $4 :: int4
+    )
+    RETURNING id :: int8    
   |]
 
 placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
-placeNewOrder order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ order `Hasql.statement` placeNewOrderStatement
+placeNewOrder order@Order {..} pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      sdek_order_id <-
+        if(_orderDeliveryProviderId == 
+           encodeToText SDEK) 
+        then
+          fmap Just $ 
+          Hasql.statement 
+            ( _orderDeliveryPointId
+            , _orderSdekRequestUuid
+            , _orderSdekTrackingNumber
+            , _orderTariff) 
+            createSdekOrderStatement
+        else return Nothing 
+
+      Hasql.statement
+        ( _orderId
+        , _orderCustomerFullName
+        , _orderCustomerPhone
+        , _orderDeliveryProviderId
+        , _orderInternalNotificationMessageId
+        , _orderTelegramUserId
+        , sdek_order_id
+        ) placeNewOrderStatement
 
 setPaymentMessageDetailsStatement :: Hasql.Statement PaymentMessageDetailsRequest Int64
 setPaymentMessageDetailsStatement =
@@ -497,22 +536,43 @@ getChatDetailsStatement =
 getChatDetails :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, Int64)))
 getChatDetails orderId pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ orderId `Hasql.statement` getChatDetailsStatement
 
-
-updateOrderStatus :: Text -> OrderStatus -> Maybe UTCTime -> Hasql.Pool -> AppM (Either Text Int64)
-updateOrderStatus orderId status keepFreeUntil pool = 
+updateOrderStatus :: Text -> OrderStatus -> Hasql.Pool -> AppM (Either Text ())
+updateOrderStatus orderId status pool = 
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ 
       Hasql.statement 
-      (orderId, status, keepFreeUntil) $
-        dimap (app2 statusToSQL) fromIntegral
+      (orderId, status) $
+        lmap (app2 statusToSQL)
         [Hasql.singletonStatement|
           UPDATE orders 
-          SET status = CAST($2 :: text AS order_status),
-          keep_free_until = $3 :: timestamptz?   
+          SET status = CAST($2 :: text AS order_status)
           WHERE id = $1 :: text
-          RETURNING COALESCE(internal_notification_message_id, 0) :: int8
         |]
 
+updateSdekOrderStatus :: Text -> Int64 -> OrderStatus -> Text -> Maybe UTCTime -> Hasql.Pool -> AppM (Either Text ())
+updateSdekOrderStatus orderId sdekOrderId status sdekStatus keepFreeUntil pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      -- order table
+      Hasql.statement
+       (orderId, status) $
+        lmap (app2 statusToSQL)
+        [Hasql.resultlessStatement|
+          UPDATE orders
+          SET status = CAST($2 :: text AS order_status)
+          WHERE id = $1 :: text 
+          AND sdek_order_id IS NOT NULL
+        |]
+      -- sdek table
+      Hasql.statement
+       (sdekOrderId, sdekStatus, keepFreeUntil) $
+        [Hasql.resultlessStatement|
+         UPDATE sdek_orders
+         SET sdek_status = $2 :: text,
+         keep_free_until = $3 :: timestamptz?
+         WHERE id = $1 :: int8
+        |]
+      
 -- | Updates inventory logic.
 -- Logic details:
 -- 1. order_info CTE: Fetches order details (works for Rolls and Pre-Cuts).
@@ -571,7 +631,10 @@ adjustFabric =
   |]
 
 fetchOrderStatus :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
-fetchOrderStatus query pool = fmap (join . first (pack . show)) $ runTransactionM pool Hasql.Read $ query `Hasql.statement` fetchOrderStatusStatement
+fetchOrderStatus query pool = 
+  fmap (join . first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      query `Hasql.statement` fetchOrderStatusStatement
 
 
 fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
@@ -579,14 +642,15 @@ fetchOrderStatusStatement =
   rmap (sequence . fmap (first pack) . fmap convert)
   [Hasql.maybeStatement|
     SELECT 
-      to_jsonb(CAST(status AS text)) :: jsonb,
-      id :: text,
-      sdek_tracking_number :: text,
-      to_jsonb(delivery_provider_id) :: jsonb
-    FROM orders
-    WHERE
-      id = $1 :: text OR
-      sdek_tracking_number = $1 :: text
+      to_jsonb(CAST(o.status AS text)) :: jsonb,
+      o.id :: text,
+      so.tracking_number :: text,
+      to_jsonb('sdek' :: text) :: jsonb
+    FROM orders AS o
+    INNER JOIN sdek_orders AS so
+    ON o.sdek_order_id = so.id
+    WHERE o.id = $1 :: text
+    OR so.tracking_number = $1 :: text
   |]
   where
     convert (jsonStatus, orderId, trackingN, jsonProvider) = do
@@ -594,43 +658,51 @@ fetchOrderStatusStatement =
       provider <- convertFromJson @Providers jsonProvider
       return (status, orderId, trackingN, provider)
 
-getOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> AppM (Either Text [(Text, UUID, OrderStatus)])
-getOrdersInTransit statuses pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ statuses `Hasql.statement` getOrdersInTransitStatement
+getSdekOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> AppM (Either Text [(Text, Int64, UUID, OrderStatus)])
+getSdekOrdersInTransit statuses pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      statuses `Hasql.statement` getSdekOrdersInTransitStatement
 
-getOrdersInTransitStatement :: Hasql.Statement [OrderStatus] [(Text, UUID, OrderStatus)]
-getOrdersInTransitStatement =
-  dimap (V.fromList . map encodeToText) (fromRight mkError . sequence . map convert . V.toList) $
-  [Hasql.vectorStatement|
+getSdekOrdersInTransitStatement :: Hasql.Statement [OrderStatus] [(Text, Int64, UUID, OrderStatus)]
+getSdekOrdersInTransitStatement =
+  dimap 
+   (V.fromList . map encodeToText) 
+   (map (app4 (extractADT . convertFromJson @OrderStatus)) . V.toList) $
+   [Hasql.vectorStatement|
     SELECT
-      id :: text,
-      sdek_request_uuid :: uuid,
-      to_jsonb(CAST(status AS text)) :: jsonb
-    FROM orders
-    WHERE
-      sdek_request_uuid IS NOT NULL
-      AND
-      is_removed_from_delivery_provider = FALSE
-      AND
-      status = ANY ($1 :: text[] :: order_status[])
-  |]
-  where convert (orderId, uuid, jsonStatus) = fmap (orderId, uuid,) $ convertFromJson @OrderStatus jsonStatus
-        mkError = error "aeson decode failed on order status"
+      o.id :: text,
+      so.id :: int8,
+      so.order_uuid :: uuid,
+      to_jsonb(CAST(o.status AS text)) :: jsonb
+    FROM orders AS o
+    INNER JOIN sdek_orders AS so
+    ON o.sdek_order_id = so.id
+    WHERE o.is_removed_from_delivery_provider = FALSE
+    AND o.status = ANY ($1 :: text[] :: order_status[])
+   |]
 
 markOrderAsInvalid :: Text -> UUID -> Hasql.Pool -> AppM (Either Text (Int64, Text))
 markOrderAsInvalid orderId uuid pool = 
   fmap (first (pack . show)) $ 
   runTransactionM pool Hasql.Write $
-    (orderId, uuid) `Hasql.statement` markOrderAsInvalidStatement
+    Hasql.statement 
+      (orderId, uuid) 
+      markOrderAsInvalidStatement
 
 markOrderAsInvalidStatement :: Hasql.Statement (Text, UUID) (Int64, Text)
 markOrderAsInvalidStatement =
   [Hasql.singletonStatement| 
     UPDATE orders
     SET is_removed_from_delivery_provider = TRUE
-    WHERE id = $1 :: text AND sdek_request_uuid = $2 :: uuid
-    RETURNING COALESCE(internal_notification_message_id, 0) :: int8, sdek_tracking_number :: text
+    FROM sdek_orders
+    WHERE orders.id = $1 :: text
+     AND orders.sdek_order_id = sdek_orders.id
+     AND sdek_orders.order_uuid = $2 :: uuid
+    RETURNING 
+     COALESCE(orders.internal_notification_message_id, 0) :: int8, 
+     sdek_orders.tracking_number :: text
   |]
-
 
 type SearchResultRow = (Int64, Value) -- (total_count, teaser_json)
 
@@ -1505,20 +1577,6 @@ createCourierPickupPromise order_uuid app_uuid status orders date pool =
       -- STEP 2: Update all associated orders to link them to this pickup.
       Hasql.statement (pickupId, ScheduledForPickup, V.fromList orders) updateOrdersWithPickupUuidStatement
 
-
-markedOrderAsMeasured :: Text -> Hasql.Pool -> AppM (Either Text Bool)
-markedOrderAsMeasured trackingN pool =
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ 
-      Hasql.statement trackingN $
-        rmap (> 0) $
-        [Hasql.rowsAffectedStatement|
-          UPDATE orders
-          SET is_measured = TRUE,
-              updated_at = NOW()
-          WHERE sdek_tracking_number = $1 :: text|]
-
-
 placeNewYamlOrder :: YamlOrder -> [YamlOrderItem] -> Hasql.Pool -> AppM (Either Text Text)
 placeNewYamlOrder order items pool =
   fmap (first (pack . show)) $ 
@@ -1927,10 +1985,12 @@ fetchOrderDeliveryItem day pool =
           COALESCE(array_agg(
            jsonb_build_object(
             'id', o.id,
-            'track', o.sdek_tracking_number,
-            'keep_free_until', o.keep_free_until
+            'track', so.tracking_number,
+            'keep_free_until', so.keep_free_until
            ) ORDER BY o.created_at ASC), '{}'::jsonb[]) :: jsonb[]
           FROM orders AS o
+          INNER JOIN sdek_orders AS so
+          ON o.sdek_order_id = so.id
 		      WHERE o.status = 'delivered'
           AND NOT EXISTS (
 	         SELECT 1
@@ -2861,71 +2921,93 @@ fetchShelfItemsForShipmentStatement =
 
 
 placeNewShelfOrder :: Order -> Hasql.Pool -> AppM (Either Text ())
-placeNewShelfOrder order pool =
+placeNewShelfOrder order@Order {..} pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
-      shelfItemIds <- Hasql.statement order placeNewShelfOrderStatement
-      Hasql.statement (_orderId order, shelfItemIds) setShelfItemShippedStatememt
-      Hasql.statement (_orderTelegramUserId order) resetFirstItemAddedAtStatememt
+
+      sdek_order_id <-
+        if(_orderDeliveryProviderId == 
+           encodeToText SDEK) 
+        then
+          fmap Just $ 
+          Hasql.statement 
+            ( _orderDeliveryPointId
+            , _orderSdekRequestUuid
+            , _orderSdekTrackingNumber
+            , _orderTariff) 
+            createSdekOrderStatement
+        else return Nothing 
+
+      shelfItemIds <- 
+        Hasql.statement
+         ( _orderId
+         , _orderCustomerFullName
+         , _orderCustomerPhone
+         , _orderDeliveryProviderId
+         , _orderInternalNotificationMessageId
+         , _orderTelegramUserId
+         , sdek_order_id
+         ) placeNewShelfOrderStatement
+
+      Hasql.statement (_orderId, shelfItemIds) setShelfItemShippedStatememt
+      Hasql.statement (_orderTelegramUserId) resetFirstItemAddedAtStatememt
 
 
-placeNewShelfOrderStatement :: Hasql.Statement Order (V.Vector Int64)
+placeNewShelfOrderStatement :: Hasql.Statement (Text, Text, Text, Text, Int64, Int64, Maybe Int64) (V.Vector Int64)
 placeNewShelfOrderStatement =
- lmap $(recordToTuple ''Order)
   [Hasql.singletonStatement|
     INSERT INTO orders (
-     id,
-     customer_full_name,
-     customer_phone,
-     delivery_provider_id,
-     delivery_point_id,
-     sdek_request_uuid,
-     sdek_tracking_number,
-     internal_notification_message_id,
-     tariff,
-     created_at,
-     updated_at,
-     status,
-     is_bot,
-     actual_weight_grams
+      id,
+      customer_full_name,
+      customer_phone,
+      internal_notification_message_id,
+      created_at,
+      updated_at,
+      status,
+      is_bot,
+      actual_weight_grams,
+      sdek_order_id,
+      yandex_order_id
     ) VALUES (
-       $1 :: text,
-       $2 :: text,
-       $3 :: text,
-       $4 :: text,
-       $5 :: text,
-       $6 :: uuid,
-       $7 :: text,
-       $8 :: int8,
-       $10 :: int4,
-       now(),
-       now(),
-       'paid',
-       true,
-       (SELECT
-         SUM(ROUND(
-         COALESCE(si.length_m, pc.length_m) *
-         COALESCE(f.weight_per_metre, pcf.weight_per_metre)))
-       FROM shelves AS s
-       INNER JOIN shelf_items AS si
-       ON si.shelf_id = s.id
-       LEFT JOIN fabrics AS f
-       ON f.id = si.fabric_id
-       LEFT JOIN pre_cuts AS pc
-       ON pc.id = si.pre_cut_id
-       LEFT JOIN fabrics AS pcf
-       ON pcf.id = pc.fabric_id
-       WHERE s.telegram_user_id = $9 :: int8
-       AND si.status = 'ON_SHELF'
-       ))
-       RETURNING (
-        SELECT array_agg(si.id)
-        FROM shelves AS s
-        INNER JOIN shelf_items AS si
-        ON si.shelf_id = s.id
-        WHERE s.telegram_user_id = $9 :: int8
-        AND si.status = 'ON_SHELF'
-       ) :: int8[]
+      $1 :: text, 
+      $2 :: text,
+      $3 :: text,
+      $5 :: int8,
+      now(),
+      now(),
+      'paid',
+      true,
+      (SELECT
+        SUM(ROUND(
+        COALESCE(si.length_m, pc.length_m) *
+        COALESCE(f.weight_per_metre, pcf.weight_per_metre)))
+      FROM shelves AS s
+      INNER JOIN shelf_items AS si
+      ON si.shelf_id = s.id
+      LEFT JOIN fabrics AS f
+      ON f.id = si.fabric_id
+      LEFT JOIN pre_cuts AS pc
+      ON pc.id = si.pre_cut_id
+      LEFT JOIN fabrics AS pcf
+      ON pcf.id = pc.fabric_id
+      WHERE s.telegram_user_id = $6 :: int8
+      AND si.status = 'ON_SHELF'
+      ),
+      CASE WHEN $4 :: text = 'sdek' THEN
+       $7 :: int8?
+      ELSE NULL END,
+      CASE WHEN $4 :: text = 'yandex' THEN
+        $7 :: int8?
+      ELSE NULL END
+      )
+    RETURNING (
+      SELECT array_agg(si.id)
+      FROM shelves AS s
+      INNER JOIN shelf_items AS si
+      ON si.shelf_id = s.id
+      WHERE s.telegram_user_id = $6 :: int8
+      AND si.status = 'ON_SHELF'
+    ) :: int8[]
   |]
 
 setShelfItemShippedStatememt :: Hasql.Statement (Text, V.Vector Int64) ()
