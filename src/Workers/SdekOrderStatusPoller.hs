@@ -112,7 +112,8 @@ onSdekSuccess orderId sdekOrderId status resp =
                       entityKeepFreeUntil entity
                     | otherwise = Nothing
       pool <- fmap _appDBPool ask
-      void $ updateSdekOrderStatus orderId sdekOrderId newStatus (tshow (entityCdekStatus entity)) keepUntil pool
+      eDbRes <- updateSdekOrderStatus orderId sdekOrderId newStatus (tshow (entityCdekStatus entity)) keepUntil pool
+      when (isLeft eDbRes) $ $(logTM) ErrorS $  "failed to update SDEK order status, error: " <> ls (fromLeft undefined eDbRes)
 
 
   -- | Logic to map SDEK state (which might be missing) to your Internal Status.

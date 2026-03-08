@@ -118,6 +118,7 @@ import Data.Either (fromRight, either)
 import Data.Time (Day)
 import Control.Applicative ((<|>))
 import Data.Foldable (for_)
+import Data.Traversable (for)
 import Control.Exception (throwIO)
 import qualified Data.Text as T
 import Data.Time (UTCTime)
@@ -481,13 +482,13 @@ placeNewOrder order@Order {..} pool =
         if(_orderDeliveryProviderId == 
            encodeToText SDEK) 
         then
-          fmap Just $ 
-          Hasql.statement 
-            ( _orderDeliveryPointId
-            , _orderSdekRequestUuid
-            , _orderSdekTrackingNumber
-            , _orderTariff) 
-            createSdekOrderStatement
+          for _orderSdek $ \SdekOrder {..} ->
+            Hasql.statement 
+             ( deliveryPoint
+             , orderUuid
+             , trackingNumber
+             , tariff) 
+             createSdekOrderStatement
         else return Nothing 
 
       Hasql.statement
@@ -555,13 +556,13 @@ updateSdekOrderStatus orderId sdekOrderId status sdekStatus keepFreeUntil pool =
     runTransactionM pool Hasql.Write $ do
       -- order table
       Hasql.statement
-       (orderId, status) $
+       (orderId, status, sdekOrderId) $
         lmap (app2 statusToSQL)
         [Hasql.resultlessStatement|
           UPDATE orders
           SET status = CAST($2 :: text AS order_status)
           WHERE id = $1 :: text 
-          AND sdek_order_id IS NOT NULL
+          AND sdek_order_id = $3 :: int8
         |]
       -- sdek table
       Hasql.statement
@@ -2970,13 +2971,13 @@ placeNewShelfOrder order@Order {..} pool =
         if(_orderDeliveryProviderId == 
            encodeToText SDEK) 
         then
-          fmap Just $ 
-          Hasql.statement 
-            ( _orderDeliveryPointId
-            , _orderSdekRequestUuid
-            , _orderSdekTrackingNumber
-            , _orderTariff) 
-            createSdekOrderStatement
+          for _orderSdek $ \SdekOrder {..} ->
+            Hasql.statement 
+             ( deliveryPoint
+             , orderUuid
+             , trackingNumber
+             , tariff) 
+             createSdekOrderStatement
         else return Nothing 
 
       shelfItemIds <- 
