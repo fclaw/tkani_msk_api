@@ -569,7 +569,7 @@ updateSdekOrderStatus orderId sdekOrderId status sdekStatus keepFreeUntil pool =
        (sdekOrderId, sdekStatus, keepFreeUntil) $
         [Hasql.resultlessStatement|
          UPDATE sdek_orders
-         SET sdek_status = $2 :: text,
+         SET status = $2 :: text,
          keep_free_until = $3 :: timestamptz?
          WHERE id = $1 :: int8
         |]
