@@ -29,14 +29,14 @@ fetchCodes = do
   stateTVar <- get
   maybeCodes <- fmap _sdekPointsCodes $ readTVarIO stateTVar
   case maybeCodes of 
-    Nothing -> fetchAdCache
+    Nothing -> fetchAndCache
     Just (cachedTime, codes) -> do
       if diffUTCTime now cachedTime < 864000 -- once in 10 days
       then return codes
-      else fetchAdCache
+      else fetchAndCache
 
-fetchAdCache :: AppM [SdekPointCode]
-fetchAdCache = do
+fetchAndCache :: AppM [SdekPointCode]
+fetchAndCache = do
   $(logTM) InfoS $ "fetching SDEK points codes"
   cfg <- ask
   let url = (T.unpack . Sdek.url . _sdekConfig) cfg

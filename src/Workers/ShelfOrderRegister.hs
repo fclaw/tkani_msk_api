@@ -10,6 +10,7 @@ module Workers.ShelfOrderRegister (runShelfOrderRegister) where
 import Katip (logTM, Severity(..), ls)
 import Data.Int (Int64)
 import Data.Text (Text)
+import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import Data.Foldable (for_)
 import Data.Aeson ((.=), object, eitherDecode)
@@ -32,7 +33,7 @@ import API.WithField (WithField (..))
 import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import API.Types (InitiateShelfShipment, ShelfShipmentDetails (..), Providers (SDEK))
-import qualified Workers.ShelfOrderRegister.Order as Order
+import qualified Workers.ShelfOrderRegister.Sdek as Sdek
 import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
 import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2), MessageIdResponse (..))
 import Workers.SimpleOrderOrchestrator (notifyOrderChannelAboutError, sendErrorMessageToUser, try')
@@ -45,14 +46,13 @@ runShelfOrderRegister = do
   stVar <- get
   st <- readTVarIO stVar
   let inChan = _shelfOrdersChan st
-  forever $ do
-    -- Block and wait for a new order to appear in the channel
-    readTChanIO inChan >>= (void . async . runJobWithCleanup . uncurry runSingleRegister)
+  -- Block and wait for a new order to appear in the channel
+  forever $ readTChanIO inChan >>= (void . async . runJobWithCleanup . uncurry runSingleRegister)
 
 runSingleRegister :: Int64 -> WithField "chat_id" Int64 InitiateShelfShipment -> AppM ()
 runSingleRegister userId (WithField chatId init) = do
   $(logTM) InfoS $ ls $ "Processing shelf order for user " <> show userId
-  eRes <- Order.place userId init
+  eRes <- Sdek.place userId init
   case eRes of
     Left err -> do
       $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
@@ -67,13 +67,13 @@ runSingleRegister userId (WithField chatId init) = do
       let templateData = 
             HM.fromList 
             [ ("orderId", ssdOrderId)
-            , ("trackingNumber", ssdTrackingNumber)
+            , ("trackingNumber", fromJust ssdTrackingNumber)
             , ("provider", tshow ssdDeliveryProvider)
             ]
       message <- fmap escapeMarkdownV2 $ render $currentModule templateData
       let trackUrl = 
             case ssdDeliveryProvider of
-              SDEK -> "https://www.cdek.ru/ru/tracking?order_id=" <> ssdTrackingNumber
+              SDEK -> "https://www.cdek.ru/ru/tracking?order_id=" <> fromJust ssdTrackingNumber
               _    -> undefined -- We currently only support SDEK, but this is where you'd add more providers in the future. 
       let button = 
            object [

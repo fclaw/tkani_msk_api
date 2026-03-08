@@ -353,25 +353,26 @@ main = do
       dostavistaChan     <- newTChanIO
 
       cityCacheVar <- newTVarIO M.empty
-      pvzCacheVar <- newTVarIO M.empty
+      pvzCacheVar  <- newTVarIO M.empty
 
       let state =
            State 
-           { _sdekToken          = Nothing
-           , _pointCache         = mempty
-           , _sdekPromises       = mempty
-           , _tinkoffPaymentChan = tinkoffPaymentChan
-           , _sdekOrderChan      = sdekOrderChan
-           , _sdekCourierChan    = sdekCourierChan
-           , _metroStations      = []
-           , _cityCodeByPVZCache = CityCodeByPVZCache {..}
-           , _dostavistaChan     = dostavistaChan
-           , _allSdekPointsCache =  Nothing
-           , _sdekTariffs        = mempty
-           , _sdekPointsCodes    = Nothing
-           , _simpleOrdersChan   = simpleOrdersChan
-           , _shelfOrdersChan    = shelfOrdersChan
-           , _yandexPickupPoints = mempty
+           { _sdekToken           = Nothing
+           , _pointCache          = mempty
+           , _sdekPromises        = mempty
+           , _tinkoffPaymentChan  = tinkoffPaymentChan
+           , _sdekOrderChan       = sdekOrderChan
+           , _sdekCourierChan     = sdekCourierChan
+           , _metroStations       = []
+           , _cityCodeByPVZCache  = CityCodeByPVZCache {..}
+           , _dostavistaChan      = dostavistaChan
+           , _allSdekPointsCache  =  Nothing
+           , _sdekTariffs         = mempty
+           , _sdekPointsCodes     = Nothing
+           , _simpleOrdersChan    = simpleOrdersChan
+           , _shelfOrdersChan     = shelfOrdersChan
+           , _yandexPickupPoints  = mempty
+           , _yandexDropOffPoints = Nothing
            }
       initialState <- newTVarIO state
   

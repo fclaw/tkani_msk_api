@@ -14,8 +14,12 @@ import GHC.Generics (Generic)
 
 
 import Text (camelToSnake, recordLabelModifier)
+import Infrastructure.Services.Yandex.Geo (GeoPoint)
 import Infrastructure.Services.Yandex.Types.Enums hiding (PickupPoint)
 import qualified Infrastructure.Services.Yandex.Types.Enums as Enums
+import Infrastructure.Services.Yandex.Order
+
+
 
 -- | Shared configuration for the JSON instances to handle snake_case mapping.
 jsonOptions :: Options
@@ -53,30 +57,30 @@ instance FromJSON LocationDetectResp where
   parseJSON = genericParseJSON jsonOptions
 
 
+data CoordinateInterval = 
+     CoordinateInterval 
+     { ciFrom :: Double
+     , ciTo   :: Double
+     } deriving (Show, Eq, Generic)
+
 data PickupPointsReq = 
      PickupPointsReq
-     { pprGeoId           :: GeoId -- ^ The geographic ID for which to list pickup points (e.g., 213 for Moscow)
+     { pprGeoId           :: Maybe GeoId -- ^ The geographic ID for which to list pickup points (e.g., 213 for Moscow)
      , pprPaymentMethod   :: PaymentMethod -- ^ Filter pickup points by supported payment method
      , pprType            :: PickupPointType -- ^ Filter pickup points by type (Terminal, Warehouse, PickupPoint)
+     , pprLatitude        :: Maybe CoordinateInterval -- ^ Optional latitude interval for filtering pickup points
+     , pprLongitude       :: Maybe CoordinateInterval -- ^ Optional longitude interval for filtering pickup points
      } deriving (Show, Eq, Generic)
 
 defaultPickupPointsReq :: PickupPointsReq
 defaultPickupPointsReq = PickupPointsReq
-  { pprGeoId         = 0 -- Placeholder, should be set to a valid GeoId when making the request
+  { pprGeoId         = Just 213 -- Placeholder, should be set to a valid GeoId when making the request
   , pprPaymentMethod = CardOnReceipt -- Default to AlreadyPaid, can be changed as needed
   , pprType          = Enums.PickupPoint -- Default to PickupPoint, can be changed to Terminal or Warehouse as needed
+  , pprLatitude      = Nothing
+  , pprLongitude     = Nothing
   }
 
-data GeoPoint = GeoPoint
-     { latitude  :: Double -- ^ Latitude coordinate of the point
-     , longitude :: Double -- ^ Longitude coordinate of the point
-     } deriving (Show, Eq, Generic)
-
-instance FromJSON GeoPoint where
-  parseJSON = genericParseJSON jsonOptions
-
-instance ToJSON GeoPoint where
-  toJSON = genericToJSON jsonOptions
 
 data Address = Address
      { fullAddress :: Text -- ^ The complete address string (e.g., "ул. Ленина, д. 1, Москва")
@@ -99,12 +103,31 @@ data PickupPoint =
      , ppPosition          :: GeoPoint -- ^ Optional geographic coordinates of the pickup point
      } deriving (Show, Eq, Generic)
 
+type DropOffPoint = PickupPoint
+
+
 data PickupPointsResp = 
      PickupPointsResp
      { pprPoints :: [PickupPoint] -- ^ List of pickup points matching the criteria
      } deriving (Show, Eq, Generic)
 
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ppr" } ''PickupPointsReq)
+-- =============================================================================
+-- Core Request Payload: POST /api/b2b/platform/request/create
+-- =============================================================================
+
+data YandexCreateOrderReq = YandexCreateOrderReq
+  { info         :: RequestInfo
+  , source       :: LocationNode
+  , destination  :: LocationNode
+  , billingInfo  :: BillingInfo
+  , items        :: [Item]
+  , places       :: [Place]
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON YandexCreateOrderReq where toJSON = genericToJSON jsonOptions
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ci" } ''CoordinateInterval)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ppr", omitNothingFields = True } ''PickupPointsReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pp" } ''PickupPoint)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ppr" } ''PickupPointsResp)

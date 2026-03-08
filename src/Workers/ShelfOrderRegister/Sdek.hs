@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
 
-module Workers.ShelfOrderRegister.Order (place) where
+module Workers.ShelfOrderRegister.Sdek (place) where
 
 
 import Katip
@@ -30,13 +30,13 @@ import TH.Location (currentModule)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import App (AppM, _appDBPool, _sdekConfig, Config, currentTime, render, ChatKey (SHELF))
-import Workers.SimpleOrderOrchestrator.Order (fetchOrderPollerRes, PlaceOrderError (..), formatOrderItemLine)
+import Workers.SimpleOrderOrchestrator.Sdek (fetchOrderPollerRes, PlaceOrderError (..), formatOrderItemLine)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
 import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
 import API.Types (ShelfShipmentDetails (..), InitiateShelfShipment (..))
-import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, ShelfItemsForShipment (..), Order (..))
+import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, ShelfItemsForShipment (..), Order (..), SdekOrder (..))
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 
 
@@ -80,7 +80,7 @@ go userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..
         void $ deleteMessage (coerce telegramMsgId) SHELF
   void $ wrapOrCancel (placeNewShelfOrder dbOrder pool) DatabaseFailed clearArtifacts
 
-  let ssdTrackingNumber = trackingNumber
+  let ssdTrackingNumber = Just trackingNumber
   let ssdDeliveryProvider = issProvider
   return ShelfShipmentDetails {..}
 
@@ -130,15 +130,20 @@ buildTemplateData orderId ShelfItemsForShipment {..} localTime =
 
 mkDbOrder :: Int64 -> InitiateShelfShipment -> ShelfItemsForShipment -> UUID -> Text -> Text -> MessageIdResponse -> Int -> Order
 mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} uuid trackingNumber orderId telegramMsgId tariff =
-  Order 
-  { _orderTariff                        = fromIntegral tariff
-  , _orderId                            = orderId
-  , _orderCustomerFullName              = sifsUserInitials
-  , _orderCustomerPhone                 = sifsPhone
-  , _orderDeliveryProviderId            = encodeToText issProvider
-  , _orderDeliveryPointId               = issPointId
-  , _orderSdekRequestUuid               = uuid
-  , _orderSdekTrackingNumber            = trackingNumber
-  , _orderInternalNotificationMessageId = coerce telegramMsgId
-  , _orderTelegramUserId                = userId
-  }
+  let sdekOrder = 
+        SdekOrder
+        { deliveryPoint  = issPointId
+        , orderUuid      = uuid
+        , trackingNumber = trackingNumber
+        , tariff         = fromIntegral tariff
+        }
+  in
+    Order 
+    { _orderId                            = orderId
+    , _orderCustomerFullName              = sifsUserInitials
+    , _orderCustomerPhone                 = sifsPhone
+    , _orderDeliveryProviderId            = encodeToText issProvider
+    , _orderInternalNotificationMessageId = coerce telegramMsgId
+    , _orderTelegramUserId                = userId
+    , _orderSdek                          = Just sdekOrder
+    }

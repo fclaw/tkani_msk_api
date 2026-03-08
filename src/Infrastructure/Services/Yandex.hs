@@ -29,23 +29,36 @@ See official documentation at: https://yandex.ru/support/delivery-profile/ru/api
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
 
-module Infrastructure.Services.Yandex (detectLocation, listPickupPoints, module Yandex.Types) where
+module Infrastructure.Services.Yandex 
+       ( detectLocation
+       , listPickupPoints
+       , getNearestSource
+       , module Yandex.Types
+       , PlatformId
+       ) where
 
 import Katip (logTM, Severity(..), ls)
 import Data.Text (Text, unpack)
 import Data.Functor ((<&>))
+import Data.Maybe (isJust, fromJust)
+import Control.Monad (join)
+import Data.List (minimumBy)
+import Data.Ord  (comparing)
+import Data.Time.Clock (diffUTCTime)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Control.Monad.IO.Class (liftIO)
 
+import App
 import Text (tshow)
 import API.WithField (WithField (..))
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http
+import Infrastructure.Services.Yandex.Geo
 import Infrastructure.Services.Yandex.Types as Yandex.Types
 import Infrastructure.Services.Yandex.Config
+import Infrastructure.Services.Yandex.Types.Enums (PaymentMethod (AlreadyPaid))
 import Infrastructure.Services.Overpass.Geo (findNearestMetros)
-import App (AppM, _configHttpManager, Scheme (HTTPS), _yandexConfig, _metroStations, readTVarIO)
 
 
 detectLocation :: LocationDetectReq -> AppM (Either HttpError [LocationDetectedVariant])
@@ -75,3 +88,82 @@ listPickupPoints req = do
       let GeoPoint {..} = ppPosition point
           metros = findNearestMetros latitude longitude allMetros
       in WithField metros point -- Assuming the response contains a list of pickup points and associated metro stations
+
+type PlatformId = Text
+
+-- | Core Function: Returns the closest point to a target from a given list
+findClosestPoint :: GeoPoint -> [DropOffPoint] -> Maybe DropOffPoint
+findClosestPoint _ [] = Nothing
+findClosestPoint target points = Just $ minimumBy (comparing (haversineDist target . ppPosition)) points
+
+getNearestSource :: AppM (Either HttpError (Maybe (Address, PlatformId)))
+getNearestSource = do  
+  stateTVar <- get
+  maybePoints <- fmap _yandexDropOffPoints $ readTVarIO stateTVar
+  case maybePoints of 
+    Just (cachedTime, points) -> do
+      now <- currentTime
+      if diffUTCTime now cachedTime < 86400 -- once in 1 days
+      then do
+        cfg <- fmap _yandexConfig ask
+        let officeGeoPoint = office cfg
+        let target = findClosestPoint officeGeoPoint points
+        pure $ Right $ join $ target <&> \t -> ppId t <&> \id -> (ppAddress t, id)
+      else  do 
+        ePoints <- fetchAndCache
+        case ePoints of
+          Left err -> 
+            fmap (const (Left err)) $ 
+              $(logTM) ErrorS $ 
+                "error while fetching \
+                \ Yandex pickup points: " <> 
+                ls (tshow err)
+          Right points -> do
+            cfg <- fmap _yandexConfig ask
+            let officeGeoPoint = office cfg
+            let target = findClosestPoint officeGeoPoint points
+            pure $ Right $ join $ target <&> \t -> ppId t <&> \id -> (ppAddress t, id)
+    Nothing -> do 
+      ePoints <- fetchAndCache
+      case ePoints of
+        Left err ->
+          fmap (const (Left err)) $ 
+            $(logTM) ErrorS $ 
+              "error while fetching \
+              \ Yandex pickup points: " <> 
+              ls (tshow err)
+        Right points -> do
+          cfg <- fmap _yandexConfig ask
+          let officeGeoPoint = office cfg
+          let target = findClosestPoint officeGeoPoint points
+          pure $ Right $ join $ target <&> \t -> ppId t <&> \id -> (ppAddress t, id)
+
+fetchAndCache :: AppM (Either HttpError [DropOffPoint])
+fetchAndCache = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let (from, to)  = calcBoundingBox (office cfg) 2.0
+  let minLat = min (latitude from) (latitude to)
+  let maxLat = max (latitude from) (latitude to)
+  let minLon = min (longitude from) (longitude to)
+  let maxLon = max (longitude from) (longitude to)
+  let _latitude   = CoordinateInterval minLat maxLat
+  let _longitude  = CoordinateInterval minLon maxLon
+  let req = defaultPickupPointsReq 
+            { pprGeoId     = Nothing
+            , pprLatitude  = Just _latitude
+            , pprLongitude = Just _longitude
+            }
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickup-points/list"
+  let token = mkDefToken (apiKey cfg)
+  eResp <- postReq manager url req [] (Just token)
+  handleApiResponse @_ @PickupPointsResp $(currentModule) eResp $ \resp -> do
+    stateTVar <- get
+    cachedTime <- currentTime
+    let points = pprPoints resp
+    let pointsWithId = [ p | p <- points, isJust (ppId p)]
+    fmap (const (Right pointsWithId)) $
+      modifyTVarIO stateTVar $ \s -> 
+        s { _yandexDropOffPoints = 
+            Just (cachedTime, pointsWithId) 
+          }

@@ -12,7 +12,8 @@ import Data.Maybe (catMaybes)
 
 import App (AppM)
 import API.WithField (WithField (..))
-import Infrastructure.Services.Yandex.Types (fullAddress, ppId, ppName, ppAddress, ppPosition, latitude, longitude)
+import Infrastructure.Services.Yandex.Geo (latitude, longitude)
+import Infrastructure.Services.Yandex.Types (fullAddress, ppId, ppName, ppAddress, ppPosition)
 import Infrastructure.Services.Yandex.CachedPickupPoints (storeDeliveryPoints)
 import API.Types (ApiResponse, mkError, YandexPickupPointsResp (..), DeliveryPoint (..), PointLocation (..), DisplayInfo (..))
 

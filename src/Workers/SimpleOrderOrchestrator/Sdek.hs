@@ -5,7 +5,14 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Workers.SimpleOrderOrchestrator.Order where
+module Workers.SimpleOrderOrchestrator.Sdek 
+      ( PlaceOrderError (..)
+      , place
+      , fetchOrderPollerRes
+      , mkInitRequest
+      , formatOrderItemLine
+      , notifyOrdersChannel
+      ) where
 
 
 import Katip
@@ -85,6 +92,7 @@ data PlaceOrderError
 
 
 wrap action error = withExceptT error (ExceptT action)
+{-# INLINE wrap #-}
 
 wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
 wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
@@ -113,7 +121,7 @@ place orderRequest@OrderRequest {..} = do
   -- This is the action for our background poller thread.
   lift $ $(logTM) InfoS $ "poller tries calling sdek for the final confirmation"
   ePollerRes <- fetchOrderPollerRes sdekUuid
-  trackingNumber <- except $ (first SdekPollerError) ePollerRes
+  _trackingNumber <- except $ (first SdekPollerError) ePollerRes
 
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
@@ -174,7 +182,7 @@ place orderRequest@OrderRequest {..} = do
     void $ Sdek.cancelOrder sdekUuid
 
   -- STEP E. Save the order in database
-  let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId trackingNumber telegramMsgId
+  let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId _trackingNumber telegramMsgId
   let clearArtifacts = do
         void $ Sdek.cancelOrder sdekUuid
         void $ deleteMessage (coerce telegramMsgId) ORDER
@@ -213,6 +221,7 @@ place orderRequest@OrderRequest {..} = do
   -- clear out the cart
   void $ wrapOrCancel (clearCart orTelegramUserId pool) DatabaseFailed clearArtifacts
 
+  let trackingNumber = Just _trackingNumber 
   return OrderConfirmationDetails {..}
 
 
@@ -319,18 +328,22 @@ formatOrderItemLine item =
 
 mkDbOrder :: OrderRequest -> Int -> UUID.UUID -> Text -> Text -> MessageIdResponse -> DB.Order
 mkDbOrder OrderRequest {..} optimalTariff trackingUuid orderId trackingNumber telegramMsgId =
-  DB.Order 
-  { DB._orderId = orderId
-  , DB._orderCustomerFullName = orCustomerFullName
-  , DB._orderCustomerPhone = orCustomerPhone
-  , DB._orderDeliveryProviderId = encodeToText orDeliveryProviderId
-  , DB._orderDeliveryPointId = orDeliveryPointId
-  , DB._orderSdekRequestUuid = trackingUuid
-  , DB._orderSdekTrackingNumber = trackingNumber
-  , DB._orderInternalNotificationMessageId = coerce telegramMsgId
-  , DB._orderTelegramUserId = orTelegramUserId
-  , DB._orderTariff = fromIntegral optimalTariff
-  }
+  let sdekOrder = 
+        DB.SdekOrder
+        { DB.deliveryPoint = orDeliveryPointId
+        , DB.orderUuid = trackingUuid
+        , DB.trackingNumber = trackingNumber
+        , DB.tariff = fromIntegral optimalTariff
+        }
+  in DB.Order 
+     { DB._orderId                 = orderId
+     , DB._orderCustomerFullName   = orCustomerFullName
+     , DB._orderCustomerPhone      = orCustomerPhone
+     , DB._orderDeliveryProviderId = encodeToText orDeliveryProviderId
+     , DB._orderInternalNotificationMessageId = coerce telegramMsgId
+     , DB._orderTelegramUserId = orTelegramUserId
+     , DB._orderSdek           = Just sdekOrder
+     }
 
 
 -- Helper for kopecks

@@ -61,3 +61,4 @@
 00058.providers 2026-03-06T09:42:31Z System Administrator <root@Sonny.local> # detach providers from orders
 00059.cancel_order_event_func 2026-03-07T10:13:28Z System Administrator <root@Sonny.local> # cancel order event function
 00059.sdek_price_calculator 2026-03-07T11:50:30Z System Administrator <root@Sonny.local> # sdek price calculator
+00060.yandex_order_draft 2026-03-08T14:36:17Z System Administrator <root@Sonny.local> # yandex: order request draft

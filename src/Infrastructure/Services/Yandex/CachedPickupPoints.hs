@@ -40,12 +40,15 @@ storeDeliveryPoints geoId = do
     
 fetchAdCache :: GeoId ->  AppM (Either HttpError [WithField "metros" [Text] PickupPoint])
 fetchAdCache geoId = do
-  eRes <- listPickupPoints defaultPickupPointsReq { pprGeoId = geoId }
+  eRes <- listPickupPoints 
+            defaultPickupPointsReq 
+            { pprGeoId = Just geoId }
   for eRes $ \points -> do
     now <- currentTime
     stateTVar <- get
-    liftIO $ atomically $ modifyTVar' stateTVar $
-      \s -> let old = _yandexPickupPoints s 
-            in s { _yandexPickupPoints = 
-                   M.insert geoId (now, points) old }
-    return points
+    fmap (const points) $
+      liftIO $ atomically $ modifyTVar' stateTVar $
+        \s -> let old = _yandexPickupPoints s 
+              in s { _yandexPickupPoints = 
+                     M.insert geoId (now, points) old
+                   }

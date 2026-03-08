@@ -101,7 +101,7 @@ import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
-import Infrastructure.Services.Yandex.Types (GeoId, PickupPoint)
+import Infrastructure.Services.Yandex.Types (GeoId, PickupPoint, DropOffPoint)
 
 
 data Scheme = HTTP | HTTPS
@@ -270,21 +270,22 @@ instance FromJSON SdekPointCode where
 -- This will be our mutable, thread-safe state.
 -- It holds the SDEK token and its expiry time.
 data State = State
-  { _sdekToken          :: Maybe SdekToken -- Stored in a TVar for thread safety
-  , _pointCache         :: PointCache
-  , _cityCodeByPVZCache :: CityCodeByPVZCache
-  , _sdekTariffs        :: M.Map NormalizedRoute (UTCTime, [Int])
-  , _yandexPickupPoints :: M.Map GeoId (UTCTime, [WithField "metros" [Text] PickupPoint])
-  , _sdekPromises       :: SdekPromiseMap
-  , _tinkoffPaymentChan :: TChan (PaymentFlow, Text, GetStateRequest)
-  , _sdekOrderChan      :: TChan SdekJob
-  , _sdekCourierChan    :: TChan SdekCourierJob
-  , _metroStations      :: [MetroStation]
-  , _dostavistaChan     :: TChan DostavistaJob
-  , _allSdekPointsCache :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
-  , _sdekPointsCodes    :: Maybe (UTCTime, [SdekPointCode])
-  , _simpleOrdersChan   :: TChan OrderRequest
-  , _shelfOrdersChan    :: TChan (Int64, WithField "chat_id" Int64 InitiateShelfShipment)
+  { _sdekToken           :: Maybe SdekToken -- Stored in a TVar for thread safety
+  , _pointCache          :: PointCache
+  , _cityCodeByPVZCache  :: CityCodeByPVZCache
+  , _sdekTariffs         :: M.Map NormalizedRoute (UTCTime, [Int])
+  , _yandexPickupPoints  :: M.Map GeoId (UTCTime, [WithField "metros" [Text] PickupPoint])
+  , _yandexDropOffPoints :: Maybe (UTCTime, [DropOffPoint])
+  , _sdekPromises        :: SdekPromiseMap
+  , _tinkoffPaymentChan  :: TChan (PaymentFlow, Text, GetStateRequest)
+  , _sdekOrderChan       :: TChan SdekJob
+  , _sdekCourierChan     :: TChan SdekCourierJob
+  , _metroStations       :: [MetroStation]
+  , _dostavistaChan      :: TChan DostavistaJob
+  , _allSdekPointsCache  :: Maybe (UTCTime, [SdekPoint]) -- ADD THIS LINE
+  , _sdekPointsCodes     :: Maybe (UTCTime, [SdekPointCode])
+  , _simpleOrdersChan    :: TChan OrderRequest
+  , _shelfOrdersChan     :: TChan (Int64, WithField "chat_id" Int64 InitiateShelfShipment)
   }
 
 

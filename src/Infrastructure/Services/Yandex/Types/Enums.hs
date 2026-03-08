@@ -45,3 +45,19 @@ instance ToJSON PickupPointType where
     Terminal    -> "terminal"
     Warehouse   -> "warehouse"
     PickupPoint -> "pickup_point"
+
+data NodeType = PlatformStation | CustomLocation deriving (Show, Eq)
+
+instance FromJSON NodeType where
+  parseJSON = withText "NodeType" $ \case
+    "platform_station" -> pure PlatformStation
+    "custom_location"  -> pure CustomLocation
+    nodeType           -> fail $ "Unknown NodeType: " <> unpack nodeType
+
+instance ToJSON NodeType where
+  toJSON nodeType = case nodeType of
+    PlatformStation -> "platform_station"
+    CustomLocation  -> "custom_location"
+
+
+

@@ -316,7 +316,7 @@ data OrderConfirmationDetails =
      OrderConfirmationDetails
      { orderId          :: Text -- e.g., "T-20231114-A4B7" - CRUCIAL for support
      , paymentLink      :: Text
-     , trackingNumber   :: Text -- delivery provider tracking number
+     , trackingNumber   :: Maybe Text -- delivery provider tracking number
      , linkToQr         :: Maybe Text
      } deriving (Show, Generic)
 
@@ -699,7 +699,7 @@ data ShelfShipmentDetails =
      ShelfShipmentDetails
      { ssdOrderId          :: Text
       -- | The delivery tracking number provided by the delivery service.
-     , ssdTrackingNumber   :: Text
+     , ssdTrackingNumber   :: Maybe Text
      , ssdDeliveryProvider :: Providers
      } deriving (Show, Generic)
 

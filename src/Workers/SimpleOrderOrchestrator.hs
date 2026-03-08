@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 module Workers.SimpleOrderOrchestrator (runSimpleOrderOrchestrator, notifyOrderChannelAboutError, sendErrorMessageToUser, try') where
 
@@ -32,8 +33,9 @@ import TH.Location (currentModule)
 import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
-import qualified Workers.SimpleOrderOrchestrator.Order as Order
-import API.Types (OrderRequest, OrderConfirmationDetails (..), orChatId)
+import qualified Workers.SimpleOrderOrchestrator.Sdek as Sdek
+import qualified Workers.SimpleOrderOrchestrator.Yandex as Yandex
+import API.Types (OrderRequest (..), OrderConfirmationDetails (..), orChatId, Providers(..))
 import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2), MessageIdResponse (..), sendOrEditTelegramMessage)
 import App (AppM, readTVarIO, readTChanIO, _simpleOrdersChan, _bots, ChatKey (MAIN, ORDER), _configHttpManager, render, _appDBPool)
 
@@ -50,27 +52,44 @@ runSimpleOrderOrchestrator = do
   stVar <- get
   st <- readTVarIO stVar
   let inChan = _simpleOrdersChan st
-  forever $
-    -- Block and wait for a new order to appear in the channel
-    readTChanIO inChan >>= (void . async . runJobWithCleanup . orchestrateSingleOrder)
+  -- Block and wait for a new order to appear in the channel
+  forever $ readTChanIO inChan >>= (void . async . runJobWithCleanup . orchestrateSingleOrder)
 
 orchestrateSingleOrder :: OrderRequest -> AppM ()
-orchestrateSingleOrder order = do
-  eitherRes <- (fmap (first tshow) . runExceptT . Order.place) order
-  case eitherRes of
-    Left err -> do
-      $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
-      msg <- render ($currentModule <> ".Error") mempty
-      sendErrorMessageToUser (orChatId order) msg
-      notifyOrderChannelAboutError err
-    Right confirmationDetails -> buildAndSendPaymentDetailsMessage (orChatId order) confirmationDetails
+orchestrateSingleOrder order@OrderRequest{orDeliveryProviderId, orChatId}
+  | orDeliveryProviderId == SDEK = do
+    $(logTM) InfoS "SDEK registration started.." 
+    eitherRes <- fmap (first tshow) $ runExceptT $ Sdek.place order
+    handleOrderPlacement orChatId orDeliveryProviderId eitherRes
+  | orDeliveryProviderId == YANDEX = do
+    $(logTM) InfoS "YANDEX registration started.."
+    eitherRes <- fmap (first tshow) $ runExceptT $ Yandex.place order
+    handleOrderPlacement orChatId orDeliveryProviderId eitherRes
+  | otherwise = $(logTM) WarningS "Unknown delivery provider ID"
 
-buildAndSendPaymentDetailsMessage :: Int64 -> OrderConfirmationDetails -> AppM ()
-buildAndSendPaymentDetailsMessage chatId OrderConfirmationDetails {..} = do
+handleOrderPlacement :: Int64 -> Providers -> Either Text OrderConfirmationDetails -> AppM ()
+handleOrderPlacement chatId _ (Left err) = do
+  $(logTM) ErrorS $ "Failed to place order: " <> ls err
+  msg <- render ($currentModule <> ".Error") mempty
+  sendErrorMessageToUser chatId msg
+  notifyOrderChannelAboutError err
+handleOrderPlacement chatId provider (Right confirmationDetails) = 
+  buildAndSendPaymentDetailsMessage chatId provider confirmationDetails
+
+buildAndSendPaymentDetailsMessage :: Int64 -> Providers -> OrderConfirmationDetails -> AppM ()
+buildAndSendPaymentDetailsMessage chatId provider OrderConfirmationDetails {..} = do
   bots <- fmap _bots ask
   let (bot,_) = (M.!) bots MAIN
   let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
-  let templateData = HM.fromList [("orderId", orderId), ("trackingNumber", trackingNumber)]
+  let textTrackingNumber =
+        case trackingNumber of
+          Just n  -> tshow n
+          Nothing -> "будет доступен позднее ⏳"
+  let templateData = 
+        HM.fromList 
+        [ ("orderId", orderId)
+        , ("trackingNumber", textTrackingNumber)
+        , ("provider", tshow provider)]
   message <- fmap escapeMarkdownV2 $ render $currentModule templateData
   let buttons = 
         object [
