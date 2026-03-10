@@ -36,6 +36,7 @@ library:
     - Workers.DeliveryCostListener
     - Workers.SimpleOrderOrchestrator
     - Workers.ShelfOrderRegister
+    - Workers.YandexOrderStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

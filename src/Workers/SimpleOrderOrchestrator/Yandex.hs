@@ -10,18 +10,23 @@ module Workers.SimpleOrderOrchestrator.Yandex (place) where
 import Katip (logTM, Severity (..), ls)
 import Data.Text (Text)
 import Data.Int (Int64)
+import Data.Aeson (toJSON, Value)
 import qualified Data.Text as T
 import Control.Monad (void, when)
 import Data.Maybe (fromMaybe, fromJust)
 import Control.Monad (when)
+import Data.Coerce (coerce)
+import Data.Functor ((<&>))
 import Data.Maybe (isNothing)
 import Control.Monad.Trans.Except
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Reader.Class (ask)
+import Control.Monad.State.Class (get)
 
 import App
+import Text (encodeToText, tshow)
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
@@ -35,12 +40,18 @@ import API.Types (OrderRequest (..), OrderConfirmationDetails (..))
 import Infrastructure.Services.Yandex (getNearestSource)
 import Infrastructure.Database (getOrderItems)
 import Infrastructure.Services.Yandex.Types
+import Infrastructure.Services.Yandex.Order
+import Infrastructure.Services.Yandex.Config (warehouseId)
+import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup))
+import Infrastructure.Services.Telegram (MessageIdResponse (..))
+import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
+import Infrastructure.Database (Order, OrderItem (..), NewPaymentRecord (..), oiTotalPrice, finalizeYandexOrderRegistration, YandexOrder (..), Order (..))
 
 
 data PlaceOrderError =
-       NetworkError HttpError
-     | DropOffPointNotFound
-     | DatabaseFailed Text
+    --    YandexHttpError HttpError
+    --  | DropOffPointNotFound
+       DatabaseFailed Text
      | CartEmpty
      | TinkoffHttpError HttpError
      | TinkoffPaymentLinkFailed Text
@@ -50,15 +61,22 @@ data PlaceOrderError =
 wrap action error = withExceptT error (ExceptT action)
 {-# INLINE wrap #-}
 
-place ::  OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
+place :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
 place orderRequest@OrderRequest {..} = do
-  maybeDropOffPoint <- wrap getNearestSource NetworkError
-  when(isNothing maybeDropOffPoint) $ throwE DropOffPointNotFound
-  let Just (_, pointId) = maybeDropOffPoint
+--   maybeDropOffPoint <- wrap getNearestSource YandexHttpError
+--   when(isNothing maybeDropOffPoint) $ throwE DropOffPointNotFound
+--   let Just (sourceAddress, sourcePointId) = maybeDropOffPoint
+
+--   $(logTM) InfoS $ "Yandex source point is at address: " <> ls (tshow sourceAddress)
+
 
   cfg <- lift ask
+
+  -- drop off point (platform station id)
+  let sourcePointId = warehouseId (_yandexConfig cfg)
+
   let pool = _appDBPool cfg
-    -- fetch total price for a given fabric
+    -- STEP A. Fetch items from the cart
   items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
@@ -99,7 +117,6 @@ place orderRequest@OrderRequest {..} = do
               Tinkoff.PAYLOAD
         }
 
-  
   $(logTM) InfoS $ ls $ "QR req: " <> encodePretty qrReq
   tinkoffQrResp :: Tinkoff.GetQrResponse <- wrap (Tinkoff.getTinkoffQRCode qrReq) TinkoffHttpError
 
@@ -109,8 +126,87 @@ place orderRequest@OrderRequest {..} = do
   let linkToQr = Tinkoff.gqrrData tinkoffQrResp
 
   -- STEP D. Notify the telegram channel
-  telegramMsgId <- wrap (Sdek.notifyOrdersChannel orderRequest items orderId) NotificationSendFailed
+  telegramMsgId <- fmap coerce $ wrap (Sdek.notifyOrdersChannel orderRequest items orderId) NotificationSendFailed
+
+  let getStateRequest = 
+        Tinkoff.GetStateRequest
+        { gsrqPaymentId = tinkoffPaymentId
+        , gsrqToken = 
+            Tinkoff.generateGetStateToken $
+              Tinkoff.GetStateToken
+              tinkoffPaymentId
+              (tinkoffTerminalKey tinkoffCred)
+              (tinkoffSecret tinkoffCred)
+        , gsrqTerminalKey = tinkoffTerminalKey tinkoffCred
+        , gsrqIP = Nothing
+        }
+  st <- get  
+  lift $ readTVarIO st >>= ((`writeTChanIO` (ShipNow, orderId, getStateRequest)) . _tinkoffPaymentChan)
+
+
+  -- STEP E. Store draft of order request in db
+  let orderDraftJson = 
+        toJSON $
+         YandexCreateOrderReq
+         { info          = defRequestInfo { riOperatorRequestId = orderId }
+         , source        = SourceRequestNode (PlatformStation sourcePointId)
+         , destination   = defDestinationRequestNode { drnPlatformStation = Just (PlatformStation orDeliveryPointId) }
+         , billingInfo   = defBillingInfo
+         , items         = 
+             items <&> \OrderItem {..} -> 
+               Item 
+               { iCount          = 1
+               , iName           = oiName
+               , iArticle        = oiArticle
+               , iBillingDetails =
+                  ItemBillingDetails 
+                  { ibdUnitPrice         = round oiTotalPrice
+                  , ibdAssessedUnitPrice = round oiTotalPrice
+                  }
+               , iPlaceBarcode   = orderId
+               }
+         , places         = [defPlace]
+         , recipientInfo  = RecipientInfo orCustomerFullName orCustomerPhone
+         , lastMilePolicy = SelfPickup
+         }
+
+  let totalPrice = sum [ oiTotalPrice item | item <- items]
+  let newPaymentRecord = 
+        NewPaymentRecord
+        { nprOrderId           = Just orderId
+        , nprProvider          = Tinkoff
+        , nprProviderPaymentId = tinkoffPaymentId
+        , nprAmountKopecks     = round totalPrice
+        , nprPaymentUrl        = paymentLink
+        , nprError             = Nothing
+        , nprToken             = Tinkoff.irToken initReq
+        , nprPaymentFlow       = encodeToText ShipNow
+        , nprShelfOrderId      = Nothing
+        }
+
+  let dbOrder = mkDbOrder orderRequest orderId telegramMsgId orderDraftJson
+  void $ wrap (finalizeYandexOrderRegistration dbOrder newPaymentRecord pool) DatabaseFailed
 
   let trackingNumber = Nothing
---   let draft = YandexCreateOrderReq
   return OrderConfirmationDetails {..}
+
+
+mkDbOrder :: OrderRequest -> Text -> Int64 -> Value -> Order
+mkDbOrder OrderRequest {..} orderId msgId draftJson =
+  let yandexOrder = 
+        YandexOrder
+        { yaDeliveryPoint  = orDeliveryPointId
+        , yaTariff         = SelfPickup
+        , yaDraftJson      = draftJson
+        }
+  in
+    Order 
+    { _orderId                            = orderId
+    , _orderCustomerFullName              = orCustomerFullName
+    , _orderCustomerPhone                 = orCustomerPhone
+    , _orderDeliveryProviderId            = encodeToText orDeliveryProviderId
+    , _orderInternalNotificationMessageId = msgId
+    , _orderTelegramUserId                = orTelegramUserId
+    , _orderSdek                          = Nothing
+    , _orderYandex                        = Just yandexOrder
+    }

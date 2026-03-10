@@ -199,7 +199,7 @@ place orderRequest@OrderRequest {..} = do
         , nprError             = Nothing
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText ShipNow
-        , nprShelfOrderId       = Nothing
+        , nprShelfOrderId      = Nothing
         }
   void $ wrapOrCancel (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed clearArtifacts
 
@@ -330,19 +330,20 @@ mkDbOrder :: OrderRequest -> Int -> UUID.UUID -> Text -> Text -> MessageIdRespon
 mkDbOrder OrderRequest {..} optimalTariff trackingUuid orderId trackingNumber telegramMsgId =
   let sdekOrder = 
         DB.SdekOrder
-        { DB.deliveryPoint = orDeliveryPointId
-        , DB.orderUuid = trackingUuid
-        , DB.trackingNumber = trackingNumber
-        , DB.tariff = fromIntegral optimalTariff
+        { DB.sdekDeliveryPoint  = orDeliveryPointId
+        , DB.sdekOrderUuid      = trackingUuid
+        , DB.sdekTrackingNumber = trackingNumber
+        , DB.sdekTariff         = fromIntegral optimalTariff
         }
   in DB.Order 
-     { DB._orderId                 = orderId
-     , DB._orderCustomerFullName   = orCustomerFullName
-     , DB._orderCustomerPhone      = orCustomerPhone
-     , DB._orderDeliveryProviderId = encodeToText orDeliveryProviderId
+     { DB._orderId                            = orderId
+     , DB._orderCustomerFullName              = orCustomerFullName
+     , DB._orderCustomerPhone                 = orCustomerPhone
+     , DB._orderDeliveryProviderId            = encodeToText orDeliveryProviderId
      , DB._orderInternalNotificationMessageId = coerce telegramMsgId
-     , DB._orderTelegramUserId = orTelegramUserId
-     , DB._orderSdek           = Just sdekOrder
+     , DB._orderTelegramUserId                = orTelegramUserId
+     , DB._orderSdek                          = Just sdekOrder
+     , DB._orderYandex                        = Nothing
      }
 
 

@@ -265,23 +265,14 @@ sendMessage chatId PutOnShelfPaymentOptions {..} = do
       Active -> do
         let templateData = HM.fromList [("amount", tshow (fromJust pspoTotalPrice))]
         message <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> tshow Active) templateData
-        let buttons = 
-              object [
-                "inline_keyboard" .=
-                  [[ object 
-                    [ "text" .= ("💳 Оплатить картой" :: Text)
-                    , "url"  .= fromJust pspoPaymentLink
-                    ]
-                  ],
-                  [if isJust pspoLinkToQr then
-                      object 
-                      [ "text" .= ("📱 Оплатить СПБ" :: Text)
-                      , "url"  .= fromJust pspoLinkToQr
-                      ]
-                    else Null
-                  ]
-                  ]
-                ]
+        let cardRow = [ object [ "text" .= ("💳 Оплатить картой" :: Text), "url" .= pspoPaymentLink ] ]  
+        -- Create the SBP row ONLY if the link exists, otherwise return an empty list
+        let sbpRow = 
+              case pspoLinkToQr of
+                Just qr -> [[ object [ "text" .= ("📱 Оплатить СПБ" :: Text), "url" .= qr ] ]]
+                Nothing -> []
+
+        let buttons = object ["inline_keyboard" .= ([cardRow] ++ sbpRow)]
         let payload =
               object
               [ "chat_id"              .= chatId

@@ -25,22 +25,30 @@ import Text (recordLabelModifier, encodeToText, camelToSnake)
 import Infrastructure.Services.Types (PaymentProvider)
 import Domain.Warehouse.Types (FabricType, Fabric (..))
 import API.Types (RawIngestRequest (..), MediaType, Providers)
+import Infrastructure.Services.Yandex.Types.Enums (Tariff)
 
 
 
 data SdekOrder =
      SdekOrder
-     { deliveryPoint  :: Text
+     { sdekDeliveryPoint  :: Text
        -- | The tracking UUID returned by SDEK's asynchronous registration.
        --   This is used by the polling worker.
-     , orderUuid      :: UUID
+     , sdekOrderUuid      :: UUID
       -- | The permanent, official SDEK tracking number, received when registration is 'SUCCESSFUL'.
-     , trackingNumber :: Text
-     , tariff         :: Int32
+     , sdekTrackingNumber :: Text
+     , sdekTariff         :: Int32
      } deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''SdekOrder)
+-- $(deriveJSON defaultOptions { fieldLabelModifier = camelToSnake } ''SdekOrder)
 
+
+data YandexOrder =
+     YandexOrder
+     { yaDeliveryPoint :: Text
+     , yaTariff        :: Tariff
+     , yaDraftJson     :: Value
+     } deriving (Show, Eq, Generic)
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
 data Order = Order
@@ -55,14 +63,15 @@ data Order = Order
     --   Used to edit the message to update the status.
   , _orderInternalNotificationMessageId :: Int64
   , _orderTelegramUserId                :: Int64
-  , _orderSdek                          :: Maybe SdekOrder    
+  , _orderSdek                          :: Maybe SdekOrder
+  , _orderYandex                        :: Maybe YandexOrder
   } deriving (Show, Eq, Generic)
 
 -- This Template Haskell splice automatically generates lenses for each field.
 -- e.g., 'orderId' will be a lens for the '_orderId' field.
 makeLenses ''Order
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "_order" } ''Order)
+-- $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "_order" } ''Order)
 
 data AdjustFabric = 
      AdjustFabric
@@ -420,3 +429,15 @@ data TelegramMessageDetails =
      , tmdChatId        :: Int64
      , tmdMessageId     :: Int64
      } deriving (Show)
+
+data YandexOrderDetailsForPricing =
+     YandexOrderDetailsForPricing
+     { yodpLength            :: Int32
+     , yodpWidth             :: Int32
+     , yodpHeight            :: Int32
+     , yodpWeight            :: Int32
+     , yodpDraftOrderReqJson :: Value
+     , yodpCustomer          :: Text
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yodp" } ''YandexOrderDetailsForPricing)

@@ -12,9 +12,10 @@ import Data.Aeson (FromJSON (..), genericParseJSON, defaultOptions, fieldLabelMo
 
 data YandexConfig = 
      YandexConfig
-     { apiKey :: Text
-     , apiUrl :: Text
-     , office :: GeoPoint
+     { apiKey            :: Text
+     , apiUrl            :: Text
+     , office            :: GeoPoint
+     , warehouseId       :: Text
      } deriving (Show, Eq, Generic)
 
 instance FromJSON YandexConfig where

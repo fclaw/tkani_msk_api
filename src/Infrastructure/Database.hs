@@ -55,7 +55,7 @@ module Infrastructure.Database
    -- yaml order
   , placeNewYamlOrder
   , getYamlOrderDetailsForPricing
-  , getOrderDetailsForPricing
+  , getSdekOrderDetailsForPricing
   , getPatchedOrderDetails
   , setReceiptReady
   , setDeliveryCost
@@ -102,6 +102,12 @@ module Infrastructure.Database
   , fetchOrderDetailsForYaml
   , fetchLostParcels
   , fetchPreferredSdekPoint
+    -- Yandex 
+  , finalizeYandexOrderRegistration
+  , getYandexOrderDetailsForPricing
+  , storeYandexOrderParticulars
+  , getYandexOrdersInTransit
+  , updateYandexOrderStatus
   ) where
 
 
@@ -122,6 +128,7 @@ import Data.Traversable (for)
 import Control.Exception (throwIO)
 import qualified Data.Text as T
 import Data.Time (UTCTime)
+import qualified Data.ByteString as B
 import Data.FileEmbed (embedFile)
 import qualified Data.Text.Encoding as TE
 import qualified Hasql.Pool as Hasql
@@ -152,6 +159,8 @@ import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database.Utils as Utils
+import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus)
+import Infrastructure.Services.Yandex.Types (YandexRequestId)
 import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
 
@@ -388,7 +397,7 @@ getOrderItems userId pool =
     runTransactionM pool Hasql.Write $ 
       userId `Hasql.statement` getOrderItemsStatement
 
-placeNewOrderStatement :: Hasql.Statement (Text, Text, Text, Text, Int64, Int64, Maybe Int64) Int64
+placeNewOrderStatement :: Hasql.Statement (Text, Text, Text, Int64, Int64, Maybe Int64, Maybe Int64) Int64
 placeNewOrderStatement =
   [Hasql.rowsAffectedStatement|
     WITH inserted_order AS (
@@ -408,7 +417,7 @@ placeNewOrderStatement =
        $1 :: text, 
        $2 :: text,
        $3 :: text,
-       $5 :: int8,
+       $4 :: int8,
        now(),
        now(),
        'registered',
@@ -428,14 +437,10 @@ placeNewOrderStatement =
         ON ci.pre_cut_id = pc.id
         LEFT JOIN fabrics AS pc_parent_fabric 
         ON pc.fabric_id = pc_parent_fabric.id
-        WHERE c.telegram_user_id = $6 :: int8)
+        WHERE c.telegram_user_id = $5 :: int8)
         , 0),
-        CASE WHEN $4 :: text = 'sdek' THEN
-          $7 :: int8?
-        ELSE NULL END,
-        CASE WHEN $4 :: text = 'yandex' THEN
-          $7 :: int8?
-        ELSE NULL END
+        $6 :: int8?,
+        $7 :: int8?
         )
       RETURNING id)
     INSERT INTO order_fabric_bindings (
@@ -454,7 +459,7 @@ placeNewOrderStatement =
     ON c.id = ci.cart_id
     LEFT JOIN pre_cuts AS pc
     ON pc.id = ci.pre_cut_id
-    WHERE c.telegram_user_id = $6 :: int8 
+    WHERE c.telegram_user_id = $5 :: int8 
   |]
 
 createSdekOrderStatement :: Hasql.Statement (Text, UUID, Text, Int32) Int64
@@ -474,32 +479,60 @@ createSdekOrderStatement =
     RETURNING id :: int8    
   |]
 
-placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
-placeNewOrder order@Order {..} pool =
-  fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Write $ do
-      sdek_order_id <-
-        if(_orderDeliveryProviderId == 
-           encodeToText SDEK) 
-        then
-          for _orderSdek $ \SdekOrder {..} ->
-            Hasql.statement 
-             ( deliveryPoint
-             , orderUuid
-             , trackingNumber
-             , tariff) 
-             createSdekOrderStatement
-        else return Nothing 
+createYandexOrderStatement :: Hasql.Statement (Text, Text, Value) Int64
+createYandexOrderStatement =
+  [Hasql.singletonStatement|
+    INSERT INTO yandex_orders (
+      delivery_point,
+      tariff,
+      draft_order_request
+    ) VALUES (
+      $1 :: text,
+      $2 :: text,
+      $3 :: jsonb
+    )
+    RETURNING id :: int8   
+  |]
 
-      Hasql.statement
-        ( _orderId
-        , _orderCustomerFullName
-        , _orderCustomerPhone
-        , _orderDeliveryProviderId
-        , _orderInternalNotificationMessageId
-        , _orderTelegramUserId
-        , sdek_order_id
-        ) placeNewOrderStatement
+placeNewOrder :: Order -> Hasql.Pool -> AppM (Either Text Int64)
+placeNewOrder order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Write $ placeNewOrderTransaction order
+
+placeNewOrderTransaction :: Order -> Hasql.Transaction Int64
+placeNewOrderTransaction Order {..} = do
+  sdek_order_id <-
+    if(_orderDeliveryProviderId == 
+       encodeToText SDEK)
+    then
+      for _orderSdek $ \SdekOrder {..} ->
+        Hasql.statement 
+         ( sdekDeliveryPoint
+         , sdekOrderUuid
+         , sdekTrackingNumber
+         , sdekTariff) 
+         createSdekOrderStatement
+    else return Nothing 
+
+  yandex_order_id <-
+    if(_orderDeliveryProviderId == 
+       encodeToText YANDEX)
+    then
+      for _orderYandex $ \YandexOrder {..} ->
+        Hasql.statement 
+         ( yaDeliveryPoint
+         , encodeToText yaTariff
+         , yaDraftJson)
+         createYandexOrderStatement
+    else return Nothing
+
+  Hasql.statement
+   ( _orderId
+   , _orderCustomerFullName
+   , _orderCustomerPhone
+   , _orderInternalNotificationMessageId
+   , _orderTelegramUserId
+   , sdek_order_id
+   , yandex_order_id
+   ) placeNewOrderStatement
 
 setPaymentMessageDetailsStatement :: Hasql.Statement PaymentMessageDetailsRequest Int64
 setPaymentMessageDetailsStatement =
@@ -1707,10 +1740,10 @@ getYamlOrderDetailsForPricing orderId pool =
           WHERE o.id = $1 :: text|]
 
 
-getOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text PriceInfo)
-getOrderDetailsForPricing orderId pool =
+getSdekOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text PriceInfo)
+getSdekOrderDetailsForPricing orderId pool =
   fmap (first (pack . show)) $ 
-    runTransactionM pool Hasql.Read $ 
+    runTransactionM pool Hasql.Read $
       Hasql.statement orderId $
         rmap ( reducePriceInfoBot
              . extractADT
@@ -2973,11 +3006,23 @@ placeNewShelfOrder order@Order {..} pool =
         then
           for _orderSdek $ \SdekOrder {..} ->
             Hasql.statement 
-             ( deliveryPoint
-             , orderUuid
-             , trackingNumber
-             , tariff) 
+             ( sdekDeliveryPoint
+             , sdekOrderUuid
+             , sdekTrackingNumber
+             , sdekTariff) 
              createSdekOrderStatement
+        else return Nothing
+
+      yandex_order_id <-
+        if(_orderDeliveryProviderId == 
+           encodeToText YANDEX)
+        then
+          for _orderYandex $ \YandexOrder {..} ->
+            Hasql.statement 
+            ( yaDeliveryPoint
+            , encodeToText yaTariff
+            , yaDraftJson)
+            createYandexOrderStatement
         else return Nothing 
 
       shelfItemIds <- 
@@ -2985,17 +3030,17 @@ placeNewShelfOrder order@Order {..} pool =
          ( _orderId
          , _orderCustomerFullName
          , _orderCustomerPhone
-         , _orderDeliveryProviderId
          , _orderInternalNotificationMessageId
          , _orderTelegramUserId
          , sdek_order_id
+         , yandex_order_id
          ) placeNewShelfOrderStatement
 
       Hasql.statement (_orderId, shelfItemIds) setShelfItemShippedStatememt
       Hasql.statement (_orderTelegramUserId) resetFirstItemAddedAtStatememt
 
 
-placeNewShelfOrderStatement :: Hasql.Statement (Text, Text, Text, Text, Int64, Int64, Maybe Int64) (V.Vector Int64)
+placeNewShelfOrderStatement :: Hasql.Statement (Text, Text, Text, Int64, Int64, Maybe Int64, Maybe Int64) (V.Vector Int64)
 placeNewShelfOrderStatement =
   [Hasql.singletonStatement|
     INSERT INTO orders (
@@ -3014,7 +3059,7 @@ placeNewShelfOrderStatement =
       $1 :: text, 
       $2 :: text,
       $3 :: text,
-      $5 :: int8,
+      $4 :: int8,
       now(),
       now(),
       'paid',
@@ -3032,22 +3077,18 @@ placeNewShelfOrderStatement =
       ON pc.id = si.pre_cut_id
       LEFT JOIN fabrics AS pcf
       ON pcf.id = pc.fabric_id
-      WHERE s.telegram_user_id = $6 :: int8
+      WHERE s.telegram_user_id = $5 :: int8
       AND si.status = 'ON_SHELF'
       ),
-      CASE WHEN $4 :: text = 'sdek' THEN
-       $7 :: int8?
-      ELSE NULL END,
-      CASE WHEN $4 :: text = 'yandex' THEN
-        $7 :: int8?
-      ELSE NULL END
+      $6 :: int8?,
+      $7 :: int8?
       )
     RETURNING (
       SELECT array_agg(si.id)
       FROM shelves AS s
       INNER JOIN shelf_items AS si
       ON si.shelf_id = s.id
-      WHERE s.telegram_user_id = $6 :: int8
+      WHERE s.telegram_user_id = $5 :: int8
       AND si.status = 'ON_SHELF'
     ) :: int8[]
   |]
@@ -3386,3 +3427,87 @@ setDeliveryCost orderId deliveryCost pool =
       SET delivery_cost = $2 :: int4
       WHERE id = $1 :: text
      |]
+
+finalizeYandexOrderRegistration :: Order -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
+finalizeYandexOrderRegistration order paymentRecord pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+      void $ placeNewOrderTransaction order
+      void $ Hasql.statement paymentRecord insertNewPaymentRecordStatement
+      Hasql.statement (_orderTelegramUserId order) clearCartStatement
+  
+getYandexOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text YandexOrderDetailsForPricing)
+getYandexOrderDetailsForPricing orderId pool = do
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (orderId) $
+     rmap (extractADT . convertFromJson @YandexOrderDetailsForPricing)
+     [Hasql.singletonStatement|
+       SELECT
+        jsonb_build_object(
+          'length', o.length,
+          'width', o.width,
+          'height', o.height,
+          'weight', o.actual_weight_grams,
+          'draft_order_req_json', yo.draft_order_request,
+          'customer', o.customer_full_name
+        ) :: jsonb
+       FROM orders AS o
+       INNER JOIN yandex_orders AS yo
+       ON o.yandex_order_id = yo.id
+       WHERE o.id = $1 :: text
+     |]
+
+storeYandexOrderParticulars :: Text -> Text -> B.ByteString -> Hasql.Pool -> AppM (Either Text ())
+storeYandexOrderParticulars orderId yandexOrderId label pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (orderId, yandexOrderId, label) $
+     [Hasql.resultlessStatement|
+      UPDATE yandex_orders
+      SET order_id = $2 :: text,
+          label    = $3 :: bytea
+      WHERE id = (SELECT yandex_order_id FROM orders WHERE id = $1 :: text)
+     |]
+
+getYandexOrdersInTransit :: [OrderStatus] -> Hasql.Pool -> AppM (Either Text [(Text, Int64, YandexRequestId, OrderStatus)])
+getYandexOrdersInTransit statuses pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement statuses $
+        dimap (V.fromList . map encodeToText) (map (app4 (extractADT . convertFromJson @OrderStatus)) . V.toList) $
+        [Hasql.vectorStatement|
+          SELECT
+          o.id :: text,
+          yo.id :: int8,
+          yo.order_id :: text,
+          to_jsonb(CAST(o.status AS text)) :: jsonb
+          FROM orders AS o
+          INNER JOIN yandex_orders AS yo
+          ON o.sdek_order_id = yo.id
+          WHERE yo.order_id IS NOT NULL 
+          AND o.status = ANY ($1 :: text[] :: order_status[])
+        |]
+
+updateYandexOrderStatus :: Text -> Int64 -> OrderStatus -> YandexOrderStatus ->  Hasql.Pool -> AppM (Either Text ())
+updateYandexOrderStatus orderId yaOrderId status yandexStatus pool =
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      -- order table
+      Hasql.statement
+       (orderId, status, yaOrderId) $
+        lmap (app2 statusToSQL)
+        [Hasql.resultlessStatement|
+          UPDATE orders
+          SET status = CAST($2 :: text AS order_status)
+          WHERE id = $1 :: text 
+          AND yandex_order_id = $3 :: int8
+        |]
+      -- yandex table
+      Hasql.statement
+       (yaOrderId, tshow yandexStatus) $
+        [Hasql.resultlessStatement|
+         UPDATE yandex_orders 
+         SET status = $2 :: text 
+         WHERE id = $1 :: int8
+        |]

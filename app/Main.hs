@@ -88,6 +88,7 @@ import Workers.ParcelDeliveryWatcher (runParcelDeliveryWatcher)
 import Workers.DeliveryCostListener (runDeliveryCostListener)
 import Workers.SimpleOrderOrchestrator (runSimpleOrderOrchestrator)
 import Workers.ShelfOrderRegister (runShelfOrderRegister)
+import Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -123,6 +124,8 @@ data Workers =
       | DeliveryCostListener
       | SimpleOrderOrchestrator
       | ShelfOrderRegister
+      | YandexOrderStatusPoller
+
 
 
 instance Show Workers where
@@ -150,6 +153,7 @@ instance Show Workers where
   show DeliveryCostListener             = "Delivery Cost Listener"
   show SimpleOrderOrchestrator          = "Simple Order Orchestrator"
   show ShelfOrderRegister               = "Shelf Order Register"
+  show YandexOrderStatusPoller          = "Yandex Order Status Poller"
 
 
 --
@@ -504,6 +508,12 @@ main = do
                      runShelfOrderRegister
                      >>= showErrorInWorker
                            ShelfOrderRegister)
+              , (YandexOrderStatusPoller,
+                 runForever 5 $
+                   appMToHandler
+                   runYandexOrderStatusPoller
+                    >>= showErrorInWorker
+                          YandexOrderStatusPoller)
               ]
 
         let courierPickupTasks 

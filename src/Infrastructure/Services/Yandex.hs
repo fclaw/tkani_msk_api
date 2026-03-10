@@ -33,10 +33,16 @@ module Infrastructure.Services.Yandex
        ( detectLocation
        , listPickupPoints
        , getNearestSource
+       , calculatePrice
+       , createOrder
+       , fetchParcelLabel
+       , fetchOrderParticulars
+       , fetchTrackingUrl
        , module Yandex.Types
        , PlatformId
        ) where
 
+import Data.Aeson (toJSON)
 import Katip (logTM, Severity(..), ls)
 import Data.Text (Text, unpack)
 import Data.Functor ((<&>))
@@ -48,6 +54,13 @@ import Data.Time.Clock (diffUTCTime)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import Network.Wreq (defaults, auth, oauth2Bearer, postWith, manager)
+import Control.Lens ((&), (?~), (.~))
+import Data.Text.Encoding (encodeUtf8)
+import Control.Exception (try)
+import Network.HTTP.Client (HttpException, responseBody)
 
 import App
 import Text (tshow)
@@ -167,3 +180,57 @@ fetchAndCache = do
         s { _yandexDropOffPoints = 
             Just (cachedTime, pointsWithId) 
           }
+
+calculatePrice :: PriceCalculatorReq -> AppM PriceCalculatorResp
+calculatePrice req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pricing-calculator"
+  let token = mkDefToken (apiKey cfg)
+  eResp <- postReq manager url req [] (Just token)
+  handleApiResponse @_ @PriceCalculatorResp $(currentModule) eResp $ pure
+
+
+createOrder :: YandexCreateOrderReq -> AppM YandexCreateOrderResp
+createOrder req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/create"
+  let token = mkDefToken (apiKey cfg)
+  let header = ("Accept-Language", "ru")
+  eResp <- postReq manager url req [header] (Just token)
+  handleApiResponse @_ @YandexCreateOrderResp $(currentModule) eResp $ pure
+
+fetchParcelLabel :: YandexRequestId -> AppM (Either HttpException B.ByteString)
+fetchParcelLabel orderId = do
+  cfg <- fmap _yandexConfig ask
+  mgr <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/generate-labels"
+  let opts = 
+        defaults 
+        & auth ?~ oauth2Bearer (encodeUtf8 (apiKey cfg))
+        & manager .~ Right mgr
+  let req = YandexParcelLabelReq { requestIds = [orderId] }
+  let handleResp (Left err) = Left err
+      handleResp (Right response) = Right (BL.toStrict (responseBody response))
+  fmap handleResp $ liftIO $ try @HttpException (postWith opts url (toJSON req))
+
+fetchTrackingUrl :: YandexRequestId -> AppM TrackingUrl
+fetchTrackingUrl orderId = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/info"
+  let token = mkDefToken (apiKey cfg)
+  let params = [("request_id", orderId)]
+  eResp <- getReq manager url params [] (Just token)
+  handleApiResponse @_ @TrackingUrl $(currentModule) eResp $ pure
+
+fetchOrderParticulars :: YandexRequestId -> AppM OrderParticulars
+fetchOrderParticulars orderId =  do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/info"
+  let token = mkDefToken (apiKey cfg)
+  let params = [("request_id", orderId)]
+  eResp <- getReq manager url params [] (Just token)
+  handleApiResponse @_ @OrderParticulars $(currentModule) eResp $ pure

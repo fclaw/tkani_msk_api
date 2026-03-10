@@ -7,3 +7,5 @@ api_url: "b2b.taxi.tst.yandex.net"
 office:
  latitude: 55.759937
  longitude: 37.763681
+
+warehouse_id: fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924

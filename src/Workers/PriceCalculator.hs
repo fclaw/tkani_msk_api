@@ -6,20 +6,27 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Workers.PriceCalculator (runPriceCalculator, registerSdekReceipt) where
 
-import Katip
+import Katip hiding (Item)
 import Data.Aeson
+import Text.Read (readMaybe)
+import Data.Int (Int32)
 import Data.Aeson.TH
 import Data.Either (isLeft)
 import Data.Foldable (for_)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, fromJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics
+import Data.Functor ((<&>))
 import Data.UUID (UUID)
 import qualified Data.Yaml as Yaml
+import qualified Data.ByteString as B
+import qualified Data.Map.Strict as M
+import qualified Data.HashMap.Strict as HM
 import qualified Data.ByteString.Lazy as BL
 import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Notification as PG
@@ -30,27 +37,38 @@ import Control.Monad.Reader.Class (ask)
 import Control.Concurrent.Async (async)
 import Control.Concurrent (threadDelay)
 import System.Timeout.Lifted (timeout)
+import Network.HTTP.Client (HttpException(..), responseStatus, HttpExceptionContent (..))
+import Network.HTTP.Types.Status (statusCode)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Ord (Down (..))
 import Data.List (sortOn)
 import Data.Foldable (foldl')
 import Data.Bifunctor (second)
+import Data.Time.Format (formatTime, defaultTimeLocale)
+import Data.Time.LocalTime (getZonedTime)
+import Network.Wreq (postWith, defaults, manager, responseBody)
+import Control.Lens ((&), (.~), (^.))
 
 
 import API.Types (OrderStatus (Cancelled), Providers (SDEK))
-import App (AppM, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER))
+import App (AppM, _configHttpManager, render, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER, MAIN), forkAppM, _bots, extractFromEither)
 import Text (camelToSnake, tshow)
+import TH.Location (currentModule)
 import Infrastructure.Database 
        ( setReceiptReady
        , getYamlOrderDetailsForPricing
        , extractValue
        , getPatchedOrderDetails
-       , getOrderDetailsForPricing
+       , getSdekOrderDetailsForPricing
        , updateOrderStatus
        , fetchOrderDetailsForYaml
        , setDeliveryCost
+       , getYandexOrderDetailsForPricing
+       , storeYandexOrderParticulars
+       , getChatDetails
        , PatchedOrderDetails (..)
-       , PatchedOrderDetailsItem (..))
+       , PatchedOrderDetailsItem (..)
+       , YandexOrderDetailsForPricing (..))
 import Infrastructure.Database.Types (PriceInfo (..), defPriceInfo)
 import Infrastructure.Services.Sdek.CachedCityCodes (fetchCityCodeForPvz)
 import Infrastructure.Services.Sdek.Types.Config (dropOffPoint, commissionRate)
@@ -60,8 +78,13 @@ import Infrastructure.Services.Sdek.Types.Enums (SdekVatRate (VatRate7, NoVat), 
 import Infrastructure.Services.Sdek (getTotalSumByTariff, patchOrder, requestReceiptGeneration, getOrderStatus)
 import Infrastructure.Services.Sdek.Types
 import Concurrency (runJobWithCleanup)
+import Workers.SimpleOrderOrchestrator (try', notifyOrderChannelAboutError)
+import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2))
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
 import Infrastructure.Services.Sdek.Types.Error
+import Infrastructure.Services.Yandex (calculatePrice, createOrder, fetchParcelLabel, fetchTrackingUrl)
+import Infrastructure.Services.Yandex.Order (biDeliveryCost, Item (..), Place (..), PhysicalDimensions (..), ibdAssessedUnitPrice, psPlatformId, drnPlatformStation, srnPlatformStation)
+import Infrastructure.Services.Yandex.Types (sharingUrl, YandexCreateOrderResp, requestId, PlacePhysicalDimensions (..), PlatformStationId (..), YandexCreateOrderReq (..), PriceCalculatorReq (..), PriceCalculatorResp (..))
 
 
 -- ADT to parse the notification payload
@@ -110,7 +133,7 @@ doSdekCalculation orderId isBot = do
   let pool = _appDBPool cfg
   let fromPVZ = dropOffPoint $ _sdekConfig cfg
   let dbAction | not isBot = getYamlOrderDetailsForPricing
-               | otherwise = getOrderDetailsForPricing
+               | otherwise = getSdekOrderDetailsForPricing
   eDbRes <- dbAction orderId pool
   extractValue eDbRes $ \PriceInfo {..} -> do
     maybeFrom <- fetchCityCodeForPvz fromPVZ
@@ -333,4 +356,146 @@ cancelOrder orderId = do
   
 
 doYandexCalculation :: Text -> AppM ()
-doYandexCalculation orderId = $(logTM) WarningS $ ls $ "Received price calculation job for unsupported provider (Yandex): " <> orderId
+doYandexCalculation orderId = do
+  $(logTM) InfoS $ ls $ "Received price calculation job for YANDEX order: " <> orderId
+  cfg <- ask
+  let pool = _appDBPool cfg
+  eDbRes <- getYandexOrderDetailsForPricing orderId pool
+  extractValue eDbRes $ \YandexOrderDetailsForPricing {..} -> do
+    let resultOrderReq = fromJSON @YandexCreateOrderReq yodpDraftOrderReqJson
+    case resultOrderReq of 
+      Error err -> $(logTM) ErrorS $ "YandexCreateOrderReq parse failure: " <> ls err
+      Success draftOrderReq@YandexCreateOrderReq {..} -> do
+        let dimensions = PhysicalDimensions yodpLength yodpWidth yodpHeight yodpWeight
+        let dest = PlatformStationId (psPlatformId (fromJust (drnPlatformStation destination)))
+        let src = PlatformStationId (psPlatformId (srnPlatformStation source))
+        let priceCalcReq = 
+             PriceCalculatorReq
+             { pcrTariff             = lastMilePolicy
+             , pcrDestination        = dest
+             , pcrSource             = src
+             , pcrTotalWeight        = yodpWeight
+             , pcrPlaces             = [PlacePhysicalDimensions dimensions]
+             , pcrTotalAssessedPrice = 
+               sum $ items <&> \Item {iBillingDetails} -> 
+                 ibdAssessedUnitPrice iBillingDetails
+             }
+        $(logTM) InfoS $ "PriceCalculatorReq: -> " <> ls (encodePretty priceCalcReq)
+        cal@PriceCalculatorResp {..} <- calculatePrice priceCalcReq
+        let intPrice = toKopecks pcrPricingTotal
+        let orderReq = 
+              draftOrderReq { 
+                billingInfo = 
+                  billingInfo 
+                  { biDeliveryCost = intPrice }
+              , places = [Place dimensions orderId]
+              }
+        resp <- createOrder orderReq
+        ePdfContent <- generateParcelLabel (requestId resp)
+        case ePdfContent of
+          Left err ->
+            -- reset dimensions, weight and try again
+            $(logTM) ErrorS $ "Failed to download the receipt PDF." <> ls err
+          Right pdfBytes -> do
+            -- all or nothing 
+            storeYandexOrderParticulars orderId (requestId resp) pdfBytes pool
+            -- 1. We have the file. Now, send it to the order (ORDER) channel.
+            todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
+            let caption = 
+                  "📄 Новая квитанция Yandex для заказа `" <> 
+                  escapeMarkdownV2 orderId <> 
+                  "`\n" <> 
+                  yodpCustomer <>
+                  "\n" <> 
+                  escapeMarkdownV2 todayHashtag
+            let filename = "receipt-" <> orderId <> ".pdf"
+             -- 2. Call the new service function
+            void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
+            $(logTM) InfoS $ "Successfully sent Yandex receipt for " <> ls orderId <> " to admin channel."
+            -- send message about price and tracking number to the telegram channel
+            forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) cal
+
+
+-- | Converts "203.81 RUB" -> 20381
+toKopecks :: T.Text -> Int32
+toKopecks input = fromMaybe 0 $ do
+    -- 1. Take everything before the space ("203.81")
+    let pricePart = T.takeWhile (/= ' ') input
+    -- 2. Parse as Double to handle the decimal
+    val <- readMaybe (T.unpack pricePart) :: Maybe Double
+    -- 3. Multiply by 100 and round to Int
+    return $ round (val * 100)
+
+
+-- | 
+-- Attempts to generate and fetch the parcel label.
+-- Retries on 409 Conflict (Yandex's "Not Ready" state).
+generateParcelLabel :: Text -> AppM (Either Text B.ByteString)
+generateParcelLabel orderId = go (1 :: Int)
+  where
+    maxRetries = 5
+    baseDelay  = 2000000 -- 2 seconds in microseconds
+    go attempt = do
+      -- Logic: Try to perform the HTTP call
+      result <- fetchParcelLabel orderId
+      case result of
+        Right pdfBytes -> 
+          pure $ Right pdfBytes -- Success: We got the PDF ByteString
+        Left (HttpExceptionRequest _ (StatusCodeException resp _)) 
+          | statusCode (responseStatus resp) == 409 ->
+            if attempt >= maxRetries
+            then pure $ Left "Timeout: Label generation still in progress after several retries."
+            else do
+              -- Log the delay if you have logging set up
+              -- logWarn $ "Order not ready (409). Retry #" <> show attempt
+              $(logTM) InfoS $ "Order label not ready (409). Retry #" <> ls (show attempt)
+              liftIO $ threadDelay (baseDelay * attempt) -- Exponential backoff
+              go (attempt + 1)
+        -- Handle other unexpected HTTP errors immediately
+        Left err -> pure $ Left $ "API call failed: " <> tshow err
+
+
+sendPriceAndTrackingNumber :: Text -> Text -> PriceCalculatorResp -> AppM ()
+sendPriceAndTrackingNumber orderId yandexOrderId PriceCalculatorResp {..} = do
+  trackingUrl <- fetchTrackingUrl yandexOrderId
+  cfg <- ask
+  let pool = _appDBPool cfg
+  eDbRes <- getChatDetails orderId pool
+  extractFromEither eDbRes $ \maybeDetails ->
+    extractFromMaybe maybeDetails $ \(chatId, _) -> do
+      bots <- fmap _bots ask
+      let (bot,_) = (M.!) bots MAIN
+      let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+      let templateData = 
+            HM.fromList 
+            [ ("deliveryCost", pcrPricingTotal)
+            , ("deliveryDays", tshow pcrDeliveryDays)
+            , ("orderId", orderId)
+            ]
+      let button = 
+            object [
+             "inline_keyboard" .=
+             [[ object 
+              [ "text" .= ("Отследить на сайте YANDEX DELIVERY" :: Text)
+              , "url"  .= sharingUrl trackingUrl
+              ]
+             ]]
+            ]
+      message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Yandex") templateData
+      let payload =
+            object
+            [ "chat_id"              .= chatId
+            , "text"                 .= message
+            , "parse_mode"           .= tshow MarkdownV2
+            , "link_preview_options" .= 
+                disableLinkPreviewOption
+            , "reply_markup"         .= button
+            ]
+      httpManager <- fmap _configHttpManager ask
+      let 
+      eTelResp <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+      when (isLeft eTelResp) $ do
+        $(logTM) ErrorS $ 
+          "telegram failed to deliver message " <> 
+          ls (show eTelResp)
+        notifyOrderChannelAboutError $ tshow eTelResp

@@ -132,10 +132,10 @@ mkDbOrder :: Int64 -> InitiateShelfShipment -> ShelfItemsForShipment -> UUID -> 
 mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} uuid trackingNumber orderId telegramMsgId tariff =
   let sdekOrder = 
         SdekOrder
-        { deliveryPoint  = issPointId
-        , orderUuid      = uuid
-        , trackingNumber = trackingNumber
-        , tariff         = fromIntegral tariff
+        { sdekDeliveryPoint  = issPointId
+        , sdekOrderUuid      = uuid
+        , sdekTrackingNumber = trackingNumber
+        , sdekTariff         = fromIntegral tariff
         }
   in
     Order 
@@ -146,4 +146,5 @@ mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} uuid trac
     , _orderInternalNotificationMessageId = coerce telegramMsgId
     , _orderTelegramUserId                = userId
     , _orderSdek                          = Just sdekOrder
+    , _orderYandex                        = Nothing
     }

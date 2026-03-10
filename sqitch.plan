@@ -62,3 +62,4 @@
 00059.cancel_order_event_func 2026-03-07T10:13:28Z System Administrator <root@Sonny.local> # cancel order event function
 00059.sdek_price_calculator 2026-03-07T11:50:30Z System Administrator <root@Sonny.local> # sdek price calculator
 00060.yandex_order_draft 2026-03-08T14:36:17Z System Administrator <root@Sonny.local> # yandex: order request draft
+00061.yandex_orders 2026-03-08T18:56:45Z System Administrator <root@Sonny.local> # yandex orders: order id optional

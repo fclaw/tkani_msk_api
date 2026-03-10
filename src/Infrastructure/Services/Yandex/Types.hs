@@ -9,6 +9,7 @@ module Infrastructure.Services.Yandex.Types where
 
 import Data.Aeson
 import Data.Aeson.TH
+import Data.Int (Int32)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
@@ -19,6 +20,9 @@ import Infrastructure.Services.Yandex.Types.Enums hiding (PickupPoint)
 import qualified Infrastructure.Services.Yandex.Types.Enums as Enums
 import Infrastructure.Services.Yandex.Order
 
+
+
+type YandexRequestId = Text
 
 
 -- | Shared configuration for the JSON instances to handle snake_case mapping.
@@ -117,16 +121,80 @@ data PickupPointsResp =
 -- =============================================================================
 
 data YandexCreateOrderReq = YandexCreateOrderReq
-  { info         :: RequestInfo
-  , source       :: LocationNode
-  , destination  :: LocationNode
-  , billingInfo  :: BillingInfo
-  , items        :: [Item]
-  , places       :: [Place]
+  { info           :: RequestInfo
+  , source         :: SourceRequestNode
+  , destination    :: DestinationRequestNode
+  , billingInfo    :: BillingInfo
+  , items          :: [Item]
+  , places         :: [Place]
+  , recipientInfo  :: RecipientInfo
+  , lastMilePolicy :: Tariff
   } deriving (Show, Eq, Generic)
 
 instance ToJSON YandexCreateOrderReq where toJSON = genericToJSON jsonOptions
+instance FromJSON YandexCreateOrderReq where parseJSON = genericParseJSON jsonOptions
 
+
+data PlatformStationId =  PlatformStationId { platformStationId :: Text } deriving (Show, Generic)
+
+instance ToJSON PlatformStationId where toJSON = genericToJSON jsonOptions
+instance FromJSON PlatformStationId where parseJSON = genericParseJSON jsonOptions
+
+
+data PlacePhysicalDimensions =  PlacePhysicalDimensions { physicalDims :: PhysicalDimensions } deriving (Show, Generic)
+
+instance ToJSON PlacePhysicalDimensions where toJSON = genericToJSON jsonOptions
+instance FromJSON PlacePhysicalDimensions where parseJSON = genericParseJSON jsonOptions
+
+data PriceCalculatorReq =
+     PriceCalculatorReq
+     { pcrTariff             :: Tariff
+     , pcrDestination        :: PlatformStationId
+     , pcrSource             :: PlatformStationId
+     , pcrTotalWeight        :: Int32
+     , pcrPlaces             :: [PlacePhysicalDimensions]
+     , pcrTotalAssessedPrice :: Int32
+     } deriving (Show)
+
+data PriceCalculatorResp = 
+      PriceCalculatorResp
+      { pcrDeliveryDays :: Int32
+      , pcrPricingTotal :: Text
+      } deriving (Show)
+
+
+data YandexCreateOrderResp = YandexCreateOrderResp { requestId :: Text } deriving (Show, Eq, Generic)
+
+-- instance ToJSON YandexCreateOrderResp where toJSON = genericToJSON jsonOptions
+instance FromJSON YandexCreateOrderResp where parseJSON = genericParseJSON jsonOptions
+
+
+data YandexParcelLabelReq = YandexParcelLabelReq { requestIds :: [Text] } deriving (Show, Eq, Generic)
+
+instance ToJSON YandexParcelLabelReq where toJSON = genericToJSON jsonOptions
+-- instance FromJSON YandexParcelLabelReq where parseJSON = genericParseJSON jsonOptions
+
+
+data TrackingUrl = TrackingUrl { sharingUrl :: Text } deriving (Show, Eq, Generic)
+
+-- instance ToJSON TrackingUrl where toJSON = genericToJSON jsonOptions
+instance FromJSON TrackingUrl where parseJSON = genericParseJSON jsonOptions
+
+data OrderStatus =
+     OrderStatus
+     { osStatus      :: YandexOrderStatus
+     , osDescription :: Text
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "os" } ''OrderStatus)
+
+data OrderParticulars = OrderParticulars { state :: OrderStatus } deriving (Show, Eq, Generic)
+
+-- instance ToJSON OrderParticulars where toJSON = genericToJSON jsonOptions
+instance FromJSON OrderParticulars where parseJSON = genericParseJSON jsonOptions
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ci" } ''CoordinateInterval)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ppr", omitNothingFields = True } ''PickupPointsReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pp" } ''PickupPoint)

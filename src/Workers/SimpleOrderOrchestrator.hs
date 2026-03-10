@@ -91,23 +91,14 @@ buildAndSendPaymentDetailsMessage chatId provider OrderConfirmationDetails {..} 
         , ("trackingNumber", textTrackingNumber)
         , ("provider", tshow provider)]
   message <- fmap escapeMarkdownV2 $ render $currentModule templateData
-  let buttons = 
-        object [
-          "inline_keyboard" .=
-          [[ object 
-            [ "text" .= ("💳 Оплатить картой" :: Text)
-            , "url"  .= paymentLink
-            ]
-           ],
-           [if isJust linkToQr then
-              object 
-              [ "text" .= ("📱 Оплатить СПБ" :: Text)
-              , "url"  .= fromJust linkToQr
-              ]
-            else Null
-           ]
-          ]
-        ]
+  let cardRow = [ object [ "text" .= ("💳 Оплатить картой" :: Text), "url" .= paymentLink ] ]  
+  -- Create the SBP row ONLY if the link exists, otherwise return an empty list
+  let sbpRow =
+        case linkToQr of
+          Just qr -> [[ object [ "text" .= ("📱 Оплатить СПБ" :: Text), "url" .= qr ] ]]
+          Nothing -> []
+
+  let buttons = object ["inline_keyboard" .= ([cardRow] ++ sbpRow)]
   let payload =
         object
         [ "chat_id"              .= chatId

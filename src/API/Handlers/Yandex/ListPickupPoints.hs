@@ -9,6 +9,8 @@ import Data.Bifunctor (first)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (catMaybes)
+import Control.Monad.IO.Class (liftIO)
+
 
 import App (AppM)
 import API.WithField (WithField (..))
@@ -41,10 +43,11 @@ formatPvzUniversal raw =
 
     -- Logic B: Standard city like "Новосибирск Спортивная ул. 19"
     (city:rest) ->
-        let house  = last rest
-            street = T.unwords (init rest)
-        in street <> ", " <> house
-
+        if length rest >= 2 then 
+          let house  = last rest
+              street = T.unwords (init rest)
+          in street <> ", " <> house
+        else clean
     _ -> clean
 
 
@@ -52,6 +55,7 @@ handler :: Maybe Int -> AppM (ApiResponse YandexPickupPointsResp)
 handler Nothing = return $ Left $ mkError "geoId not provided"
 handler (Just geoId) = do
   eRes <- storeDeliveryPoints geoId
+  liftIO $ print eRes
   case eRes of
     Left err -> do
       $(logTM) ErrorS $ "Failed to fetch pickup points from Yandex" <> ls (show err)
