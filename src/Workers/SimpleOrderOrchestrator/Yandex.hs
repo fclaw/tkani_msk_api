@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Workers.SimpleOrderOrchestrator.Yandex (place) where
+module Workers.SimpleOrderOrchestrator.Yandex (place, PlaceOrderError (..)) where
 
 
 import Katip (logTM, Severity (..), ls)

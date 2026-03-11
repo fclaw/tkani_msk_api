@@ -92,14 +92,14 @@ processSingleJob (Right ReceiptJob {..}) = do
         todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
         let caption = 
               "📄 Новая квитанция СДЭК для заказа `" <> 
-              escapeMarkdownV2 orderId <> 
+              orderId <> 
               "`\n" <> 
               customer <> 
               "\n" <> 
-              escapeMarkdownV2 todayHashtag
+              todayHashtag
         let filename = "receipt-" <> orderId <> ".pdf"
         -- 2. Call the new service function
-        void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
+        void $ sendDocument ORDER (escapeMarkdownV2 caption) filename pdfBytes "application/pdf"
         $(logTM) InfoS $ "Successfully sent SDEK receipt for " <> ls orderId <> " to admin channel."
 
 -- | Fetches a SDEK receipt PDF link by polling the status endpoint.

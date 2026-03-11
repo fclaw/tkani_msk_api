@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
 
-module Workers.ShelfOrderRegister.Sdek (place) where
+module Workers.ShelfOrderRegister.Sdek (place, notifyShelfChannel, mkDbOrder) where
 
 
 import Katip
@@ -41,6 +41,7 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessag
 
 
 wrap action error = withExceptT error (ExceptT action)
+{-# INLINE wrap #-}
 
 wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
 wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
@@ -73,12 +74,13 @@ go userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..
   ssdOrderId <- liftIO generateOrderId
 
   telegramMsgId <- wrapOrCancel (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed $ void (Sdek.cancelOrder uuid)
-  let dbOrder = mkDbOrder userId init shipment uuid trackingNumber ssdOrderId telegramMsgId optimalTariff
+  let sdekOrder = mkSdekOrder issPointId uuid trackingNumber optimalTariff
+  let dbOrder = mkDbOrder userId init shipment ssdOrderId telegramMsgId
   pool <- fmap _appDBPool $ lift ask
   let clearArtifacts = do 
         void $ Sdek.cancelOrder uuid
         void $ deleteMessage (coerce telegramMsgId) SHELF
-  void $ wrapOrCancel (placeNewShelfOrder dbOrder pool) DatabaseFailed clearArtifacts
+  void $ wrapOrCancel (placeNewShelfOrder (dbOrder { _orderSdek = Just sdekOrder}) pool) DatabaseFailed clearArtifacts
 
   let ssdTrackingNumber = Just trackingNumber
   let ssdDeliveryProvider = issProvider
@@ -128,23 +130,26 @@ buildTemplateData orderId ShelfItemsForShipment {..} localTime =
       , ("itemsBlock", itemsBlock)
       ]
 
-mkDbOrder :: Int64 -> InitiateShelfShipment -> ShelfItemsForShipment -> UUID -> Text -> Text -> MessageIdResponse -> Int -> Order
-mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} uuid trackingNumber orderId telegramMsgId tariff =
-  let sdekOrder = 
-        SdekOrder
-        { sdekDeliveryPoint  = issPointId
-        , sdekOrderUuid      = uuid
-        , sdekTrackingNumber = trackingNumber
-        , sdekTariff         = fromIntegral tariff
-        }
-  in
-    Order 
-    { _orderId                            = orderId
-    , _orderCustomerFullName              = sifsUserInitials
-    , _orderCustomerPhone                 = sifsPhone
-    , _orderDeliveryProviderId            = encodeToText issProvider
-    , _orderInternalNotificationMessageId = coerce telegramMsgId
-    , _orderTelegramUserId                = userId
-    , _orderSdek                          = Just sdekOrder
-    , _orderYandex                        = Nothing
-    }
+
+mkSdekOrder :: Text -> UUID -> Text -> Int -> SdekOrder
+mkSdekOrder pointId uuid trackingNumber tariff =
+  SdekOrder
+  { sdekDeliveryPoint  = pointId
+  , sdekOrderUuid      = uuid
+  , sdekTrackingNumber = trackingNumber
+  , sdekTariff         = fromIntegral tariff
+  }
+
+
+mkDbOrder :: Int64 -> InitiateShelfShipment -> ShelfItemsForShipment -> Text -> MessageIdResponse -> Order
+mkDbOrder userId InitiateShelfShipment {..} ShelfItemsForShipment {..} orderId telegramMsgId =
+  Order 
+  { _orderId                            = orderId
+  , _orderCustomerFullName              = sifsUserInitials
+  , _orderCustomerPhone                 = sifsPhone
+  , _orderDeliveryProviderId            = encodeToText issProvider
+  , _orderInternalNotificationMessageId = coerce telegramMsgId
+  , _orderTelegramUserId                = userId
+  , _orderSdek                          = Nothing
+  , _orderYandex                        = Nothing
+  }

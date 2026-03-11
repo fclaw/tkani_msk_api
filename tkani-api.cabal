@@ -150,6 +150,7 @@ library
       Utils.Time
       Workers.FabricLifecycleManager
       Workers.ShelfOrderRegister.Sdek
+      Workers.ShelfOrderRegister.Yandex
       Workers.SimpleOrderOrchestrator.Sdek
       Workers.SimpleOrderOrchestrator.Yandex
       Paths_tkani_api

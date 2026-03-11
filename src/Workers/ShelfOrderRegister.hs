@@ -32,8 +32,9 @@ import TH.Location (currentModule)
 import API.WithField (WithField (..))
 import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
-import API.Types (InitiateShelfShipment, ShelfShipmentDetails (..), Providers (SDEK))
+import API.Types (InitiateShelfShipment, issProvider, Providers (..), ShelfShipmentDetails (..), Providers (SDEK))
 import qualified Workers.ShelfOrderRegister.Sdek as Sdek
+import qualified Workers.ShelfOrderRegister.Yandex as Yandex
 import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
 import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2), MessageIdResponse (..))
 import Workers.SimpleOrderOrchestrator (notifyOrderChannelAboutError, sendErrorMessageToUser, try')
@@ -52,7 +53,11 @@ runShelfOrderRegister = do
 runSingleRegister :: Int64 -> WithField "chat_id" Int64 InitiateShelfShipment -> AppM ()
 runSingleRegister userId (WithField chatId init) = do
   $(logTM) InfoS $ ls $ "Processing shelf order for user " <> show userId
-  eRes <- Sdek.place userId init
+  let action = 
+        if issProvider init == SDEK
+        then Sdek.place
+        else Yandex.place
+  eRes <- action userId init
   case eRes of
     Left err -> do
       $(logTM) ErrorS $ "Failed to place order: " <> ls (tshow err)
@@ -64,35 +69,40 @@ runSingleRegister userId (WithField chatId init) = do
       bots <- fmap _bots ask
       let (bot,_) = (M.!) bots MAIN
       let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+      let textTrackingNumber =
+            case ssdTrackingNumber of
+              Just n  -> tshow n
+              Nothing -> "будет доступен позднее ⏳"
       let templateData = 
             HM.fromList 
             [ ("orderId", ssdOrderId)
-            , ("trackingNumber", fromJust ssdTrackingNumber)
+            , ("trackingNumber", textTrackingNumber)
             , ("provider", tshow ssdDeliveryProvider)
             ]
       message <- fmap escapeMarkdownV2 $ render $currentModule templateData
-      let trackUrl = 
-            case ssdDeliveryProvider of
-              SDEK -> "https://www.cdek.ru/ru/tracking?order_id=" <> fromJust ssdTrackingNumber
-              _    -> undefined -- We currently only support SDEK, but this is where you'd add more providers in the future. 
-      let button = 
-           object [
-            "inline_keyboard" .=
-            [[ object 
-             [ "text" .= ("Отследить на сайте " <> tshow ssdDeliveryProvider)
-             , "url"  .= trackUrl
-             ]
-            ]]
-           ]
+      let button | ssdDeliveryProvider == SDEK =
+                   let trackUrl =  "https://www.cdek.ru/ru/tracking?order_id=" <> fromJust ssdTrackingNumber
+                       markup = 
+                        object
+                         [ "inline_keyboard" .=
+                           [[ object 
+                            [ "text" .= ("Отследить на сайте " <> 
+                                         tshow ssdDeliveryProvider)
+                            , "url"  .= trackUrl
+                            ]
+                           ]]
+                         ]
+                   in ["reply_markup" .= markup]
+                 | ssdDeliveryProvider == YANDEX = []
+                 | otherwise = undefined -- currently not support the others  
       let payload =
-            object
+            object $
             [ "chat_id"              .= chatId
             , "text"                 .= message
             , "parse_mode"           .= tshow MarkdownV2
             , "link_preview_options" .= 
                 disableLinkPreviewOption
-            , "reply_markup"         .= button
-            ]
+            ] <> button
       httpManager <- fmap _configHttpManager ask
       eTelMsgId <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
       case eTelMsgId of
