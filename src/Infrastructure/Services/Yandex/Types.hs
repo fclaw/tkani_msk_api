@@ -12,6 +12,7 @@ import Data.Aeson.TH
 import Data.Int (Int32)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Data.Time.Clock (UTCTime)
 
 
 import Text (camelToSnake, recordLabelModifier)
@@ -184,6 +185,7 @@ data OrderStatus =
      OrderStatus
      { osStatus      :: YandexOrderStatus
      , osDescription :: Text
+     , osTimestamp   :: Text
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "os" } ''OrderStatus)

@@ -139,7 +139,7 @@ import Data.Time.Calendar.Month (Month)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad (join, void, forM_, when)
 import Data.Profunctor.Unsafe (dimap, lmap, rmap)
-import Data.Aeson (FromJSON, fromJSON, Result (..), Value, fromJSON, Result)
+import Data.Aeson (FromJSON, fromJSON, Result (..), Value, toJSON, Result)
 import Data.Tuple.Ops (initT, app1, app2, app3, app6, app7, consT, snocT, app4, app5, sel2, del9, del3, del7)
 
 
@@ -161,6 +161,7 @@ import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database.Utils as Utils
 import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus)
 import Infrastructure.Services.Yandex.Types (YandexRequestId)
+import qualified Infrastructure.Services.Yandex.Types as YA (OrderStatus (..))
 import Infrastructure.Services.Sdek.Types.Courier (SdekPickupAppStatus)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus (..))
 
@@ -664,27 +665,38 @@ adjustFabric =
         ) :: jsonb
   |]
 
-fetchOrderStatus :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
+fetchOrderStatus :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (OrderStatus, Text, Maybe Text, Providers)))
 fetchOrderStatus query pool = 
   fmap (join . first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
       query `Hasql.statement` fetchOrderStatusStatement
 
-
-fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Text, Providers)))
+fetchOrderStatusStatement :: Hasql.Statement Text (Either Text (Maybe (OrderStatus, Text, Maybe Text, Providers)))
 fetchOrderStatusStatement =
   rmap (sequence . fmap (first pack) . fmap convert)
   [Hasql.maybeStatement|
     SELECT 
       to_jsonb(CAST(o.status AS text)) :: jsonb,
       o.id :: text,
-      so.tracking_number :: text,
+      so.tracking_number :: text?,
       to_jsonb('sdek' :: text) :: jsonb
     FROM orders AS o
     INNER JOIN sdek_orders AS so
     ON o.sdek_order_id = so.id
     WHERE o.id = $1 :: text
     OR so.tracking_number = $1 :: text
+
+    UNION ALL
+
+    SELECT 
+      to_jsonb(CAST(o.status AS text)) :: jsonb,
+      o.id :: text,
+      NULL :: text?,
+      to_jsonb('yandex' :: text) :: jsonb
+    FROM orders AS o
+    INNER JOIN yandex_orders AS yo
+    ON o.yandex_order_id = yo.id
+    WHERE o.id = $1 :: text
   |]
   where
     convert (jsonStatus, orderId, trackingN, jsonProvider) = do
@@ -3484,13 +3496,13 @@ getYandexOrdersInTransit statuses pool =
           to_jsonb(CAST(o.status AS text)) :: jsonb
           FROM orders AS o
           INNER JOIN yandex_orders AS yo
-          ON o.sdek_order_id = yo.id
-          WHERE yo.order_id IS NOT NULL 
+          ON o.yandex_order_id = yo.id
+          WHERE yo.order_id IS NOT NULL
           AND o.status = ANY ($1 :: text[] :: order_status[])
         |]
 
-updateYandexOrderStatus :: Text -> Int64 -> OrderStatus -> YandexOrderStatus ->  Hasql.Pool -> AppM (Either Text ())
-updateYandexOrderStatus orderId yaOrderId status yandexStatus pool =
+updateYandexOrderStatus :: Text -> Int64 -> OrderStatus -> YA.OrderStatus ->  Hasql.Pool -> AppM (Either Text ())
+updateYandexOrderStatus orderId yaOrderId status yaStatus@YA.OrderStatus {..} pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Write $ do
       -- order table
@@ -3505,9 +3517,10 @@ updateYandexOrderStatus orderId yaOrderId status yandexStatus pool =
         |]
       -- yandex table
       Hasql.statement
-       (yaOrderId, tshow yandexStatus) $
+       (yaOrderId, tshow osStatus, toJSON yaStatus) $
         [Hasql.resultlessStatement|
          UPDATE yandex_orders 
-         SET status = $2 :: text 
+         SET status = $2 :: text,
+             status_history = status_history || $3 :: jsonb 
          WHERE id = $1 :: int8
         |]

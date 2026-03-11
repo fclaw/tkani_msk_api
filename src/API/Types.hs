@@ -334,10 +334,10 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pmd" } '
 
 data TrackOrder =
      TrackOrder 
-     { toStatus :: Text
-     , toOrderId :: Text
-     , toTrackingNumber :: Text
-     , toProvider :: Providers
+     { toStatus         :: Text
+     , toOrderId        :: Text
+     , toTrackingNumber :: Maybe Text
+     , toProvider       :: Providers
      } deriving (Show, Generic)
      
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "to" } ''TrackOrder)

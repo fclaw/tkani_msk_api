@@ -43,7 +43,7 @@ runYandexOrderStatusPoller = do
     void $ pooledForConcurrentlyN 5 xs $ 
       \(orderId, yandexOrderId, requestId, status) -> do 
         $(logTM) InfoS $ ls $ "requesting status for: " <> requestId
-        OrderParticulars {state=YA.OrderStatus{osStatus=yaStatus}} <- fetchOrderParticulars requestId
+        OrderParticulars {state=yaState@YA.OrderStatus{osStatus=yaStatus}} <- fetchOrderParticulars requestId
         let newStatus = mapYandexToInternal yaStatus status
         if newStatus == status
         then 
@@ -64,7 +64,7 @@ runYandexOrderStatusPoller = do
             ", YANDEX status: " <> 
             (tshow yaStatus)
           pool <- fmap _appDBPool ask
-          eDbRes <- updateYandexOrderStatus orderId yandexOrderId newStatus yaStatus pool
+          eDbRes <- updateYandexOrderStatus orderId yandexOrderId newStatus yaState pool
           when (isLeft eDbRes) $ $(logTM) ErrorS $  "failed to update YANDEX order status, error: " <> ls (fromLeft undefined eDbRes)
 
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for YANDEX order statuses, error " <> fromLeft undefined eDbRes
@@ -120,12 +120,24 @@ isNewer proposed current =
   where
     rank :: OrderStatus -> Int
     rank = \case
-        Paid                -> 0 -- Base bot state
-        Registered          -> 1
+        -- [0] Pre-payment / Intent phase
+        Registered          -> 0 
+        
+        -- [1] Business Goal achieved: Payment received
+        -- Fulfillment begins here.
+        Paid                -> 1 
+
+        -- [2] Warehouse / Logistics Prep
         AddedToPickupQueue  -> 2
         ScheduledForPickup  -> 3
-        PickedUpByCourier   -> 4 -- Handover happened
-        OnRoute             -> 5 -- In movement
-        Delivered           -> 6 -- At destination user
-        Completed           -> 7 -- Closed
-        Cancelled           -> 7 -- Terminal state
+
+        -- [3] Out for Delivery (Physically moved from warehouse)
+        PickedUpByCourier   -> 4
+        OnRoute             -> 5
+
+        -- [4] arrival at pickup point
+        Delivered           -> 6
+        
+        -- [5] Terminal States
+        Completed           -> 7
+        Cancelled           -> 7
