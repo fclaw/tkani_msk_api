@@ -8,4 +8,21 @@ office:
  latitude: 55.759937
  longitude: 37.763681
 
-warehouse_id: fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924
+local_warehouse_id: tkani_msk
+
+consolidation_time: 21
+
+address: 
+  city: "Москва"
+  house: "56"
+  building: "32"
+  floor: "3"
+  street: "шоссе Энтузиастов"
+
+contact:
+  name: "Sergey"
+  surname: "Yakovlev"
+  phone: "+79361645867"
+  email: "fclaw007@gmail.com"
+
+warehouse_postfix: "PROD"

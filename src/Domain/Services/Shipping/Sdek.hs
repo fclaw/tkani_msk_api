@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Domain.Services.Shipping (prepareAndSchedulePickup) where
+module Domain.Services.Shipping.Sdek (prepareAndSchedulePickup) where
 
 
 import Data.Text (Text)

@@ -18,10 +18,11 @@ library
       App
       Config
       Infrastructure.Logging.Telegram
+      Domain.Services.Warehouse
       Infrastructure.Templating
       Workers.SdekOrderStatusPoller
       Workers.TinkoffPaymentStatusPoller
-      Workers.SdekPickUpScheduler
+      Workers.CourierPickUpScheduler
       Workers.SdekStatusPoller
       Workers.PriceCalculator
       Workers.SdekGenerateReceipt
@@ -91,7 +92,8 @@ library
       Domain.Inventory
       Domain.Logic.Dimensions
       Domain.Services.Reporting
-      Domain.Services.Shipping
+      Domain.Services.Shipping.Sdek
+      Domain.Services.Shipping.Yandex
       Domain.Telegram.Types
       Domain.Warehouse.Enums
       Domain.Warehouse.Parser
@@ -139,6 +141,7 @@ library
       Infrastructure.Services.Yandex.Order
       Infrastructure.Services.Yandex.Types
       Infrastructure.Services.Yandex.Types.Enums
+      Infrastructure.Services.Yandex.Warehouse
       Infrastructure.Utils.Http
       Infrastructure.Utils.OrderId
       Text

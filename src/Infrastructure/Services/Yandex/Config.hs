@@ -4,18 +4,50 @@
 
 module Infrastructure.Services.Yandex.Config where
 
+import Data.Int (Int32)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Infrastructure.Services.Yandex.Geo
 import Data.Aeson.Types (camelTo2)
 import Data.Aeson (FromJSON (..), genericParseJSON, defaultOptions, fieldLabelModifier)
 
+
+
+
+
+data Address =
+     Address
+     { city    :: Text
+     , house   :: Text
+     , building :: Text
+     , floor    :: Text
+     , street   :: Text
+     } deriving (Show, Eq, Generic)
+
+instance FromJSON Address where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
+
+data Contact =
+     Contact
+     { name    :: Text
+     , surname :: Text
+     , phone   :: Text
+     , email   :: Text
+     } deriving (Show, Eq, Generic)
+
+instance FromJSON Contact where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
+
 data YandexConfig = 
      YandexConfig
      { apiKey            :: Text
      , apiUrl            :: Text
      , office            :: GeoPoint
-     , warehouseId       :: Text
+     , localWarehouseId  :: Text
+     , consolidationTime :: Int32
+     , address           :: Address
+     , contact           :: Contact
+     , warehousePostfix  :: Text
      } deriving (Show, Eq, Generic)
 
 instance FromJSON YandexConfig where

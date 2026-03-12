@@ -16,17 +16,19 @@ import Data.Bifunctor (first)
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Reader.Class (ask)
+import Control.Monad.State.Class (get)
 import Control.Monad.IO.Class (liftIO)
 
 import Text (tshow)
-import App (AppM, Config, _appDBPool, ChatKey (SHELF), _yandexConfig)
+import App (AppM, Config, _appDBPool, ChatKey (SHELF), _yandexConfig, _yandexWarehouseId, readTVarIO)
+import Katip (logTM, Severity (..), ls)
 import Infrastructure.Utils.OrderId (generateOrderId)
-import Infrastructure.Services.Yandex.Config (warehouseId)
+import Domain.Services.Warehouse (ensureWarehousePlatformId)
 import API.Types (ShelfShipmentDetails (..), InitiateShelfShipment (..))
 import  Workers.SimpleOrderOrchestrator.Yandex (PlaceOrderError (..))
 import Workers.ShelfOrderRegister.Sdek (notifyShelfChannel, mkDbOrder)
 import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup))
-import Infrastructure.Services.Yandex.Types (YandexCreateOrderReq (..))
+import Infrastructure.Services.Yandex.Types (YandexCreateOrderReq (..), platformStationId)
 import Infrastructure.Services.Yandex.Order
 import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, OrderItem (..), ShelfItemsForShipment (..), _orderYandex, YandexOrder (..))
 import Infrastructure.Services.Telegram (deleteMessage, MessageIdResponse (..))
@@ -58,7 +60,13 @@ go userId cfg init shipment = do
   telegramMsgId <- wrap (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed
   cfg <- lift ask
   -- drop off point (platform station id)
-  let sourcePointId = warehouseId (_yandexConfig cfg)
+  stateVar <- lift get
+  maybeWarehouseId <- fmap _yandexWarehouseId $ lift $ readTVarIO stateVar
+  let eWarehouseId =
+        case maybeWarehouseId of
+         Nothing            -> Left WarehouseNotSet
+         Just warehouseId   -> Right $ platformStationId warehouseId
+  sourcePointId <- except eWarehouseId
   let yaOrder = mkYaOrder ssdOrderId sourcePointId (issPointId init) shipment
   let dbOrder = mkDbOrder userId init shipment ssdOrderId telegramMsgId
   pool <- fmap _appDBPool $ lift ask

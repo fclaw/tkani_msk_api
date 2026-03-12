@@ -101,7 +101,7 @@ import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
-import Infrastructure.Services.Yandex.Types (GeoId, PickupPoint, DropOffPoint)
+import Infrastructure.Services.Yandex.Types (GeoId, PlatformStationId, PickupPoint, DropOffPoint)
 
 
 data Scheme = HTTP | HTTPS
@@ -276,6 +276,7 @@ data State = State
   , _sdekTariffs         :: M.Map NormalizedRoute (UTCTime, [Int])
   , _yandexPickupPoints  :: M.Map GeoId (UTCTime, [WithField "metros" [Text] PickupPoint])
   , _yandexDropOffPoints :: Maybe (UTCTime, [DropOffPoint])
+  , _yandexWarehouseId   :: Maybe PlatformStationId
   , _sdekPromises        :: SdekPromiseMap
   , _tinkoffPaymentChan  :: TChan (PaymentFlow, Text, GetStateRequest)
   , _sdekOrderChan       :: TChan SdekJob

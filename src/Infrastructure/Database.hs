@@ -108,6 +108,8 @@ module Infrastructure.Database
   , storeYandexOrderParticulars
   , getYandexOrdersInTransit
   , updateYandexOrderStatus
+  , getYandexWarehouseId
+  , saveYandexWarehouseId
   ) where
 
 
@@ -3524,3 +3526,31 @@ updateYandexOrderStatus orderId yaOrderId status yaStatus@YA.OrderStatus {..} po
              status_history = status_history || $3 :: jsonb 
          WHERE id = $1 :: int8
         |]
+
+
+getYandexWarehouseId :: Text -> Hasql.Pool -> AppM (Either Text (Maybe Text))
+getYandexWarehouseId localWarehouseId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (localWarehouseId) $
+      [Hasql.maybeStatement|
+       SELECT yandex_station_id :: text
+       FROM yandex_warehouses
+       WHERE local_warehouse_id = $1 :: text 
+      |]
+
+saveYandexWarehouseId :: Text -> Text -> Hasql.Pool -> AppM (Either Text ())
+saveYandexWarehouseId localWhId yaWhId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (localWhId, yaWhId) $
+      [Hasql.resultlessStatement|
+        INSERT INTO yandex_warehouses 
+        (local_warehouse_id, yandex_station_id)
+        VALUES ($1 :: text, $2 :: text)
+        ON CONFLICT (local_warehouse_id) 
+        DO UPDATE SET 
+          yandex_station_id = 
+          EXCLUDED.yandex_station_id,
+          updated_at = NOW()
+      |]

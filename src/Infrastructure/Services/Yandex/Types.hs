@@ -20,11 +20,11 @@ import Infrastructure.Services.Yandex.Geo (GeoPoint)
 import Infrastructure.Services.Yandex.Types.Enums hiding (PickupPoint)
 import qualified Infrastructure.Services.Yandex.Types.Enums as Enums
 import Infrastructure.Services.Yandex.Order
+import Infrastructure.Services.Yandex.Warehouse
 
 
 
 type YandexRequestId = Text
-
 
 -- | Shared configuration for the JSON instances to handle snake_case mapping.
 jsonOptions :: Options
@@ -194,6 +194,23 @@ data OrderParticulars = OrderParticulars { state :: OrderStatus } deriving (Show
 
 -- instance ToJSON OrderParticulars where toJSON = genericToJSON jsonOptions
 instance FromJSON OrderParticulars where parseJSON = genericParseJSON jsonOptions
+
+
+data WarehouseCreateReq = WarehouseCreateReq
+  { clientWarehouseId :: Text             -- ^ Your internal ID for this warehouse
+  , contact           :: WarehouseContact
+  , location          :: WarehouseLocation
+  , name              :: Text             -- ^ Name displayed in Yandex dashboard
+  , merchantId        :: Maybe Text       -- ^ Optional Yandex Merchant ID
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON WarehouseCreateReq where toJSON = genericToJSON (jsonOptions { omitNothingFields = True })
+
+data WarehouseCreateResp = WarehouseCreateResp { stationId :: Text }
+  deriving (Show, Eq, Generic)
+
+instance FromJSON WarehouseCreateResp where parseJSON = genericParseJSON jsonOptions 
+
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)

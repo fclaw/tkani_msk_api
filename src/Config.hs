@@ -66,7 +66,7 @@ data Config = Config
   , configMessageCannotBeDeleted :: Text
   , configMessageNotFound        :: Text
   , configIsCourierNeeded        :: Bool
-   , configIsSdekCourierNeeded   :: Bool
+  , configIsSpecialCourierNeeded :: Bool
   , configCourierWeightThreshold :: Int
   , configDostavistaToken        :: Text
   , configCourierCallCutoffHour  :: Maybe Int
@@ -167,7 +167,7 @@ loadConfig = do
   
    -- courier
   let configIsCourierNeeded = textToBool $ (Map.!) env "IS_COURIER_NEEDED"
-  let configIsSdekCourierNeeded = textToBool $ (Map.!) env "IS_SDEK_COURIER_NEEDED"
+  let configIsSpecialCourierNeeded = textToBool $ (Map.!) env "IS_SPECIAL_COURIER_NEEDED"
   let configCourierWeightThreshold = fromIntegral $ extractNumber "COURIER_WEIGHT_THRESHOLD" $ textToInt $ (Map.!) env "COURIER_WEIGHT_THRESHOLD"
   
   let configCourierCallCutoffHour = fmap (fromIntegral . extractNumber "COURIER_CALL_CUTOFF_HOUR" . textToInt) $ (Map.!?) env "COURIER_CALL_CUTOFF_HOUR"

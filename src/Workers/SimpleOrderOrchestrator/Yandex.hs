@@ -41,7 +41,7 @@ import Infrastructure.Services.Yandex (getNearestSource)
 import Infrastructure.Database (getOrderItems)
 import Infrastructure.Services.Yandex.Types
 import Infrastructure.Services.Yandex.Order
-import Infrastructure.Services.Yandex.Config (warehouseId)
+import Domain.Services.Warehouse (ensureWarehousePlatformId)
 import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup))
 import Infrastructure.Services.Telegram (MessageIdResponse (..))
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
@@ -51,7 +51,8 @@ import Infrastructure.Database (Order, OrderItem (..), NewPaymentRecord (..), oi
 data PlaceOrderError =
     --    YandexHttpError HttpError
     --  | DropOffPointNotFound
-       DatabaseFailed Text
+       WarehouseNotSet
+     | DatabaseFailed Text
      | CartEmpty
      | TinkoffHttpError HttpError
      | TinkoffPaymentLinkFailed Text
@@ -69,12 +70,16 @@ place orderRequest@OrderRequest {..} = do
 
 --   $(logTM) InfoS $ "Yandex source point is at address: " <> ls (tshow sourceAddress)
 
+  -- drop off point (platform station id)
+  stateVar <- lift get
+  maybeWarehouseId <- fmap _yandexWarehouseId $ lift $ readTVarIO stateVar
+  let eWarehouseId =
+        case maybeWarehouseId of
+         Nothing            -> Left WarehouseNotSet
+         Just warehouseId   -> Right warehouseId
+  sourcePointId <- except eWarehouseId
 
   cfg <- lift ask
-
-  -- drop off point (platform station id)
-  let sourcePointId = warehouseId (_yandexConfig cfg)
-
   let pool = _appDBPool cfg
     -- STEP A. Fetch items from the cart
   items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
@@ -149,7 +154,7 @@ place orderRequest@OrderRequest {..} = do
         toJSON $
          YandexCreateOrderReq
          { info          = defRequestInfo { riOperatorRequestId = orderId }
-         , source        = SourceRequestNode (PlatformStation sourcePointId)
+         , source        = SourceRequestNode (PlatformStation (platformStationId sourcePointId))
          , destination   = defDestinationRequestNode { drnPlatformStation = Just (PlatformStation orDeliveryPointId) }
          , billingInfo   = defBillingInfo
          , items         = 

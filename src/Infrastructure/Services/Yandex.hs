@@ -38,6 +38,7 @@ module Infrastructure.Services.Yandex
        , fetchParcelLabel
        , fetchOrderParticulars
        , fetchTrackingUrl
+       , initWarehouse
        , module Yandex.Types
        , PlatformId
        ) where
@@ -69,7 +70,7 @@ import TH.Location (currentModule)
 import Infrastructure.Utils.Http
 import Infrastructure.Services.Yandex.Geo
 import Infrastructure.Services.Yandex.Types as Yandex.Types
-import Infrastructure.Services.Yandex.Config
+import Infrastructure.Services.Yandex.Config hiding (Address)
 import Infrastructure.Services.Yandex.Types.Enums (PaymentMethod (AlreadyPaid))
 import Infrastructure.Services.Overpass.Geo (findNearestMetros)
 
@@ -234,3 +235,11 @@ fetchOrderParticulars orderId =  do
   let params = [("request_id", orderId)]
   eResp <- getReq manager url params [] (Just token)
   handleApiResponse @_ @OrderParticulars $(currentModule) eResp $ pure
+
+initWarehouse :: WarehouseCreateReq -> AppM (Either HttpError WarehouseCreateResp)
+initWarehouse req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/warehouses/create"
+  let token = mkDefToken (apiKey cfg)
+  postReq @WarehouseCreateResp manager url req [] (Just token)

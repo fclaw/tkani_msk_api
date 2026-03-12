@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
-module Workers.SdekPickUpScheduler (runSdekPickUpScheduler) where
+module Workers.CourierPickUpScheduler (runCourierPickUpScheduler) where
 
 
 import Katip
@@ -17,19 +17,20 @@ import Data.Maybe (fromMaybe)
 import Control.Monad (when, void)
 
 import App (AppM, _sdekConfig)
-import Domain.Services.Shipping (prepareAndSchedulePickup)
+import qualified Domain.Services.Shipping.Sdek as Sdek (prepareAndSchedulePickup)
+import qualified Domain.Services.Shipping.Yandex as Yandex (prepareAndSchedulePickup)
 import Infrastructure.Services.Sdek.Types.Config
 import qualified Infrastructure.Services.Sdek.Types.Config as Cfg
 
 
--- | The main loop for the scheduled SDEK pickup job.
+-- | The main loop for the scheduled courier pickup job.
 -- | A state for the scheduler to remember the date of its last successful run.
 type LastRunDay = TVar (Maybe Day)
 
 -- | The main scheduler function. It takes the TVar as an argument.
-runSdekPickUpScheduler :: TVar (Maybe Day) -> AppM ()
-runSdekPickUpScheduler lastRunVar = do
-  $(logTM) InfoS "SDEK Pickup Scheduler thread started."
+runCourierPickUpScheduler :: TVar (Maybe Day) -> AppM ()
+runCourierPickUpScheduler lastRunVar = do
+  $(logTM) InfoS "Courier Pickup Scheduler thread started."
   -- A. Get current time info
   let msk = TimeZone (3 * 60) False "MSK"
   now <- liftIO getZonedTime
@@ -67,9 +68,14 @@ runSdekPickUpScheduler lastRunVar = do
         
   -- E. Execute the job if the check passed
   when shouldRun $ do
-    $(logTM) InfoS "Pickup window is open. Running SDEK courier scheduling..."
-    _ <- prepareAndSchedulePickup
-    $(logTM) InfoS "SDEK courier scheduling finished."
+    $(logTM) InfoS "Pickup window is open. Running services courier scheduling..."
+    isSdekFinished   <- Sdek.prepareAndSchedulePickup
+    isYandexFinished <- Yandex.prepareAndSchedulePickup
+    when (isSdekFinished) $
+      $(logTM) InfoS "Sdek courier scheduling finished."
+    when (isYandexFinished) $
+      $(logTM) InfoS "Yandex courier scheduling finished."
+    $(logTM) InfoS "courier routine finished."
 
   -- F. If it is a new day (after midnight), reset the lock.
   liftIO $ atomically $ do

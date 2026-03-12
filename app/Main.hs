@@ -21,6 +21,7 @@ import Data.Maybe (fromMaybe)
 import Servant.API.Generic (toServant)
 -- Database and logging imports
 import qualified Hasql.Pool as Pool
+import Control.Monad.State.Class (get)
 import Control.Monad.Reader (runReaderT)
 import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
@@ -62,14 +63,15 @@ import qualified Lib.Servant.RateLimit as RL
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import qualified Config as GlobalCfg (loadConfig, Config(..), maskSecrets)
 import API.Types (ProviderInfo)
-import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..), CityCodeByPVZCache (..))
+import App (AppM(..), TinkoffCredentials (..), Config (..), State (..), MetroCity (..), runAppM, ChatKey (..), CityCodeByPVZCache (..), modifyTVarIO)
 import API (tkaniApiProxy)
 import Infrastructure.Logging.Telegram (mkTelegramScribe, getTelegramConfig)
 import Infrastructure.Templating (loadTemplatesFromDirectory)
+import Domain.Services.Warehouse (ensureWarehousePlatformId)
 -- workers START
 import Workers.SdekOrderStatusPoller (runSdekOrderStatusPoller)
 import Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller)
-import Workers.SdekPickUpScheduler (runSdekPickUpScheduler)
+import Workers.CourierPickUpScheduler (runCourierPickUpScheduler)
 import Workers.SdekStatusPoller (runSdekStatusPoller)
 import Workers.PriceCalculator (runPriceCalculator)
 import Workers.SdekGenerateReceipt (runSdekGenerateReceipt)
@@ -105,7 +107,7 @@ data Workers =
       | Tinkoff 
       | CollageMaker 
       | CartsCleaner
-      | SdekPickUpScheduler
+      | CourierPickUpScheduler
       | SdekStatusPoller
       | PriceCalculator
       | SdekGenerateReceipt
@@ -134,7 +136,7 @@ instance Show Workers where
   show Tinkoff                          = "Tinkoff Poller"
   show CollageMaker                     = "Collage Maker"
   show CartsCleaner                     = "Carts Cleaner"
-  show SdekPickUpScheduler              = "SDEK Pickup Scheduler"
+  show CourierPickUpScheduler           = "Courier Pickup Scheduler"
   show SdekStatusPoller                 = "SDEK Status Poller"
   show PriceCalculator                  = "Price Calculator"
   show SdekGenerateReceipt              = "SDEK Generate Receipt"
@@ -377,12 +379,27 @@ main = do
            , _shelfOrdersChan     = shelfOrdersChan
            , _yandexPickupPoints  = mempty
            , _yandexDropOffPoints = Nothing
+           , _yandexWarehouseId   = Nothing
            }
       initialState <- newTVarIO state
   
       -- Create the runner function that bridges AppM and IO.
       let appMToHandler :: forall a. AppM a -> IO (Either ServerError a)
           appMToHandler = runAppM appConfig initialState
+
+      -- fetch Yandex warehouse platform station id
+      eWarehouse <- appMToHandler $ do
+        eRes <- ensureWarehousePlatformId
+        fmap (const eRes) $
+          for_ eRes $ \platformId -> do
+            stateTVar <- get
+            modifyTVarIO stateTVar $ \s -> 
+              s { _yandexWarehouseId = 
+                  Just platformId }
+
+      case eWarehouse of 
+        Right _ -> pure ()
+        Left e -> error $ show e
 
       when(not isMetroMode) $
         putStrLn "--> Running in NO-METRO mode. Metro data will not be loaded."
@@ -532,15 +549,15 @@ main = do
                         >>= showErrorInWorker 
                              DostavistaOrderStatusPoller)         
                 in [weightTrackerWorker, dostavistaWorker]
-              | configIsSdekCourierNeeded =
-                let sdekCourierWorker =
-                     (SdekPickUpScheduler, do
+              | configIsSpecialCourierNeeded =
+                let courierWorker =
+                     (CourierPickUpScheduler, do
                       -- Initialize the lock variable
                       lastRunVar <- newTVarIO Nothing
                       runForever 10 $
-                        appMToHandler (runSdekPickUpScheduler lastRunVar)
-                          >>= showErrorInWorker 
-                            SdekPickUpScheduler)
+                        appMToHandler (runCourierPickUpScheduler lastRunVar)
+                          >>= showErrorInWorker
+                            CourierPickUpScheduler)
                     sdekCourierStatusPoller =
                      (SdekCourierStatusPoller,
                       appMToHandler (runSdekCourierStatusPoller)
@@ -552,7 +569,7 @@ main = do
                         appMToHandler (runSdekPickupAppStatusPoller)
                           >>= showErrorInWorker
                             SdekPickupAppStatusPoller)
-                in [sdekCourierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller]
+                in [courierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."

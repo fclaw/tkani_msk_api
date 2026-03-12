@@ -14,10 +14,11 @@ library:
     - App
     - Config
     - Infrastructure.Logging.Telegram
+    - Domain.Services.Warehouse
     - Infrastructure.Templating
     - Workers.SdekOrderStatusPoller
     - Workers.TinkoffPaymentStatusPoller
-    - Workers.SdekPickUpScheduler
+    - Workers.CourierPickUpScheduler
     - Workers.SdekStatusPoller
     - Workers.PriceCalculator
     - Workers.SdekGenerateReceipt
