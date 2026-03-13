@@ -50,7 +50,7 @@ module Infrastructure.Database
   , patchRoll
   , patchPrecut
   , deleteFabric
-  , fetchOrdersForCourierPickup
+  , fetchOrdersForSdekCourierPickup
   , createCourierPickupPromise
    -- yaml order
   , placeNewYamlOrder
@@ -1494,12 +1494,12 @@ deleteFabric fabricId fabricType pool =
 
 
 -- Statement takes () and returns a list of (orderId, sdekUuid)
-fetchOrdersForCourierPickup :: Hasql.Pool -> AppM (Either Text [OrdersForCourierPickup])
-fetchOrdersForCourierPickup pool =
+fetchOrdersForSdekCourierPickup :: Hasql.Pool -> AppM (Either Text [OrdersForSdekCourierPickup])
+fetchOrdersForSdekCourierPickup pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 
       Hasql.statement () $
-       rmap (map (extractADT . convertFromJson @OrdersForCourierPickup) . V.toList) $
+       rmap (map (extractADT . convertFromJson @OrdersForSdekCourierPickup) . V.toList) $
        [Hasql.vectorStatement|
         WITH items AS (
           SELECT

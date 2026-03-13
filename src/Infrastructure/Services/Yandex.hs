@@ -39,6 +39,8 @@ module Infrastructure.Services.Yandex
        , fetchOrderParticulars
        , fetchTrackingUrl
        , initWarehouse
+       , generateManifest
+       , createPickup
        , module Yandex.Types
        , PlatformId
        ) where
@@ -243,3 +245,9 @@ initWarehouse req = do
   let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/warehouses/create"
   let token = mkDefToken (apiKey cfg)
   postReq @WarehouseCreateResp manager url req [] (Just token)
+
+
+generateManifest :: ManifestReq -> AppM (Either HttpError B.ByteString)
+generateManifest _ = undefined
+
+createPickup = undefined

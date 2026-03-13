@@ -212,6 +212,11 @@ data WarehouseCreateResp = WarehouseCreateResp { stationId :: Text }
 instance FromJSON WarehouseCreateResp where parseJSON = genericParseJSON jsonOptions 
 
 
+data ManifestReq = ManifestReq { requestIds :: [Text]} deriving (Show, Eq, Generic)
+
+instance ToJSON ManifestReq where  toJSON = genericToJSON jsonOptions
+
+
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ci" } ''CoordinateInterval)

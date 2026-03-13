@@ -358,27 +358,27 @@ data ShelfItemsForShipment =
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sifs" } ''ShelfItemsForShipment)
 
-data OrdersForCourierPickupItem = 
-     OrdersForCourierPickupItem
+data OrdersForSdekCourierPickupItem = 
+     OrdersForSdekCourierPickupItem
      { ocpiArticle :: Text
      , ocpiName    :: Text
      , ocpiWeight  :: Int32
      } deriving (Show)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocpi" } ''OrdersForCourierPickupItem)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocpi" } ''OrdersForSdekCourierPickupItem)
 
 
-data OrdersForCourierPickup = 
-     OrdersForCourierPickup
+data OrdersForSdekCourierPickup = 
+     OrdersForSdekCourierPickup
      { ocpOrderId :: Text
      , ocpWeight  :: Int32
      , ocpLength  :: Int32
      , ocpWidth   :: Int32
      , ocpHeight  :: Int32
-     , ocpItems   :: [OrdersForCourierPickupItem]
+     , ocpItems   :: [OrdersForSdekCourierPickupItem]
      } deriving (Show)
 
-$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocp" } ''OrdersForCourierPickup)
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ocp" } ''OrdersForSdekCourierPickup)
 
 
 data CancelledOrders =

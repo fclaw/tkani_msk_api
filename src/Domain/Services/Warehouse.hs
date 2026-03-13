@@ -4,7 +4,7 @@
 
 module Domain.Services.Warehouse (ensureWarehousePlatformId) where
 
-import Data.Text (Text)
+import Data.Text (Text, toLower)
 import Control.Monad (join)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
@@ -63,7 +63,7 @@ ensureWarehousePlatformId = do
 mkInitWarehouseReq :: YandexConfig -> WarehouseCreateReq
 mkInitWarehouseReq YandexConfig {..} =
  WarehouseCreateReq
- { clientWarehouseId = "tkani_msk"
+ { clientWarehouseId = "tkani_msk_" <> toLower warehousePostfix 
   , contact          =
       WarehouseContact 
       { phone      = YA.phone contact

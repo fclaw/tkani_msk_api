@@ -41,7 +41,7 @@ import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
 import Workers.SimpleOrderOrchestrator.Sdek (PlaceOrderError (..), fetchOrderPollerRes)
 import Infrastructure.Services.Sdek  (registerOrder, registerCourierCall)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig (..), Sender (..), SdekSenderLocation (..))
-import Infrastructure.Database (OrdersForCourierPickup (..), OrdersForCourierPickupItem (..), fetchOrdersForCourierPickup, createCourierPickupPromise)
+import Infrastructure.Database (OrdersForSdekCourierPickup (..), OrdersForSdekCourierPickupItem (..), fetchOrdersForSdekCourierPickup, createCourierPickupPromise)
 
 
 data CourierCall = 
@@ -65,7 +65,7 @@ prepareAndSchedulePickup = do
     let sdekConfig = _sdekConfig cfg
     let countThreshold = pickupParcels sdekConfig
     let weightThreshold = pickupWeight sdekConfig
-    eOrdersToSchedule <- fetchOrdersForCourierPickup pool
+    eOrdersToSchedule <- fetchOrdersForSdekCourierPickup pool
     case eOrdersToSchedule of
       Left dbErr -> fmap (const False) $ $(logTM) ErrorS $ ls $ "DB error while fetching paid orders: " <> tshow dbErr
       Right orders ->
@@ -73,7 +73,7 @@ prepareAndSchedulePickup = do
           fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
         else if not (checkRequirements orders countThreshold weightThreshold) then do
           -- --- This is the refined logging message ---
-          let totalWeight =  sum $ orders <&> \OrdersForCourierPickup {..} -> ocpWeight
+          let totalWeight =  sum $ orders <&> \OrdersForSdekCourierPickup {..} -> ocpWeight
           let totalParcelsCount = length orders
           let notMetMsg = 
                 "Requirements not met to call courier. " <>
@@ -115,7 +115,7 @@ prepareAndSchedulePickup = do
                   let app_uuid = fromJust appUuid
                   let order_uuid = fromJust orderUuid
                   let statusTxt = tshow status
-                  let orderIds = orders <&> \OrdersForCourierPickup {..} -> ocpOrderId
+                  let orderIds = orders <&> \OrdersForSdekCourierPickup {..} -> ocpOrderId
                   eDbRes <- createCourierPickupPromise order_uuid app_uuid statusTxt orderIds (addDays 1 today) pool
                   case eDbRes of
                     Left dbErr -> do
@@ -161,9 +161,9 @@ prepareAndSchedulePickup = do
 -- This implies that if you have many parcels, call a courier regardless of weight.
 -- But if you have few parcels, only call a courier if they are collectively heavy enough.
 --
-checkRequirements ::  [OrdersForCourierPickup] -> Int -> Int -> Bool
+checkRequirements ::  [OrdersForSdekCourierPickup] -> Int -> Int -> Bool
 checkRequirements orders countThreshold weightThreshold =
-  let totalWeight = fromIntegral $ sum $ orders <&> \OrdersForCourierPickup {..} -> ocpWeight
+  let totalWeight = fromIntegral $ sum $ orders <&> \OrdersForSdekCourierPickup {..} -> ocpWeight
       totalParcelsCount = length orders
   in
     -- --- Implementation of your conditions ---
@@ -175,14 +175,14 @@ checkRequirements orders countThreshold weightThreshold =
     (totalParcelsCount <= countThreshold && totalWeight > weightThreshold)
 
 
-mkPickupOderRequest :: SdekFromLocation -> Text -> SdekRecipient -> [OrdersForCourierPickup] -> SdekOrderRequest
+mkPickupOderRequest :: SdekFromLocation -> Text -> SdekRecipient -> [OrdersForSdekCourierPickup] -> SdekOrderRequest
 mkPickupOderRequest location dropOffPoint recipient orders =
   let packages = 
-        orders <&> \OrdersForCourierPickup {..} ->
+        orders <&> \OrdersForSdekCourierPickup {..} ->
         let pkgNumber = ocpOrderId
             pkgWeight = fromIntegral ocpWeight + 100 -- safety margin
             pkgItems  = 
-              ocpItems <&> \OrdersForCourierPickupItem {..} ->
+              ocpItems <&> \OrdersForSdekCourierPickupItem {..} ->
                 let pkiName    = ocpiName
                     pkiWareKey = ocpiArticle
                     pkiPayment = 
