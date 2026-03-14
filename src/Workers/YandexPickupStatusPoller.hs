@@ -32,7 +32,7 @@ runYandexPickupStatusPoller = do
         eYaResp <- fetchPickupStatus $ PickupStatusReq pickupId
         case eYaResp of
           Left err -> $(logTM) ErrorS $ "fetchPickupStatus failure: " <> ls (tshow err)
-          Right PickupStatusResp {pickups=PickupStatusRespItem{pickupStatus}} ->
+          Right PickupStatusResp {pickup=PickupStatusRespItem{pickupStatus}} ->
             when (pickupStatus == Completed) $ do
               void $ completeYandexPickup pickupId pool
               let msg = escapeMarkdownV2 $ "Yandex courier pickup for " <> tshow day <> " has been completed"

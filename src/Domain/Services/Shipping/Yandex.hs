@@ -129,7 +129,7 @@ prepareAndSchedulePickup = do
                           Right _ -> do
                             -- send manifest to the PICKUP channel
                             let caption = escapeMarkdownV2 $ 
-                                            "the YANDEX courier call has \
+                                            "YANDEX courier call has \
                                             \ been registered for " <>
                                             (tshow (addDays 1 today)) <>
                                             ", pickup window: " <> 

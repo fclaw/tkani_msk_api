@@ -144,7 +144,7 @@ prepareAndSchedulePickup = do
                                   let error = escapeMarkdownV2 $ "‼️ Error in calling downloadSdekPdf: " <> tshow err
                                   fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                                 Right pdfBytes -> do
-                                  let caption = "the SDEK courier call has been registered for " <> escapeMarkdownV2 (tshow (addDays 1 today))
+                                  let caption = "SDEK courier call has been registered for " <> escapeMarkdownV2 (tshow (addDays 1 today))
                                   let filename = "pickup-manifest-" <> tshow today <> ".pdf"
                                   -- 2. Call the new service function
                                   void $ sendDocument PICKUP caption filename pdfBytes "application/pdf"

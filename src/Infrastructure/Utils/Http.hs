@@ -65,14 +65,14 @@ import           Control.Monad.Trans.Control (MonadBaseControl)
 type QueryParams = [(Text, Text)]
 type FormParams = [FormParam]
 
-data HttpError = NetworkError SomeException | JsonDecodeError Text
+data HttpError = NetworkError SomeException | JsonDecodeError Text Text
   deriving (Show)
 
 instance Exception HttpError
 
 perseReq body =
   case eitherDecode body of
-    Left err -> Left $ JsonDecodeError (T.pack err)
+    Left err -> Left $ JsonDecodeError (T.pack err) (TE.decodeUtf8 (LBS.toStrict body))
     Right decodedBody -> Right decodedBody    
 
 perseResp :: FromJSON a => Either SomeException (Response LBS.ByteString) -> Either HttpError a

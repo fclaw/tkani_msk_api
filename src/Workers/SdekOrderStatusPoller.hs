@@ -63,7 +63,7 @@ runSdekOrderStatusPoller = do
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eDbRes
 
 handleSdekFailure :: Text -> UUID -> HttpError -> AppM ()
-handleSdekFailure _ _ (JsonDecodeError err) = $(logTM) ErrorS $ ls $ "aeson error " <> err
+handleSdekFailure _ _ (JsonDecodeError err _) = $(logTM) ErrorS $ ls $ "aeson error " <> err
 handleSdekFailure orderId uuid (NetworkError ex) = 
   case fromException @HttpException ex of
     Just (HttpExceptionRequest _ (StatusCodeException response body)) -> do

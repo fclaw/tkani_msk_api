@@ -259,7 +259,7 @@ data PickupStatusRespItem = PickupStatusRespItem { pickupStatus :: PickupStatus}
 
 instance FromJSON PickupStatusRespItem where parseJSON = genericParseJSON jsonOptions 
 
-data PickupStatusResp = PickupStatusResp { pickups :: PickupStatusRespItem } deriving (Show, Eq, Generic)
+data PickupStatusResp = PickupStatusResp { pickup :: PickupStatusRespItem } deriving (Show, Eq, Generic)
 
 instance FromJSON PickupStatusResp where parseJSON = genericParseJSON jsonOptions 
 
