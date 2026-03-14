@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module Domain.Services.Warehouse (ensureWarehousePlatformId) where
 
+import Katip
 import Data.Text (Text, toLower)
 import Control.Monad (join)
 import Control.Monad.Reader.Class (ask)
@@ -11,10 +13,11 @@ import Control.Monad.State.Class (get)
 import Data.Traversable (for)
 import Data.Foldable (for_)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson.Encode.Pretty (encodePretty)
 
 
 import Text (tshow)
-import App (AppM, _yandexWarehouseId, readTVarIO, modifyTVarIO, _appDBPool, _yandexConfig)
+import App (AppM, _appDBPool, _yandexConfig)
 import Infrastructure.Services.Yandex.Warehouse
 import Infrastructure.Services.Yandex (initWarehouse)
 import Infrastructure.Database (getYandexWarehouseId, saveYandexWarehouseId)
@@ -25,45 +28,40 @@ import Infrastructure.Services.Yandex.Types (PlatformStationId (..), WarehouseCr
 
 ensureWarehousePlatformId :: AppM (Either Text PlatformStationId)
 ensureWarehousePlatformId = do
-  stateVar <- get
-  maybeWarehouseId <- fmap _yandexWarehouseId $ readTVarIO stateVar
-  case maybeWarehouseId of
-    Just warehouseId -> pure $ Right warehouseId
-    Nothing -> do
-      cfg <- ask
-      let pool = _appDBPool cfg
-      let yaCfg = _yandexConfig cfg
-      let wId = localWarehouseId yaCfg
-      eRes <- getYandexWarehouseId wId pool
-      fmap join $
-        for eRes $ \maybeWarehouseId ->
-          case maybeWarehouseId of
-            Just warehouseId -> 
-              pure $ Right $ PlatformStationId warehouseId
-            Nothing           -> do
+  cfg <- ask
+  let pool = _appDBPool cfg
+  let yaCfg = _yandexConfig cfg
+  let wId = localWarehouseId yaCfg
+  let postfix = warehousePostfix yaCfg
+  let wIdWithPostfix = wId <> "_" <> toLower postfix
+  eRes <- getYandexWarehouseId wIdWithPostfix pool
+  case eRes of 
+    Left err -> pure $ Left err
+    Right maybeWarehouseId ->
+      case maybeWarehouseId of
+        Just warehouseId -> 
+          pure $ Right $ PlatformStationId warehouseId
+        Nothing          -> do
+          cfg <- ask
+          let yaCfg = _yandexConfig cfg
+          let initReq = mkInitWarehouseReq yaCfg
+          $(logTM) InfoS $ "ensureWarehousePlatformId: initReq --> " <> 
+                           ls (encodePretty initReq)
+          eYaResp <- initWarehouse initReq
+          case eYaResp of
+            Left err -> pure $ Left $ tshow err
+            Right WarehouseCreateResp {stationId} -> do
               cfg <- ask
-              let yaCfg = _yandexConfig cfg
-              let initReq = mkInitWarehouseReq yaCfg
-              eYaResp <- initWarehouse initReq
-              case eYaResp of
-                Left err -> pure $ Left $ tshow err
-                Right WarehouseCreateResp {stationId} -> do
-                  cfg <- ask
-                  let pool = _appDBPool cfg
-                  eDbRes <- saveYandexWarehouseId wId stationId pool
-                  case eDbRes of 
-                    Left err -> pure $ Left err
-                    Right _ -> do
-                      stateTVar <- get
-                      modifyTVarIO stateTVar $ \s -> 
-                        s { _yandexWarehouseId = 
-                            Just (PlatformStationId stationId) }
-                      pure $ Right $ PlatformStationId stationId
-
+              let pool = _appDBPool cfg
+              eDbRes <- saveYandexWarehouseId wIdWithPostfix stationId pool
+              case eDbRes of 
+                Left err -> pure $ Left err
+                Right _  -> pure $ Right $ PlatformStationId stationId
+ 
 mkInitWarehouseReq :: YandexConfig -> WarehouseCreateReq
 mkInitWarehouseReq YandexConfig {..} =
  WarehouseCreateReq
- { clientWarehouseId = "tkani_msk_" <> toLower warehousePostfix 
+ { clientWarehouseId = localWarehouseId <> "_" <> toLower warehousePostfix
   , contact          =
       WarehouseContact 
       { phone      = YA.phone contact
@@ -80,10 +78,10 @@ mkInitWarehouseReq YandexConfig {..} =
           , house    = YA.house address
           , building = Just $ YA.building address
           , floor    = Just $ YA.floor address
-          , street   = YA.street address 
+          , street   = Just $ YA.street address
           }
-       , coordinates = office 
+       , coordinates = office
        }
-  , name             = "Tkani MSK " <> "(" <> warehousePostfix <> ")" 
+  , name             = warehouseName <> " (" <> warehousePostfix <> ")"
   , merchantId       = Nothing
  }

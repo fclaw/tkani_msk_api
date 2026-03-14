@@ -335,6 +335,7 @@ data Config = Config
   , _conciergeBotUrl        :: Text
   , _shelfCapacity          :: Int32
   , _totalShelves           :: Int32
+  , _consolidationTime      :: Int32
   }
 
 -- A helper type for parsing the YAML

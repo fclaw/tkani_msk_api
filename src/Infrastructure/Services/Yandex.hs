@@ -40,7 +40,9 @@ module Infrastructure.Services.Yandex
        , fetchTrackingUrl
        , initWarehouse
        , generateManifest
-       , createPickup
+       , createShipment
+       , getPickupOptions
+       , fetchPickupStatus
        , module Yandex.Types
        , PlatformId
        ) where
@@ -247,7 +249,40 @@ initWarehouse req = do
   postReq @WarehouseCreateResp manager url req [] (Just token)
 
 
-generateManifest :: ManifestReq -> AppM (Either HttpError B.ByteString)
-generateManifest _ = undefined
+generateManifest :: ManifestReq -> AppM (Either Text B.ByteString)
+generateManifest req = do
+  cfg <- fmap _yandexConfig ask
+  mgr <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/get-handover-act"
+  let token = apiKey cfg
+  let opts = 
+        defaults 
+        & auth ?~ oauth2Bearer (encodeUtf8 token) 
+        & manager .~ Right mgr
+  let handleResp (Left err) = Left (tshow err)
+      handleResp (Right response) = Right (BL.toStrict (responseBody response))
+  fmap handleResp $ liftIO $ try @HttpException (postWith opts url (toJSON req))
 
-createPickup = undefined
+createShipment :: CreateShipmentReq -> AppM (Either HttpError CreateShipmentResp)
+createShipment req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/create"
+  let token = mkDefToken (apiKey cfg)
+  postReq @CreateShipmentResp manager url req [] (Just token)
+
+getPickupOptions :: PickupOptionsReq -> AppM (Either HttpError PickupOptionsResp)
+getPickupOptions req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/pickup-options"
+  let token = mkDefToken (apiKey cfg)
+  postReq @PickupOptionsResp manager url req [] (Just token)
+
+fetchPickupStatus :: PickupStatusReq -> AppM (Either HttpError PickupStatusResp)
+fetchPickupStatus req = do
+  cfg <- fmap _yandexConfig ask
+  manager <- fmap _configHttpManager ask
+  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/retrieve"
+  let token = mkDefToken (apiKey cfg)
+  postReq @PickupStatusResp manager url req [] (Just token)

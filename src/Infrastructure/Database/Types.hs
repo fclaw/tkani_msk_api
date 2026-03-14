@@ -441,3 +441,15 @@ data YandexOrderDetailsForPricing =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yodp" } ''YandexOrderDetailsForPricing)
+
+
+data OrdersForYandexCourierPickupItem = 
+     OrdersForYandexCourierPickupItem
+     { oycpiRequestId :: Text
+     , oycpiWeight    :: Int32
+     , oycpiLength    :: Int32
+     , oycpiWidth     :: Int32
+     , oycpiHeight    :: Int32
+     } deriving (Show)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oycpi" } ''OrdersForYandexCourierPickupItem)

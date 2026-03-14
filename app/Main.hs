@@ -21,12 +21,14 @@ import Data.Maybe (fromMaybe)
 import Servant.API.Generic (toServant)
 -- Database and logging imports
 import qualified Hasql.Pool as Pool
+import qualified Data.Text as T
+import Data.Bifunctor (first)
 import Control.Monad.State.Class (get)
 import Control.Monad.Reader (runReaderT)
 import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
-import Control.Monad (void, when, forever)
+import Control.Monad (void, when, forever, join)
 import Control.Exception (finally, bracket, SomeException)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
@@ -34,6 +36,7 @@ import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
 import System.Environment (getArgs)
 import Data.Text (pack)
+import Data.Traversable (for)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO, modifyTVar')
 import Control.Monad.Except (runExceptT)
 import Control.Monad.RWS (runRWST)
@@ -90,6 +93,7 @@ import Workers.ParcelDeliveryWatcher (runParcelDeliveryWatcher)
 import Workers.DeliveryCostListener (runDeliveryCostListener)
 import Workers.SimpleOrderOrchestrator (runSimpleOrderOrchestrator)
 import Workers.ShelfOrderRegister (runShelfOrderRegister)
+import Workers.YandexPickupStatusPoller (runYandexPickupStatusPoller)
 import Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
@@ -127,6 +131,7 @@ data Workers =
       | SimpleOrderOrchestrator
       | ShelfOrderRegister
       | YandexOrderStatusPoller
+      | YandexPickupStatusPoller
 
 
 
@@ -156,6 +161,7 @@ instance Show Workers where
   show SimpleOrderOrchestrator          = "Simple Order Orchestrator"
   show ShelfOrderRegister               = "Shelf Order Register"
   show YandexOrderStatusPoller          = "Yandex Order Status Poller"
+  show YandexPickupStatusPoller         = "Yandex Pickup Status Poller"
 
 
 --
@@ -349,6 +355,7 @@ main = do
             , _conciergeBotUrl = configConciergeBotUrl
             , _shelfCapacity = configShelfCapacity
             , _totalShelves = configTotalShelves
+            , _consolidationTime = configPickupConsolidationTm
             }
 
       tinkoffPaymentChan <- newTChanIO
@@ -388,18 +395,21 @@ main = do
           appMToHandler = runAppM appConfig initialState
 
       -- fetch Yandex warehouse platform station id
-      eWarehouse <- appMToHandler $ do
-        eRes <- ensureWarehousePlatformId
-        fmap (const eRes) $
-          for_ eRes $ \platformId -> do
-            stateTVar <- get
-            modifyTVarIO stateTVar $ \s -> 
-              s { _yandexWarehouseId = 
-                  Just platformId }
+      eWarehouse <- 
+        fmap (first (T.pack . show)) $
+          appMToHandler $
+            if configIsSpecialCourierNeeded then do
+              eRes <- ensureWarehousePlatformId
+              for eRes $ \platformId -> do
+                stateTVar <- get
+                modifyTVarIO stateTVar $ \s -> 
+                  s { _yandexWarehouseId = 
+                      Just platformId }
+            else pure $ Right ()
 
-      case eWarehouse of 
+      case join $  eWarehouse of 
         Right _ -> pure ()
-        Left e -> error $ show e
+        Left e  -> error $ T.unpack e
 
       when(not isMetroMode) $
         putStrLn "--> Running in NO-METRO mode. Metro data will not be loaded."
@@ -569,7 +579,13 @@ main = do
                         appMToHandler (runSdekPickupAppStatusPoller)
                           >>= showErrorInWorker
                             SdekPickupAppStatusPoller)
-                in [courierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller]
+                    yandexPickupStatusPoller =
+                     (YandexPickupStatusPoller,
+                      runForever 5 $
+                        appMToHandler (runYandexPickupStatusPoller)
+                          >>= showErrorInWorker
+                            YandexPickupStatusPoller)
+                in [courierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller, yandexPickupStatusPoller]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."

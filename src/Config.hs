@@ -83,6 +83,7 @@ data Config = Config
   , configSpecialPostChatId      :: Int64
   , configYandexApiUrl           :: Maybe Text
   , configYandexApiKey           :: Maybe Text
+  , configPickupConsolidationTm  :: Int32
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -216,6 +217,8 @@ loadConfig = do
   let configShelfCapacity = fromIntegral $ extractNumber "SHELF_CAPACITY" $ textToInt $ (Map.!) env "SHELF_CAPACITY"
 
   let configTotalShelves = fromIntegral $ extractNumber "TOTAL_SHELVES" $ textToInt $ (Map.!) env "TOTAL_SHELVES"
+
+  let configPickupConsolidationTm = fromIntegral $ extractNumber "CONSOLIDATION_TIME" $ textToInt $ (Map.!) env "CONSOLIDATION_TIME" 
 
   -- 5. Return the final Config record
   pure $ Config {..}

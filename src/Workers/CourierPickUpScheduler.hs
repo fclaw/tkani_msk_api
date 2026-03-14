@@ -16,7 +16,7 @@ import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically)
 import Data.Maybe (fromMaybe)
 import Control.Monad (when, void)
 
-import App (AppM, _sdekConfig)
+import App (AppM, _sdekConfig, _consolidationTime)
 import qualified Domain.Services.Shipping.Sdek as Sdek (prepareAndSchedulePickup)
 import qualified Domain.Services.Shipping.Yandex as Yandex (prepareAndSchedulePickup)
 import Infrastructure.Services.Sdek.Types.Config
@@ -41,9 +41,10 @@ runCourierPickUpScheduler lastRunVar = do
 
   -- B. Get config for the pickup window
   sdekCfg <- fmap _sdekConfig ask
+  consolidationTime <- fmap _consolidationTime ask
 
   -- C. Check if we need to run the job
-  let isRightTime = hour == consolidationTime sdekCfg
+  let isRightTime = fromIntegral hour == consolidationTime
   let days = Sunday : [Monday .. Thursday]
   let isWeekday = day `elem` days
  

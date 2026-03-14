@@ -38,16 +38,24 @@ data Contact =
 instance FromJSON Contact where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
 
-data YandexConfig = 
+data PickupWindow = PickupWindow { fromHour :: Text, toHour :: Text } deriving (Show, Eq, Generic)
+
+instance FromJSON PickupWindow where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = camelTo2 '_' }
+
+data YandexConfig =
      YandexConfig
      { apiKey            :: Text
      , apiUrl            :: Text
      , office            :: GeoPoint
      , localWarehouseId  :: Text
-     , consolidationTime :: Int32
+     , warehouseName     :: Text
      , address           :: Address
      , contact           :: Contact
      , warehousePostfix  :: Text
+     , pickupParcels     :: Int
+     , pickupWeight      :: Int
+     , pickupWindow      :: PickupWindow
      } deriving (Show, Eq, Generic)
 
 instance FromJSON YandexConfig where

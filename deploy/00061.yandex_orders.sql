@@ -45,4 +45,13 @@ FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
 
+CREATE TABLE yandex_courier_pickups (
+    id SERIAL PRIMARY KEY,
+    status TEXT NOT NULL,
+    pickup_id TEXT NOT NULL,
+    pickup_date DATE NOT NULL
+);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS yandex_courier_pickup_id INTEGER REFERENCES yandex_courier_pickups(id);
+
 COMMIT;

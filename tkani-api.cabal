@@ -42,6 +42,7 @@ library
       Workers.SimpleOrderOrchestrator
       Workers.ShelfOrderRegister
       Workers.YandexOrderStatusPoller
+      Workers.YandexPickupStatusPoller
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -139,6 +140,7 @@ library
       Infrastructure.Services.Yandex.CachedPickupPoints
       Infrastructure.Services.Yandex.Geo
       Infrastructure.Services.Yandex.Order
+      Infrastructure.Services.Yandex.Shipment
       Infrastructure.Services.Yandex.Types
       Infrastructure.Services.Yandex.Types.Enums
       Infrastructure.Services.Yandex.Warehouse

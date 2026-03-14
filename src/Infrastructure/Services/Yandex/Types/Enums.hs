@@ -120,3 +120,8 @@ instance ToJSON YandexOrderStatus where
 
 instance FromJSON YandexOrderStatus where
   parseJSON = genericParseJSON yandexStatusOptions
+
+
+data PickupStatus = Scheduled | Completed | Cancelled deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = map toLower, sumEncoding = UntaggedValue } ''PickupStatus)

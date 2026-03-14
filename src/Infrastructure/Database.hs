@@ -110,6 +110,10 @@ module Infrastructure.Database
   , updateYandexOrderStatus
   , getYandexWarehouseId
   , saveYandexWarehouseId
+  , fetchOrdersForYandexCourierPickup
+  , savePickupDetails
+  , fetchYandexPickupStatus
+  , completeYandexPickup
   ) where
 
 
@@ -161,6 +165,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database.Utils as Utils
+import Infrastructure.Services.Yandex.Types.Enums (PickupStatus (Scheduled, Completed))
 import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus)
 import Infrastructure.Services.Yandex.Types (YandexRequestId)
 import qualified Infrastructure.Services.Yandex.Types as YA (OrderStatus (..))
@@ -3553,4 +3558,67 @@ saveYandexWarehouseId localWhId yaWhId pool =
           yandex_station_id = 
           EXCLUDED.yandex_station_id,
           updated_at = NOW()
+      |]
+
+fetchOrdersForYandexCourierPickup :: OrderStatus -> Hasql.Pool -> AppM (Either Text (Maybe [OrdersForYandexCourierPickupItem]))
+fetchOrdersForYandexCourierPickup status pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (encodeToText status) $
+      rmap (fmap (map (extractADT . convertFromJson @OrdersForYandexCourierPickupItem) . V.toList))
+      [Hasql.maybeStatement|
+        SELECT
+         COALESCE (
+         array_agg(
+         jsonb_build_object(
+          'request_id', yo.order_id :: text,
+          'weight', o.actual_weight_grams :: int4,
+          'length', o.length :: int4, 
+          'width', o.width :: int4,
+          'height', o.height :: int4
+         )), '{}' :: jsonb[]) :: jsonb[]
+        FROM orders AS o
+        INNER JOIN yandex_orders AS yo
+        ON o.yandex_order_id = yo.id
+        WHERE o.status = CAST($1 :: text AS order_status)
+        AND (
+         SELECT COUNT(*) = 0
+         FROM yandex_courier_pickups
+         WHERE pickup_date = (now() + INTERVAL '1 day')::date)
+      |]
+
+
+savePickupDetails :: Text -> Day ->  Hasql.Pool -> AppM (Either Text ())
+savePickupDetails pickupId date pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (pickupId, date, encodeToText Scheduled) $
+      [Hasql.resultlessStatement|
+       INSERT INTO yandex_courier_pickups
+       (pickup_id, pickup_date, status)
+       VALUES ($1 :: text, $2 :: date, $3 :: text)
+      |]
+
+fetchYandexPickupStatus :: Hasql.Pool -> AppM (Either Text (V.Vector (Text, Day)))
+fetchYandexPickupStatus pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (encodeToText Scheduled) $
+      [Hasql.vectorStatement|
+       SELECT
+       pickup_id :: text,
+       pickup_date :: date
+       FROM yandex_courier_pickups
+       WHERE status = $1 :: text
+      |]
+
+completeYandexPickup :: Text -> Hasql.Pool -> AppM (Either Text ())
+completeYandexPickup pickupId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (pickupId, encodeToText Infrastructure.Services.Yandex.Types.Enums.Completed) $
+      [Hasql.resultlessStatement|
+       UPDATE yandex_courier_pickups
+       SET status = $2 :: text
+       WHERE pickup_id = $1 :: text
       |]

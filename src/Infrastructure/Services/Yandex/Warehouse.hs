@@ -44,19 +44,19 @@ instance ToJSON WarehouseLocation where toJSON = genericToJSON yandexOptions
 
 data WarehouseAddress = WarehouseAddress
   { city       :: Text
-  , country    :: Text
-  , region     :: Text
-  , street     :: Text
+  , country    :: Maybe Text
+  , region     :: Maybe Text
+  , street     :: Maybe Text
   , house      :: Text
   , building   :: Maybe Text
   , apartment  :: Maybe Text
   , floor      :: Maybe Text
   , entrance   :: Maybe Text
   , doorCode   :: Maybe Text
-  , postalCode :: Text
-  , geoId      :: Int          -- ^ Yandex Settlement ID
+  , postalCode :: Maybe Text
+  , geoId      :: Maybe Int          -- ^ Yandex Settlement ID
   } deriving (Show, Eq, Generic)
 
 instance ToJSON WarehouseAddress where toJSON = genericToJSON yandexOptions
 
-defWarehouseAddress = WarehouseAddress mempty mempty mempty mempty mempty Nothing Nothing Nothing Nothing Nothing mempty 0
+defWarehouseAddress = WarehouseAddress mempty Nothing Nothing Nothing mempty Nothing Nothing Nothing Nothing Nothing Nothing Nothing

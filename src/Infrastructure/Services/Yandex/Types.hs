@@ -13,6 +13,7 @@ import Data.Int (Int32)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Data.Time.Clock (UTCTime)
+import Data.Time.Calendar (Day)
 
 
 import Text (camelToSnake, recordLabelModifier)
@@ -20,6 +21,7 @@ import Infrastructure.Services.Yandex.Geo (GeoPoint)
 import Infrastructure.Services.Yandex.Types.Enums hiding (PickupPoint)
 import qualified Infrastructure.Services.Yandex.Types.Enums as Enums
 import Infrastructure.Services.Yandex.Order
+import Infrastructure.Services.Yandex.Shipment
 import Infrastructure.Services.Yandex.Warehouse
 
 
@@ -212,10 +214,54 @@ data WarehouseCreateResp = WarehouseCreateResp { stationId :: Text }
 instance FromJSON WarehouseCreateResp where parseJSON = genericParseJSON jsonOptions 
 
 
-data ManifestReq = ManifestReq { requestIds :: [Text]} deriving (Show, Eq, Generic)
+data ManifestReq = ManifestReq { requestIds :: [Text] } deriving (Show, Eq, Generic)
 
 instance ToJSON ManifestReq where  toJSON = genericToJSON jsonOptions
 
+data CreateShipmentReq =
+     CreateShipmentReq 
+     { parameters              :: PickupParameters
+     , pickupLocalDate         :: Text               -- ^ Date format: "YYYY-MM-DD"
+     , pickupLocalTimeInterval :: LocalTimeInterval
+     , stationId               :: Text               -- ^ UUID for the warehouse station
+     } deriving (Show, Eq, Generic)
+
+instance ToJSON CreateShipmentReq where toJSON = genericToJSON jsonOptions 
+
+data CreateShipmentResp = CreateShipmentResp { pickupId :: Text } deriving (Show, Eq, Generic)
+
+instance FromJSON CreateShipmentResp where parseJSON = genericParseJSON jsonOptions 
+
+
+data PickupOptionsReq = PickupOptionsReq { stationId :: Text } deriving (Show, Eq, Generic)
+
+instance ToJSON PickupOptionsReq where  toJSON = genericToJSON jsonOptions
+
+data PickupOptionsRespItem = 
+     PickupOptionsRespItem
+     { pickupLocalDate :: Day
+     , pickupLocalTimeIntervals :: [LocalTimeInterval]
+     } deriving (Show, Eq, Generic)
+
+instance FromJSON PickupOptionsRespItem where parseJSON = genericParseJSON jsonOptions 
+
+
+data PickupOptionsResp = PickupOptionsResp { pickupOptions :: [PickupOptionsRespItem] } deriving (Show, Eq, Generic)
+
+instance FromJSON PickupOptionsResp where parseJSON = genericParseJSON jsonOptions 
+
+
+data PickupStatusReq = PickupStatusReq { pickupId :: Text } deriving (Show, Eq, Generic)
+
+instance ToJSON PickupStatusReq where  toJSON = genericToJSON jsonOptions
+
+data PickupStatusRespItem = PickupStatusRespItem { pickupStatus :: PickupStatus} deriving (Show, Eq, Generic)
+
+instance FromJSON PickupStatusRespItem where parseJSON = genericParseJSON jsonOptions 
+
+data PickupStatusResp = PickupStatusResp { pickups :: PickupStatusRespItem } deriving (Show, Eq, Generic)
+
+instance FromJSON PickupStatusResp where parseJSON = genericParseJSON jsonOptions 
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)

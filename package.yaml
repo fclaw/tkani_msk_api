@@ -38,6 +38,7 @@ library:
     - Workers.SimpleOrderOrchestrator
     - Workers.ShelfOrderRegister
     - Workers.YandexOrderStatusPoller
+    - Workers.YandexPickupStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

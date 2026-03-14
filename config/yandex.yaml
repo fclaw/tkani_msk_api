@@ -8,9 +8,9 @@ office:
  latitude: 55.759937
  longitude: 37.763681
 
-local_warehouse_id: tkani_msk
+local_warehouse_id: "tkani_msk"
 
-consolidation_time: 21
+warehouse_name: "Tkani MSK"
 
 address: 
   city: "Москва"
@@ -25,4 +25,11 @@ contact:
   phone: "+79361645867"
   email: "fclaw007@gmail.com"
 
-warehouse_postfix: "PROD"
+warehouse_postfix: "LOCAL"
+
+pickup_parcels: 1
+pickup_weight: 5000
+
+pickup_window:
+  from_hour: "13:00"
+  to_hour: "15:00"

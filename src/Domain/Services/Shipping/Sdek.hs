@@ -55,7 +55,7 @@ data CourierCall =
 
 prepareAndSchedulePickup :: AppM Bool
 prepareAndSchedulePickup = do
-    $(logTM) InfoS "Checking for paid orders to schedule for pickup..."
+    $(logTM) InfoS "Checking for paid orders to schedule for SDEK pickup..."
     -- Get the current date to pass to the query for the idempotency check
     today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
     -- 1. Atomically find and update the orders.
@@ -91,7 +91,7 @@ prepareAndSchedulePickup = do
           fmap (const False) $ sendOrEditTelegramMessage mempty notMetMsg PICKUP Nothing Nothing Nothing
         else do
           -- We have enough orders to schedule a pickup
-          $(logTM) InfoS "Scheduling courier pickup for orders..."          
+          $(logTM) InfoS "Scheduling SDEK courier pickup for orders..."          
           -- ... (the rest of your logic to call the SDEK API) ...
           $(logTM) InfoS $ ls $ "Found " <> tshow (length orders) <> " orders. Scheduling courier..."
           let recipient = SdekRecipient (name (sender sdekConfig)) [SdekPhone (phone (sender sdekConfig))]
@@ -130,7 +130,7 @@ prepareAndSchedulePickup = do
                           let error = escapeMarkdownV2 $ "‼️ Error in calling registerSdekReceipt: " <> tshow err
                           fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                         Right receipt_uuid -> do
-                          eUrlRes <-getSdekReceipt receipt_uuid
+                          eUrlRes <- getSdekReceipt receipt_uuid
                           case eUrlRes of
                             Left err -> do
                               $(logTM) ErrorS $ ls $ "getSdekReceipt failed: " <> tshow err
@@ -144,11 +144,11 @@ prepareAndSchedulePickup = do
                                   let error = escapeMarkdownV2 $ "‼️ Error in calling downloadSdekPdf: " <> tshow err
                                   fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
                                 Right pdfBytes -> do
-                                  let caption = "the courier call has been registered for " <> escapeMarkdownV2 (tshow (addDays 1 today))
+                                  let caption = "the SDEK courier call has been registered for " <> escapeMarkdownV2 (tshow (addDays 1 today))
                                   let filename = "pickup-manifest-" <> tshow today <> ".pdf"
                                   -- 2. Call the new service function
                                   void $ sendDocument PICKUP caption filename pdfBytes "application/pdf"
-                                  fmap (const True) $ $(logTM) InfoS $ "Successfully sent  pickup manifest for " <> ls (tshow today) <> " to pickup channel."
+                                  fmap (const True) $ $(logTM) InfoS $ "Successfully sent SDEK pickup manifest for " <> ls (tshow today) <> " to pickup channel."
 
 
 -- | Checks if the given list of orders meets the requirements to call a courier.

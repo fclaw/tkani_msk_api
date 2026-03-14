@@ -115,7 +115,6 @@ data SdekConfig =
      , dropOffPoint        :: Text
      , courierDropOffPoint :: Text
      , commissionRate      :: Double
-     , consolidationTime   :: Int
      , senderLocation      :: SdekSenderLocation
      , holidays            :: [Holiday]
      } deriving (Show, Generic)
