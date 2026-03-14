@@ -25,7 +25,7 @@ contact:
   phone: "+79361645867"
   email: "fclaw007@gmail.com"
 
-warehouse_postfix: "LOCAL"
+warehouse_postfix: "PROD"
 
 pickup_parcels: 1
 pickup_weight: 5000
