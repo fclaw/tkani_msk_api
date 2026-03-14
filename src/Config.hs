@@ -124,6 +124,8 @@ loadConfig = do
   -- 1. Load the .env file into a Map
   env <- loadEnvFile ".env"
 
+  print $ "env --> " <> show env
+
   -- 2. Look up each variable from the Map, providing defaults
   let dbHost = lookupWithDefault env "POSTGRES_HOST" "localhost"
   let dbPort = lookupWithDefault env "POSTGRES_PORT" "5432"
