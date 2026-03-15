@@ -114,6 +114,7 @@ module Infrastructure.Database
   , savePickupDetails
   , fetchYandexPickupStatus
   , completeYandexPickup
+  , resetOrderDimensionsAndWeight
   ) where
 
 
@@ -3621,4 +3622,18 @@ completeYandexPickup pickupId pool =
        UPDATE yandex_courier_pickups
        SET status = $2 :: text
        WHERE pickup_id = $1 :: text
+      |]
+
+resetOrderDimensionsAndWeight :: Text -> Hasql.Pool -> AppM (Either Text ())
+resetOrderDimensionsAndWeight orderId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (orderId) $
+      [Hasql.resultlessStatement|
+       UPDATE orders 
+       SET length = NULL,
+           width  = NULL,
+           height = NULL,
+           actual_weight_grams = NULL
+       WHERE id = $1 :: text   
       |]

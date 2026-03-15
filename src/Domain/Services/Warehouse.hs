@@ -7,7 +7,8 @@ module Domain.Services.Warehouse (ensureWarehousePlatformId) where
 
 import Katip
 import Data.Text (Text, toLower)
-import Control.Monad (join)
+import Control.Monad (join, void)
+import Data.Foldable (for_)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Data.Traversable (for)
@@ -17,12 +18,15 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 
 
 import Text (tshow)
-import App (AppM, _appDBPool, _yandexConfig)
+import App (AppM, _appDBPool, _yandexConfig, ChatKey (WAREHOUSE))
 import Infrastructure.Services.Yandex.Warehouse
 import Infrastructure.Services.Yandex (initWarehouse)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Services.Yandex.Error (getError, getHttpException)
 import Infrastructure.Database (getYandexWarehouseId, saveYandexWarehouseId)
 import Infrastructure.Services.Yandex.Config (YandexConfig (..))
 import qualified Infrastructure.Services.Yandex.Config as YA
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Infrastructure.Services.Yandex.Types (PlatformStationId (..), WarehouseCreateResp (..), WarehouseCreateReq (..))
 
 
@@ -49,7 +53,12 @@ ensureWarehousePlatformId = do
                            ls (encodePretty initReq)
           eYaResp <- initWarehouse initReq
           case eYaResp of
-            Left err -> pure $ Left $ tshow err
+            Left err -> do
+              let maybeHttpExcep = getHttpException err
+              for_ maybeHttpExcep $ \excep -> do
+                let errMsg = escapeMarkdownV2 $ "‼️ " <> getError excep
+                void $ sendOrEditTelegramMessage mempty errMsg WAREHOUSE Nothing Nothing Nothing
+              pure $ Left $ tshow err
             Right WarehouseCreateResp {stationId} -> do
               cfg <- ask
               let pool = _appDBPool cfg

@@ -66,6 +66,7 @@ import Infrastructure.Database
        , getYandexOrderDetailsForPricing
        , storeYandexOrderParticulars
        , getChatDetails
+       , resetOrderDimensionsAndWeight
        , PatchedOrderDetails (..)
        , PatchedOrderDetailsItem (..)
        , YandexOrderDetailsForPricing (..))
@@ -82,6 +83,7 @@ import Workers.SimpleOrderOrchestrator (try', notifyOrderChannelAboutError)
 import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2))
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
 import Infrastructure.Services.Sdek.Types.Error
+import Infrastructure.Services.Yandex.Error (getError, getHttpException)
 import Infrastructure.Services.Yandex (calculatePrice, createOrder, fetchParcelLabel, fetchTrackingUrl)
 import Infrastructure.Services.Yandex.Order (biDeliveryCost, Item (..), Place (..), PhysicalDimensions (..), ibdAssessedUnitPrice, psPlatformId, drnPlatformStation, srnPlatformStation)
 import Infrastructure.Services.Yandex.Types (sharingUrl, YandexCreateOrderResp, requestId, PlacePhysicalDimensions (..), PlatformStationId (..), YandexCreateOrderReq (..), PriceCalculatorReq (..), PriceCalculatorResp (..))
@@ -390,30 +392,40 @@ doYandexCalculation orderId = do
                   { biDeliveryCost = intPrice }
               , places = [Place dimensions orderId]
               }
-        resp <- createOrder orderReq
-        ePdfContent <- generateParcelLabel (requestId resp)
-        case ePdfContent of
-          Left err ->
-            -- reset dimensions, weight and try again
-            $(logTM) ErrorS $ "Failed to download the receipt PDF." <> ls err
-          Right pdfBytes -> do
-            -- all or nothing 
-            storeYandexOrderParticulars orderId (requestId resp) pdfBytes pool
-            -- 1. We have the file. Now, send it to the order (ORDER) channel.
-            todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
-            let caption = 
-                  "📄 Новая квитанция Yandex для заказа `" <> 
-                  escapeMarkdownV2 orderId <> 
-                  "`\n" <> 
-                  yodpCustomer <>
-                  "\n" <> 
-                  escapeMarkdownV2 todayHashtag
-            let filename = "receipt-" <> orderId <> ".pdf"
-             -- 2. Call the new service function
-            void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
-            $(logTM) InfoS $ "Successfully sent Yandex receipt for " <> ls orderId <> " to admin channel."
-            -- send message about price and tracking number to the telegram channel
-            forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) cal
+        eOrderResp <- createOrder orderReq
+        case eOrderResp of
+          -- extract error and send to the order channel
+          Left err -> do
+            $(logTM) ErrorS $ "createOrder failure: " <> ls (show err)
+            void $ resetOrderDimensionsAndWeight orderId pool
+            let maybeHttpExcep = getHttpException err
+            for_ maybeHttpExcep $ \excep -> do
+              let errMsg = escapeMarkdownV2 $ "‼️ " <> getError excep
+              void $ sendOrEditTelegramMessage mempty errMsg ORDER Nothing Nothing Nothing
+          Right resp -> do
+            ePdfContent <- generateParcelLabel (requestId resp)
+            case ePdfContent of
+              Left err ->
+                -- reset dimensions, weight and try again
+                $(logTM) ErrorS $ "Failed to download the receipt PDF." <> ls err
+              Right pdfBytes -> do
+                -- all or nothing 
+                storeYandexOrderParticulars orderId (requestId resp) pdfBytes pool
+                -- 1. We have the file. Now, send it to the order (ORDER) channel.
+                todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
+                let caption = 
+                      "📄 Новая квитанция Yandex для заказа `" <> 
+                      escapeMarkdownV2 orderId <> 
+                      "`\n" <> 
+                      yodpCustomer <>
+                      "\n" <> 
+                      escapeMarkdownV2 todayHashtag
+                let filename = "receipt-" <> orderId <> ".pdf"
+                -- 2. Call the new service function
+                void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
+                $(logTM) InfoS $ "Successfully sent Yandex receipt for " <> ls orderId <> " to admin channel."
+                -- send message about price and tracking number to the telegram channel
+                forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) cal
 
 
 -- | Converts "203.81 RUB" -> 20381

@@ -196,16 +196,15 @@ calculatePrice req = do
   handleApiResponse @_ @PriceCalculatorResp $(currentModule) eResp $ pure
 
 
-createOrder :: YandexCreateOrderReq -> AppM YandexCreateOrderResp
+createOrder :: YandexCreateOrderReq -> AppM (Either HttpError YandexCreateOrderResp)
 createOrder req = do
   cfg <- fmap _yandexConfig ask
   manager <- fmap _configHttpManager ask
   let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/create"
   let token = mkDefToken (apiKey cfg)
   let header = ("Accept-Language", "ru")
-  eResp <- postReq manager url req [header] (Just token)
-  handleApiResponse @_ @YandexCreateOrderResp $(currentModule) eResp $ pure
-
+  postReq @YandexCreateOrderResp manager url req [header] (Just token)
+  
 fetchParcelLabel :: YandexRequestId -> AppM (Either HttpException B.ByteString)
 fetchParcelLabel orderId = do
   cfg <- fmap _yandexConfig ask

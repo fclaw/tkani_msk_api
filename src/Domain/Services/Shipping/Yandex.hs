@@ -17,6 +17,7 @@ import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import  Data.List (find, maximumBy)
 import  Data.Ord (comparing)
+import Data.Foldable (for_)
 import Data.Time.Calendar (addDays, showGregorian)
 import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay, Day)
 
@@ -25,6 +26,7 @@ import App (AppM, _yandexConfig, _appDBPool, ChatKey(PICKUP), readTVarIO, _yande
 import API.Types (OrderStatus (ScheduledForPickup))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Yandex.Shipment
+import Infrastructure.Services.Yandex.Error (getError, getHttpException)
 import Infrastructure.Services.Yandex (generateManifest, createShipment, getPickupOptions)
 import qualified Infrastructure.Services.Yandex.Types as Ty (PickupOptionsRespItem (..))
 import Infrastructure.Services.Yandex.Types (PickupOptionsResp (..), PickupOptionsReq (..), ManifestReq (..), CreateShipmentResp (..), CreateShipmentReq (..), PlatformStationId (..))
@@ -121,8 +123,11 @@ prepareAndSchedulePickup = do
                     case ePickupId of
                       Left err -> do
                         $(logTM) ErrorS $ ls $ "createPickup failed: " <> tshow err
-                        let error = escapeMarkdownV2 $ "‼️ Error in calling createPickup: " <> tshow err
-                        fmap (const False) $ sendOrEditTelegramMessage mempty error PICKUP Nothing Nothing Nothing
+                        let maybeHttpExcep = getHttpException err
+                        for_ maybeHttpExcep $ \excep -> do
+                          let errMsg = escapeMarkdownV2 $ "‼️ " <> getError excep
+                          void $ sendOrEditTelegramMessage mempty errMsg PICKUP Nothing Nothing Nothing
+                        pure False
                       Right CreateShipmentResp {pickupId} -> do
                         eBdRes <- savePickupDetails pickupId (addDays 1 today) pool
                         case eBdRes of 

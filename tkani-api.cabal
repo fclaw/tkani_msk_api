@@ -138,6 +138,7 @@ library
       Infrastructure.Services.Types
       Infrastructure.Services.Yandex
       Infrastructure.Services.Yandex.CachedPickupPoints
+      Infrastructure.Services.Yandex.Error
       Infrastructure.Services.Yandex.Geo
       Infrastructure.Services.Yandex.Order
       Infrastructure.Services.Yandex.Shipment
