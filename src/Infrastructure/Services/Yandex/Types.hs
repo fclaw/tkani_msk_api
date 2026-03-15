@@ -73,19 +73,20 @@ data CoordinateInterval =
 data PickupPointsReq = 
      PickupPointsReq
      { pprGeoId           :: Maybe GeoId -- ^ The geographic ID for which to list pickup points (e.g., 213 for Moscow)
-     , pprPaymentMethod   :: PaymentMethod -- ^ Filter pickup points by supported payment method
+     , pprPaymentMethods  :: [PaymentMethod] -- ^ Filter pickup points by supported payment method
      , pprType            :: PickupPointType -- ^ Filter pickup points by type (Terminal, Warehouse, PickupPoint)
      , pprLatitude        :: Maybe CoordinateInterval -- ^ Optional latitude interval for filtering pickup points
      , pprLongitude       :: Maybe CoordinateInterval -- ^ Optional longitude interval for filtering pickup points
      } deriving (Show, Eq, Generic)
 
 defaultPickupPointsReq :: PickupPointsReq
-defaultPickupPointsReq = PickupPointsReq
-  { pprGeoId         = Just 213 -- Placeholder, should be set to a valid GeoId when making the request
-  , pprPaymentMethod = CardOnReceipt -- Default to AlreadyPaid, can be changed as needed
-  , pprType          = Enums.PickupPoint -- Default to PickupPoint, can be changed to Terminal or Warehouse as needed
-  , pprLatitude      = Nothing
-  , pprLongitude     = Nothing
+defaultPickupPointsReq = 
+  PickupPointsReq
+  { pprGeoId          = Just 213 -- Placeholder, should be set to a valid GeoId when making the request
+  , pprPaymentMethods = [PostPay, CardOnReceipt] -- Default to AlreadyPaid and PostPay, can be changed as needed
+  , pprType           = Enums.PickupPoint -- Default to PickupPoint, can be changed to Terminal or Warehouse as needed
+  , pprLatitude       = Nothing
+  , pprLongitude      = Nothing
   }
 
 
