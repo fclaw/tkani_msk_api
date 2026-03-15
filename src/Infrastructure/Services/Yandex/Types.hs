@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Infrastructure.Services.Yandex.Types where
 
@@ -14,6 +15,7 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 import Data.Time.Clock (UTCTime)
 import Data.Time.Calendar (Day)
+import qualified Data.Vector as V
 
 
 import Text (camelToSnake, recordLabelModifier)
@@ -265,6 +267,24 @@ instance FromJSON PickupStatusRespItem where parseJSON = genericParseJSON jsonOp
 data PickupStatusResp = PickupStatusResp { pickup :: PickupStatusRespItem } deriving (Show, Eq, Generic)
 
 instance FromJSON PickupStatusResp where parseJSON = genericParseJSON jsonOptions 
+
+data PickupPointAddressReq = PickupPointAddressReq { pickupPointIds :: [Text] } deriving (Show, Eq, Generic)
+
+instance ToJSON PickupPointAddressReq where  toJSON = genericToJSON jsonOptions
+
+newtype PickupPointAddressResp = PickupPointAddressResp Text 
+
+instance FromJSON PickupPointAddressResp where
+  parseJSON = withArray "PickupPointAddressResp" $ \vec -> 
+    if V.null vec
+      then fail "Empty results vector"
+      else 
+        -- Process ONLY the first element of the vector
+        let firstItem = V.head vec
+        in flip (withObject "PickupPointAddressResp:PickupPoint") firstItem $ \obj -> do
+             addrObj <- obj .: "address"
+             PickupPointAddressResp <$> addrObj .: "full_address"
+
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)

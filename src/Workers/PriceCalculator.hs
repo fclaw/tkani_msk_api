@@ -83,10 +83,10 @@ import Workers.SimpleOrderOrchestrator (try', notifyOrderChannelAboutError)
 import Infrastructure.Services.Telegram (disableLinkPreviewOption, ParseMode(MarkdownV2))
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState (..))
 import Infrastructure.Services.Sdek.Types.Error
+import Infrastructure.Services.Yandex.Types
 import Infrastructure.Services.Yandex.Error (getError, getHttpException)
-import Infrastructure.Services.Yandex (calculatePrice, createOrder, fetchParcelLabel, fetchTrackingUrl)
+import Infrastructure.Services.Yandex (calculatePrice, createOrder, fetchParcelLabel, fetchTrackingUrl, fetchPickupPointAddress)
 import Infrastructure.Services.Yandex.Order (biDeliveryCost, Item (..), Place (..), PhysicalDimensions (..), ibdAssessedUnitPrice, psPlatformId, drnPlatformStation, srnPlatformStation)
-import Infrastructure.Services.Yandex.Types (sharingUrl, YandexCreateOrderResp, requestId, PlacePhysicalDimensions (..), PlatformStationId (..), YandexCreateOrderReq (..), PriceCalculatorReq (..), PriceCalculatorResp (..))
 
 
 -- ADT to parse the notification payload
@@ -369,7 +369,8 @@ doYandexCalculation orderId = do
       Error err -> $(logTM) ErrorS $ "YandexCreateOrderReq parse failure: " <> ls err
       Success draftOrderReq@YandexCreateOrderReq {..} -> do
         let dimensions = PhysicalDimensions yodpLength yodpWidth yodpHeight yodpWeight
-        let dest = PlatformStationId (psPlatformId (fromJust (drnPlatformStation destination)))
+        let pickupId = psPlatformId (fromJust (drnPlatformStation destination))
+        let dest = PlatformStationId pickupId
         let src = PlatformStationId (psPlatformId (srnPlatformStation source))
         let priceCalcReq = 
              PriceCalculatorReq
@@ -425,7 +426,7 @@ doYandexCalculation orderId = do
                 void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
                 $(logTM) InfoS $ "Successfully sent Yandex receipt for " <> ls orderId <> " to admin channel."
                 -- send message about price and tracking number to the telegram channel
-                forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) cal
+                forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) pickupId cal
 
 
 -- | Converts "203.81 RUB" -> 20381
@@ -467,9 +468,10 @@ generateParcelLabel orderId = go (1 :: Int)
         Left err -> pure $ Left $ "API call failed: " <> tshow err
 
 
-sendPriceAndTrackingNumber :: Text -> Text -> PriceCalculatorResp -> AppM ()
-sendPriceAndTrackingNumber orderId yandexOrderId PriceCalculatorResp {..} = do
+sendPriceAndTrackingNumber :: Text -> Text -> Text -> PriceCalculatorResp -> AppM ()
+sendPriceAndTrackingNumber orderId yandexOrderId pickupId PriceCalculatorResp {..} = do
   trackingUrl <- fetchTrackingUrl yandexOrderId
+  PickupPointAddressResp address <- fetchPickupPointAddress $ PickupPointAddressReq [pickupId]
   cfg <- ask
   let pool = _appDBPool cfg
   eDbRes <- getChatDetails orderId pool
@@ -482,7 +484,8 @@ sendPriceAndTrackingNumber orderId yandexOrderId PriceCalculatorResp {..} = do
             HM.fromList 
             [ ("deliveryCost", pcrPricingTotal)
             , ("deliveryDays", tshow pcrDeliveryDays)
-            , ("orderId", orderId)
+            , ("orderId",      orderId)
+            , ("address",      address)
             ]
       let button = 
             object [

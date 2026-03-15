@@ -20,14 +20,16 @@ endpoints.
 See official documentation at: https://yandex.ru/support/delivery-profile/ru/api/
 -}
 
-{-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Infrastructure.Services.Yandex 
        ( detectLocation
@@ -43,11 +45,12 @@ module Infrastructure.Services.Yandex
        , createShipment
        , getPickupOptions
        , fetchPickupStatus
+       , fetchPickupPointAddress
        , module Yandex.Types
        , PlatformId
        ) where
 
-import Data.Aeson (toJSON)
+import Data.Aeson (toJSON, FromJSON, ToJSON)
 import Katip (logTM, Severity(..), ls)
 import Data.Text (Text, unpack)
 import Data.Functor ((<&>))
@@ -239,14 +242,19 @@ fetchOrderParticulars orderId =  do
   eResp <- getReq manager url params [] (Just token)
   handleApiResponse @_ @OrderParticulars $(currentModule) eResp $ pure
 
-initWarehouse :: WarehouseCreateReq -> AppM (Either HttpError WarehouseCreateResp)
-initWarehouse req = do
+-- post req helper 
+makePostReq :: forall req resp . (ToJSON req, FromJSON resp) => Text -> req -> AppM (Either HttpError resp)
+makePostReq url req = do
   cfg <- fmap _yandexConfig ask
   manager <- fmap _configHttpManager ask
-  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/warehouses/create"
+  let url = show HTTPS <> unpack (apiUrl cfg) <> url
   let token = mkDefToken (apiKey cfg)
-  postReq @WarehouseCreateResp manager url req [] (Just token)
+  postReq @resp manager url req [] (Just token)
 
+
+initWarehouse :: WarehouseCreateReq -> AppM (Either HttpError WarehouseCreateResp)
+initWarehouse = makePostReq "/api/b2b/platform/warehouses/create"
+{-# INLINE initWarehouse #-}
 
 generateManifest :: ManifestReq -> AppM (Either Text B.ByteString)
 generateManifest req = do
@@ -263,25 +271,18 @@ generateManifest req = do
   fmap handleResp $ liftIO $ try @HttpException (postWith opts url (toJSON req))
 
 createShipment :: CreateShipmentReq -> AppM (Either HttpError CreateShipmentResp)
-createShipment req = do
-  cfg <- fmap _yandexConfig ask
-  manager <- fmap _configHttpManager ask
-  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/create"
-  let token = mkDefToken (apiKey cfg)
-  postReq @CreateShipmentResp manager url req [] (Just token)
+createShipment = makePostReq "/api/b2b/platform/pickups/create"
+{-# INLINE createShipment #-}
 
 getPickupOptions :: PickupOptionsReq -> AppM (Either HttpError PickupOptionsResp)
-getPickupOptions req = do
-  cfg <- fmap _yandexConfig ask
-  manager <- fmap _configHttpManager ask
-  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/pickup-options"
-  let token = mkDefToken (apiKey cfg)
-  postReq @PickupOptionsResp manager url req [] (Just token)
+getPickupOptions = makePostReq "/api/b2b/platform/pickups/pickup-options"
+{-# INLINE getPickupOptions #-}
 
 fetchPickupStatus :: PickupStatusReq -> AppM (Either HttpError PickupStatusResp)
-fetchPickupStatus req = do
-  cfg <- fmap _yandexConfig ask
-  manager <- fmap _configHttpManager ask
-  let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pickups/retrieve"
-  let token = mkDefToken (apiKey cfg)
-  postReq @PickupStatusResp manager url req [] (Just token)
+fetchPickupStatus = makePostReq "/api/b2b/platform/pickups/retrieve"
+{-# INLINE fetchPickupStatus #-}
+
+fetchPickupPointAddress :: PickupPointAddressReq -> AppM PickupPointAddressResp
+fetchPickupPointAddress req = do
+  eResp <- makePostReq "/api/b2b/platform/pickup-points/list" req
+  handleApiResponse $(currentModule) eResp $ pure
