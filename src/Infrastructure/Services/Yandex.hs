@@ -283,8 +283,5 @@ fetchPickupStatus = makePostReq "/api/b2b/platform/pickups/retrieve"
 
 fetchPickupPointAddress :: PickupPointAddressReq -> AppM PickupPointAddressResp
 fetchPickupPointAddress req = do
-  liftIO $ print req
-  cfg <- fmap _yandexConfig ask
   eResp <- makePostReq "/api/b2b/platform/pickup-points/list" req
-  liftIO $ print eResp
   handleApiResponse $(currentModule) eResp $ pure
