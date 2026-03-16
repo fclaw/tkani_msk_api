@@ -272,18 +272,23 @@ data PickupPointAddressReq = PickupPointAddressReq { pickupPointIds :: [Text] } 
 
 instance ToJSON PickupPointAddressReq where  toJSON = genericToJSON jsonOptions
 
-newtype PickupPointAddressResp = PickupPointAddressResp Text 
+newtype PickupPointAddressResp = PickupPointAddressResp Text
 
 instance FromJSON PickupPointAddressResp where
-  parseJSON = withArray "PickupPointAddressResp" $ \vec -> 
-    if V.null vec
-      then fail "Empty results vector"
-      else 
-        -- Process ONLY the first element of the vector
-        let firstItem = V.head vec
-        in flip (withObject "PickupPointAddressResp:PickupPoint") firstItem $ \obj -> do
+  parseJSON = withObject "YandexPickupPointResponse" $ \root -> do
+    -- 1. Drill into the "points" field which contains the array
+    pointsVec <- root .: "points"
+    
+    -- 2. Safety check: Handle empty list
+    case V.uncons pointsVec of
+      Nothing -> fail "Yandex returned an empty 'points' array."
+      Just (firstItem, _) -> do
+        -- 3. Extract from the first element of the Vector
+        -- using an anonymous object parser to avoid nested ADTs
+        let makeADT obj = do
              addrObj <- obj .: "address"
              PickupPointAddressResp <$> addrObj .: "full_address"
+        withObject "FirstPickupPoint" makeADT firstItem
 
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)

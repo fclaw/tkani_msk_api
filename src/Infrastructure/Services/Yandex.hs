@@ -244,13 +244,12 @@ fetchOrderParticulars orderId =  do
 
 -- post req helper 
 makePostReq :: forall req resp . (ToJSON req, FromJSON resp) => Text -> req -> AppM (Either HttpError resp)
-makePostReq url req = do
+makePostReq urlPiece req = do
   cfg <- fmap _yandexConfig ask
   manager <- fmap _configHttpManager ask
-  let url = show HTTPS <> unpack (apiUrl cfg) <> url
+  let url = show HTTPS <> unpack (apiUrl cfg) <> unpack urlPiece
   let token = mkDefToken (apiKey cfg)
   postReq @resp manager url req [] (Just token)
-
 
 initWarehouse :: WarehouseCreateReq -> AppM (Either HttpError WarehouseCreateResp)
 initWarehouse = makePostReq "/api/b2b/platform/warehouses/create"
@@ -284,5 +283,8 @@ fetchPickupStatus = makePostReq "/api/b2b/platform/pickups/retrieve"
 
 fetchPickupPointAddress :: PickupPointAddressReq -> AppM PickupPointAddressResp
 fetchPickupPointAddress req = do
+  liftIO $ print req
+  cfg <- fmap _yandexConfig ask
   eResp <- makePostReq "/api/b2b/platform/pickup-points/list" req
+  liftIO $ print eResp
   handleApiResponse $(currentModule) eResp $ pure
