@@ -105,32 +105,26 @@ createShipment = do
             let errMsg = escapeMarkdownV2 $ "‼️ YANDEX: " <> getError excep
             void $ sendOrEditTelegramMessage mempty errMsg PICKUP Nothing Nothing Nothing
         Right Ya.PickupOptionsResp {Ya.pickupOptions} -> do
-          let mInterval = selectPickupWindow pickupOptions tomorrow
-          case mInterval of 
-            Nothing -> do
-              $(logTM) WarningS "pickup interval has not been found"
-              let warning = escapeMarkdownV2 $ "‼️ YANDEX: pickup interval has not been found"
-              void $ sendOrEditTelegramMessage mempty warning PICKUP Nothing Nothing Nothing
-            Just interval -> do
-              let shipmentReq =
-                    Ya.CS.CreateShipmentReq
-                    { Ya.CS.parameters              = makePickupParams 
-                    , Ya.CS.pickupLocalDate         = tshow tomorrow
-                    , Ya.CS.pickupLocalTimeInterval = interval
-                    , Ya.CS.stationId               = warehouseId
-                    }
-              ePickupId <- Ya.createShipment shipmentReq
-              case ePickupId of
-                Left err -> do
-                  $(logTM) ErrorS $ ls $ "createPickup failed: " <> tshow err
-                  let maybeHttpExcep = getHttpException err
-                  for_ maybeHttpExcep $ \excep -> do
-                    let errMsg = escapeMarkdownV2 $ "‼️ YANDEX: " <> getError excep
-                    void $ sendOrEditTelegramMessage mempty errMsg PICKUP Nothing Nothing Nothing
-                Right Ya.CreateShipmentResp {Ya.pickupId} -> do
-                  void $ savePickupDetails pickupId tomorrow pool
-                  let msg = escapeMarkdownV2 $ "YANDEX: pickup is scheduled from " <> from  interval <> ", to " <> to interval 
-                  void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
+          let interval = selectPickupWindow pickupOptions tomorrow
+          let shipmentReq =
+                Ya.CS.CreateShipmentReq
+                { Ya.CS.parameters              = makePickupParams 
+                , Ya.CS.pickupLocalDate         = tshow tomorrow
+                , Ya.CS.pickupLocalTimeInterval = interval
+                , Ya.CS.stationId               = warehouseId
+                }
+          ePickupId <- Ya.createShipment shipmentReq
+          case ePickupId of
+            Left err -> do
+              $(logTM) ErrorS $ ls $ "createPickup failed: " <> tshow err
+              let maybeHttpExcep = getHttpException err
+              for_ maybeHttpExcep $ \excep -> do
+                let errMsg = escapeMarkdownV2 $ "‼️ YANDEX: " <> getError excep
+                void $ sendOrEditTelegramMessage mempty errMsg PICKUP Nothing Nothing Nothing
+            Right Ya.CreateShipmentResp {Ya.pickupId} -> do
+              void $ savePickupDetails pickupId tomorrow pool
+              let msg = escapeMarkdownV2 $ "YANDEX: pickup is scheduled from " <> from  interval <> ", to " <> to interval 
+              void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
 
 -- | Implementation of the aggregate calculation for Yandex Courier Pickup
@@ -147,7 +141,7 @@ makePickupParams  =
 
 -- | Selects the best available pickup window for a specific date
 -- | Targeted preference: 12:00 - 18:00
-selectPickupWindow :: [Ty.PickupOptionsRespItem] -> Day -> Maybe LocalTimeInterval
+selectPickupWindow :: [Ty.PickupOptionsRespItem] -> Day -> LocalTimeInterval
 selectPickupWindow options targetDay =
     let 
         -- 1. Format date to "YYYY-MM-DD" to match Yandex string
@@ -155,10 +149,11 @@ selectPickupWindow options targetDay =
         
         -- 2. Find the entry for the requested day
         mDayItem = find (\item -> Ty.pickupLocalDate item == targetDateStr) options
-    in mDayItem <&> \dayItem ->
+        mInterval = mDayItem <&> \dayItem ->
           -- 3. Rank intervals by how many 'preferred hours' they contain
           -- (Preferred: 12, 13, 14, 15, 16, 17, 18)
           maximumBy (comparing (scoreInterval 12 18)) (Ty.pickupLocalTimeIntervals dayItem)
+    in fromMaybe defLocalTimeInterval mInterval
 
 
 -- | Scores an interval by checking if our target start/end hours fit inside.

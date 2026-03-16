@@ -42,6 +42,9 @@ data LocalTimeInterval = LocalTimeInterval
   , to   :: Text -- ^ Format: "HH:MM"
   } deriving (Show, Eq, Generic)
 
+defLocalTimeInterval :: LocalTimeInterval
+defLocalTimeInterval = LocalTimeInterval "13:00" "15:00"
+
 instance ToJSON LocalTimeInterval where 
   toJSON = genericToJSON yandexOptions
 
