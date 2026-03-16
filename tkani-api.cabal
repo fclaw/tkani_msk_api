@@ -43,6 +43,7 @@ library
       Workers.ShelfOrderRegister
       Workers.YandexOrderStatusPoller
       Workers.YandexPickupStatusPoller
+      Workers.YandexShipmentJanitor
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

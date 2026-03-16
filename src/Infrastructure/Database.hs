@@ -115,6 +115,8 @@ module Infrastructure.Database
   , fetchYandexPickupStatus
   , completeYandexPickup
   , resetOrderDimensionsAndWeight
+  , fetchEmptyPickupForTomorrow
+  , eraseEmptyTomorrowPickup
   ) where
 
 
@@ -3636,4 +3638,33 @@ resetOrderDimensionsAndWeight orderId pool =
            height = NULL,
            actual_weight_grams = NULL
        WHERE id = $1 :: text   
+      |]
+
+fetchEmptyPickupForTomorrow :: Day -> Hasql.Pool -> AppM (Either Text (Maybe Text))
+fetchEmptyPickupForTomorrow day pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement 
+        ( day
+        , encodeToText Scheduled) $
+        [Hasql.maybeStatement|
+         SELECT
+          ycp.pickup_id :: text
+         FROM yandex_courier_pickups AS ycp
+         LEFT JOIN orders AS o
+         ON ycp.id = o.yandex_courier_pickup_id
+         WHERE ycp.pickup_date = $1 :: date
+         AND ycp.status = $2 :: text
+         AND o.id IS NULL
+         LIMIT 1
+        |]
+
+eraseEmptyTomorrowPickup :: Text -> Hasql.Pool -> AppM (Either Text ())
+eraseEmptyTomorrowPickup pickupId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (pickupId) $
+      [Hasql.resultlessStatement|
+       DELETE FROM yandex_courier_pickups
+       WHERE pickup_id = $1 :: text
       |]

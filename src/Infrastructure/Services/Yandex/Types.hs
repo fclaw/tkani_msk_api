@@ -291,6 +291,11 @@ instance FromJSON PickupPointAddressResp where
         withObject "FirstPickupPoint" makeADT firstItem
 
 
+data CancelPickupReq = CancelPickupReq { pickupId :: Text } deriving (Show, Eq, Generic)
+
+instance ToJSON CancelPickupReq where  toJSON = genericToJSON jsonOptions
+
+
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorReq)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pcr" } ''PriceCalculatorResp)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ci" } ''CoordinateInterval)

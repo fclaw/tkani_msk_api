@@ -46,6 +46,7 @@ module Infrastructure.Services.Yandex
        , getPickupOptions
        , fetchPickupStatus
        , fetchPickupPointAddress
+       , cancelShipment
        , module Yandex.Types
        , PlatformId
        ) where
@@ -285,3 +286,7 @@ fetchPickupPointAddress :: PickupPointAddressReq -> AppM PickupPointAddressResp
 fetchPickupPointAddress req = do
   eResp <- makePostReq "/api/b2b/platform/pickup-points/list" req
   handleApiResponse $(currentModule) eResp $ pure
+
+cancelShipment :: CancelPickupReq -> AppM (Either HttpError ())
+cancelShipment = makePostReq "/api/b2b/platform/pickups/cancel"
+{-# INLINE cancelShipment #-}

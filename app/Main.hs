@@ -95,6 +95,7 @@ import Workers.SimpleOrderOrchestrator (runSimpleOrderOrchestrator)
 import Workers.ShelfOrderRegister (runShelfOrderRegister)
 import Workers.YandexPickupStatusPoller (runYandexPickupStatusPoller)
 import Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller)
+import Workers.YandexShipmentJanitor (runYandexShipmentJanitor)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -132,6 +133,7 @@ data Workers =
       | ShelfOrderRegister
       | YandexOrderStatusPoller
       | YandexPickupStatusPoller
+      | YandexShipmentJanitor
 
 
 
@@ -162,6 +164,7 @@ instance Show Workers where
   show ShelfOrderRegister               = "Shelf Order Register"
   show YandexOrderStatusPoller          = "Yandex Order Status Poller"
   show YandexPickupStatusPoller         = "Yandex Pickup Status Poller"
+  show YandexShipmentJanitor            = "Yandex Shipment Janitor"
 
 
 --
@@ -585,7 +588,18 @@ main = do
                         appMToHandler (runYandexPickupStatusPoller)
                           >>= showErrorInWorker
                             YandexPickupStatusPoller)
-                in [courierWorker, sdekCourierStatusPoller, sdekPickupAppStatusPoller, yandexPickupStatusPoller]
+                    yandexShipmentJanitor =
+                     (YandexShipmentJanitor,
+                      runForever 5 $
+                        appMToHandler (runYandexShipmentJanitor)
+                          >>= showErrorInWorker
+                            YandexShipmentJanitor)
+                in [ courierWorker
+                   , sdekCourierStatusPoller
+                   , yandexShipmentJanitor
+                   , sdekPickupAppStatusPoller
+                   , yandexPickupStatusPoller
+                   ]
               | otherwise = []
 
         putStrLn "Spawning concurrent workers..."
