@@ -111,6 +111,7 @@ module Infrastructure.Database
   , getYandexWarehouseId
   , saveYandexWarehouseId
   , fetchOrdersForYandexCourierPickup
+  , linkOrdersToPickup
   , savePickupDetails
   , fetchYandexPickupStatus
   , completeYandexPickup
@@ -3563,17 +3564,26 @@ saveYandexWarehouseId localWhId yaWhId pool =
           updated_at = NOW()
       |]
 
-fetchOrdersForYandexCourierPickup :: OrderStatus -> Hasql.Pool -> AppM (Either Text (Maybe [OrdersForYandexCourierPickupItem]))
+fetchOrdersForYandexCourierPickup :: OrderStatus -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, [OrdersForYandexCourierPickupItem])))
 fetchOrdersForYandexCourierPickup status pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
       Hasql.statement (encodeToText status) $
-      rmap (fmap (map (extractADT . convertFromJson @OrdersForYandexCourierPickupItem) . V.toList))
+      rmap (fmap (second (map (extractADT . convertFromJson @OrdersForYandexCourierPickupItem) . V.toList)))
       [Hasql.maybeStatement|
+        WITH target_pickup AS (
+          SELECT id
+          FROM yandex_courier_pickups
+          WHERE pickup_date = (now() + INTERVAL '1 day')::date
+          AND status = 'scheduled'
+          LIMIT 1
+        )
         SELECT
+        (SELECT id FROM target_pickup) :: int8 AS pickup_id,
          COALESCE (
          array_agg(
          jsonb_build_object(
+          'order_id', o.id,
           'request_id', yo.order_id :: text,
           'weight', o.actual_weight_grams :: int4,
           'length', o.length :: int4, 
@@ -3583,13 +3593,22 @@ fetchOrdersForYandexCourierPickup status pool =
         FROM orders AS o
         INNER JOIN yandex_orders AS yo
         ON o.yandex_order_id = yo.id
+        LEFT JOIN yandex_courier_pickups AS ycp
+        ON o.yandex_courier_pickup_id = ycp.id
         WHERE o.status = CAST($1 :: text AS order_status)
-        AND (
-         SELECT COUNT(*) = 0
-         FROM yandex_courier_pickups
-         WHERE pickup_date = (now() + INTERVAL '1 day')::date)
+        AND ycp.id IS NULL
       |]
 
+linkOrdersToPickup :: Int64 -> [Text] -> Hasql.Pool -> AppM (Either Text ())
+linkOrdersToPickup pickupId orderIds pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (pickupId, V.fromList orderIds) $
+     [Hasql.resultlessStatement|
+      UPDATE orders
+      SET yandex_courier_pickup_id = $1 :: int8
+      WHERE id = ANY($2 :: text[])
+     |]
 
 savePickupDetails :: Text -> Day ->  Hasql.Pool -> AppM (Either Text ())
 savePickupDetails pickupId date pool =

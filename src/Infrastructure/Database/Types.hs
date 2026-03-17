@@ -445,7 +445,8 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yodp" } 
 
 data OrdersForYandexCourierPickupItem = 
      OrdersForYandexCourierPickupItem
-     { oycpiRequestId :: Text
+     { oycpiOrderId   :: Text
+     , oycpiRequestId :: Text
      , oycpiWeight    :: Int32
      , oycpiLength    :: Int32
      , oycpiWidth     :: Int32

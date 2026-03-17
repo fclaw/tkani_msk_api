@@ -32,7 +32,7 @@ import qualified Infrastructure.Services.Yandex.Types as Ty (PickupOptionsRespIt
 import Infrastructure.Services.Yandex.Types (PickupOptionsResp (..), PickupOptionsReq (..), ManifestReq (..), CreateShipmentResp (..), CreateShipmentReq (..), PlatformStationId (..))
 import Infrastructure.Services.Yandex.Config (pickupParcels, pickupWeight, pickupWindow, fromHour, toHour)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, sendDocument)
-import Infrastructure.Database (fetchOrdersForYandexCourierPickup, savePickupDetails, OrdersForYandexCourierPickupItem (..))
+import Infrastructure.Database (fetchOrdersForYandexCourierPickup, linkOrdersToPickup, OrdersForYandexCourierPickupItem (..))
 
 
 prepareAndSchedulePickup :: AppM Bool
@@ -55,8 +55,8 @@ prepareAndSchedulePickup = do
           "DB error while fetching \
           \ paid orders: " <> tshow dbErr
     Right Nothing   -> fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
-    Right (Just []) -> fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
-    Right (Just orders) -> do
+    Right (Just (_, [])) -> fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
+    Right (Just (pickupId, orders)) -> do
       -- We have enough orders to schedule a pickup
       $(logTM) InfoS "Scheduling YANDEX courier pickup for orders..."          
       -- ... (the rest of your logic to call the SDEK API) ...
@@ -77,5 +77,7 @@ prepareAndSchedulePickup = do
                   (tshow (addDays 1 today))
           let filename = "pickup-manifest-" <> tshow today <> ".pdf"
           -- 2. Call the new service function
-          eTelResp <- sendDocument PICKUP caption filename pdfBytes "application/pdf"
+          void $ sendDocument PICKUP caption filename pdfBytes "application/pdf"
+          -- link
+          linkOrdersToPickup pickupId (map oycpiOrderId orders) pool
           fmap (const True) $ $(logTM) InfoS $ "Successfully sent YANDEX pickup manifest for " <> ls (tshow today)
