@@ -6,7 +6,7 @@
 module Workers.ShelfOrderRegister.Yandex (place) where
 
 import Data.Text (Text)
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Control.Monad (join, void)
 import Data.Coerce (coerce)
 import Data.Aeson (toJSON)
@@ -40,6 +40,10 @@ wrap action error = withExceptT error (ExceptT action)
 wrapOrCancel :: AppM (Either e a) -> (e -> PlaceOrderError) -> AppM () -> ExceptT PlaceOrderError AppM a
 wrapOrCancel action errorWrapper cleanup = wrap action errorWrapper `catchE` \err -> lift cleanup >> throwE err
 {-# INLINE wrapOrCancel #-}
+
+-- Helper for kopecks
+toKopecks :: Double -> Int32
+toKopecks = round . (* 100)
 
 place :: Int64 -> InitiateShelfShipment -> AppM (Either Text (Maybe ShelfShipmentDetails))
 place userId init = do
@@ -94,8 +98,8 @@ mkYaOrder orderId sourcePointId destPointId ShelfItemsForShipment {..} =
                , iArticle        = oiArticle
                , iBillingDetails =
                   ItemBillingDetails 
-                  { ibdUnitPrice         = round oiTotalPrice
-                  , ibdAssessedUnitPrice = round oiTotalPrice
+                  { ibdUnitPrice         = toKopecks oiTotalPrice
+                  , ibdAssessedUnitPrice = toKopecks oiTotalPrice
                   }
                , iPlaceBarcode   = orderId
                }

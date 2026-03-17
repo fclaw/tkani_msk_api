@@ -9,7 +9,7 @@ module Workers.SimpleOrderOrchestrator.Yandex (place, PlaceOrderError (..)) wher
 
 import Katip (logTM, Severity (..), ls)
 import Data.Text (Text)
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Data.Aeson (toJSON, Value)
 import qualified Data.Text as T
 import Control.Monad (void, when)
@@ -61,6 +61,10 @@ data PlaceOrderError =
 
 wrap action error = withExceptT error (ExceptT action)
 {-# INLINE wrap #-}
+
+-- Helper for kopecks
+toKopecks :: Double -> Int32
+toKopecks = round . (* 100)
 
 place :: OrderRequest -> ExceptT PlaceOrderError AppM OrderConfirmationDetails
 place orderRequest@OrderRequest {..} = do
@@ -165,8 +169,8 @@ place orderRequest@OrderRequest {..} = do
                , iArticle        = oiArticle
                , iBillingDetails =
                   ItemBillingDetails 
-                  { ibdUnitPrice         = round oiTotalPrice
-                  , ibdAssessedUnitPrice = round oiTotalPrice
+                  { ibdUnitPrice         = toKopecks oiTotalPrice
+                  , ibdAssessedUnitPrice = toKopecks oiTotalPrice
                   }
                , iPlaceBarcode   = orderId
                }
