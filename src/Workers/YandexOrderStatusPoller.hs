@@ -36,6 +36,7 @@ runYandexOrderStatusPoller = do
        , OnRoute
        , Delivered
        , PickedUpByCourier
+       , ScheduledForPickup
        , PickupFailed
        ]
   eDbRes <- getYandexOrdersInTransit requiredStatuses pool
