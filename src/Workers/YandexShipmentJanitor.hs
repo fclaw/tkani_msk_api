@@ -123,7 +123,9 @@ createShipment = do
                 void $ sendOrEditTelegramMessage mempty errMsg PICKUP Nothing Nothing Nothing
             Right Ya.CreateShipmentResp {Ya.pickupId} -> do
               void $ savePickupDetails pickupId tomorrow pool
-              let msg = escapeMarkdownV2 $ "YANDEX: pickup is scheduled from " <> from  interval <> ", to " <> to interval 
+              let msg = escapeMarkdownV2 $ 
+                          "YANDEX: pickup is scheduled for " <> 
+                          tshow tomorrow <> ", from " <> from  interval <> ", to " <> to interval 
               void $ sendOrEditTelegramMessage mempty msg PICKUP Nothing Nothing Nothing
 
 
