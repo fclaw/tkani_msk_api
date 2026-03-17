@@ -98,7 +98,7 @@ mkYaOrder orderId sourcePointId destPointId ShelfItemsForShipment {..} =
                , iArticle        = oiArticle
                , iBillingDetails =
                   ItemBillingDetails 
-                  { ibdUnitPrice         = toKopecks oiTotalPrice
+                  { ibdUnitPrice         = 0
                   , ibdAssessedUnitPrice = toKopecks oiTotalPrice
                   }
                , iPlaceBarcode   = orderId
