@@ -220,7 +220,7 @@ loadConfig = do
 
   let configTotalShelves = fromIntegral $ extractNumber "TOTAL_SHELVES" $ textToInt $ (Map.!) env "TOTAL_SHELVES"
 
-  let configPickupConsolidationTm = maybe 18 (fromIntegral . extractNumber "CONSOLIDATION_TIME" . textToInt) $ (Map.!?) env "CONSOLIDATION_TIME" 
+  let configPickupConsolidationTm = maybe 16 (fromIntegral . extractNumber "CONSOLIDATION_TIME" . textToInt) $ (Map.!?) env "CONSOLIDATION_TIME" 
 
   -- 5. Return the final Config record
   pure $ Config {..}
