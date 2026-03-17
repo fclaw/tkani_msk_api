@@ -134,7 +134,7 @@ makePickupParams  =
     { -- FORMATTING FIX: Use "%.2f" to match the Yandex Regex [0-9]{1,2}
       -- This converts 0.0636 -> "0.06"
       volumeM3     = "0.50"
-    , weightG      = 25
+    , weightG      = 25000
     , requirements = Nothing
     }
 
