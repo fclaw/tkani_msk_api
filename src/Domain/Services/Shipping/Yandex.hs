@@ -35,8 +35,12 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, sendDocument
 import Infrastructure.Database (fetchOrdersForYandexCourierPickup, linkOrdersToPickup, OrdersForYandexCourierPickupItem (..))
 
 
+
+noOrderMsg = fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
+
+
 prepareAndSchedulePickup :: AppM Bool
-prepareAndSchedulePickup = do 
+prepareAndSchedulePickup = do
   $(logTM) InfoS "Checking for paid orders to schedule for YANDEX pickup..."
   -- Get the current date to pass to the query for the idempotency check
   today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
@@ -54,9 +58,10 @@ prepareAndSchedulePickup = do
         $(logTM) ErrorS $ ls $
           "DB error while fetching \
           \ paid orders: " <> tshow dbErr
-    Right Nothing   -> fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
-    Right (Just (_, [])) -> fmap (const False) $ $(logTM) InfoS $ "No new paid orders to schedule."
-    Right (Just (pickupId, orders)) -> do
+    Right Nothing             -> noOrderMsg
+    Right (Just (Nothing, _)) -> noOrderMsg
+    Right (Just (Just _, [])) -> noOrderMsg
+    Right (Just (Just pickupId, orders)) -> do
       -- We have enough orders to schedule a pickup
       $(logTM) InfoS "Scheduling YANDEX courier pickup for orders..."          
       -- ... (the rest of your logic to call the SDEK API) ...

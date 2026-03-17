@@ -3564,7 +3564,7 @@ saveYandexWarehouseId localWhId yaWhId pool =
           updated_at = NOW()
       |]
 
-fetchOrdersForYandexCourierPickup :: OrderStatus -> Hasql.Pool -> AppM (Either Text (Maybe (Int64, [OrdersForYandexCourierPickupItem])))
+fetchOrdersForYandexCourierPickup :: OrderStatus -> Hasql.Pool -> AppM (Either Text (Maybe (Maybe Int64, [OrdersForYandexCourierPickupItem])))
 fetchOrdersForYandexCourierPickup status pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
@@ -3579,7 +3579,7 @@ fetchOrdersForYandexCourierPickup status pool =
           LIMIT 1
         )
         SELECT
-        (SELECT id FROM target_pickup) :: int8 AS pickup_id,
+        (SELECT id FROM target_pickup) :: int8? AS pickup_id,
          COALESCE (
          array_agg(
          jsonb_build_object(

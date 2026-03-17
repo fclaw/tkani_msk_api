@@ -33,3 +33,6 @@ pickup_weight: 5000
 pickup_window:
   from_hour: "13:00"
   to_hour: "15:00"
+
+shipment_creation: 9
+shipment_cancellation: 17

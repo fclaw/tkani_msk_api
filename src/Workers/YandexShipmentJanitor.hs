@@ -13,9 +13,8 @@ import Text.Printf (printf)
 import qualified Data.Text as T
 import Control.Monad (void)
 import Control.Concurrent (threadDelay)
-import Control.Monad (forever)
+import Control.Monad (forever, when)
 import Control.Monad.IO.Class (liftIO)
-import Data.Time.Calendar (addDays)
 import Data.Foldable (for_)
 import  Data.List (find, maximumBy)
 import  Data.Ord (comparing)
@@ -24,10 +23,13 @@ import Data.Maybe (fromMaybe)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State.Class (get)
 import Data.Time (getZonedTime, zonedTimeToLocalTime, localDay, Day)
+import Data.Time.Calendar.WeekDate (dayOfWeek)
+import Data.Time.Calendar (addDays, toGregorian)
+import Data.Time.LocalTime (localTimeOfDay, TimeOfDay(..), utcToLocalTime, zonedTimeToUTC, TimeZone(..))
 
 
 import Text (tshow)
-import App (AppM, _appDBPool, ChatKey (PICKUP), _yandexWarehouseId, readTVarIO)
+import App (AppM, _appDBPool, ChatKey (PICKUP), _yandexWarehouseId, readTVarIO, _sdekConfig, _yandexConfig)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Yandex.Shipment
 import qualified Infrastructure.Services.Yandex.Types as Ty (PickupOptionsRespItem (..))
@@ -36,11 +38,34 @@ import Infrastructure.Services.Yandex.Error (getError, getHttpException)
 import Infrastructure.Database (fetchEmptyPickupForTomorrow, eraseEmptyTomorrowPickup, savePickupDetails)
 import qualified Infrastructure.Services.Yandex as Ya
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
+import qualified Infrastructure.Services.Sdek.Types.Config as SdekCfg
+import qualified Infrastructure.Services.Yandex.Config as YaCfg
 
 
 -- | Background loop that manages daily Yandex logistics tasks
 runYandexShipmentJanitor :: AppM ()
 runYandexShipmentJanitor = do
+
+  sdekCfg <- fmap _sdekConfig ask
+
+
+  let msk = TimeZone (3 * 60) False "MSK"
+  now <- liftIO getZonedTime
+  let mskLocalTime = utcToLocalTime msk (zonedTimeToUTC now)
+  let today        = localDay mskLocalTime
+  let day          = dayOfWeek today
+  let days         = Sunday : [Monday .. Thursday]
+  let isWeekday    = day `elem` days
+
+  let tomorrow = addDays 1 today
+  let (_, tMonth, tDay) = toGregorian tomorrow -- returns (Year, Month, Day)
+  let isTomorrowHoliday = 
+         flip any (SdekCfg.holidays sdekCfg) $ \h -> 
+           SdekCfg.month h == tMonth && 
+           SdekCfg.day h == tDay
+
+  yaCfg <- fmap _yandexConfig ask
+
   -- 1. Get current UTC time
   now <- liftIO getCurrentTime
 
@@ -50,23 +75,20 @@ runYandexShipmentJanitor = do
       timeOfDayNow = localTimeOfDay localNow
       hour         = todHour timeOfDayNow
 
-  -- 3. Trigger logic based on Moscow Local Time
-  case hour of
-    -- At 09:00
-    9 -> do
+  when (isWeekday && not isTomorrowHoliday) $ do
+    --  Trigger logic based on Moscow Local Time
+    when(YaCfg.shipmentCreation yaCfg == hour) $ do
       $(logTM) InfoS
         "Yandex shipment Janitor: \
         \ Starting morning createShipment job..."
       createShipment
-    
-    -- At 21:00
-    21 -> do
+        
+    when(YaCfg.shipmentCancellation yaCfg == hour) $ do
       $(logTM) InfoS 
         "Yandex shipment Janitor: \
         \ Starting evening clearShipment job..."
       clearShipment
 
-    _ -> pure ()
 
 -- =============================================================================
 -- sub function

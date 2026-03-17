@@ -45,17 +45,19 @@ instance FromJSON PickupWindow where
 
 data YandexConfig =
      YandexConfig
-     { apiKey            :: Text
-     , apiUrl            :: Text
-     , office            :: GeoPoint
-     , localWarehouseId  :: Text
-     , warehouseName     :: Text
-     , address           :: Address
-     , contact           :: Contact
-     , warehousePostfix  :: Text
-     , pickupParcels     :: Int
-     , pickupWeight      :: Int
-     , pickupWindow      :: PickupWindow
+     { apiKey               :: Text
+     , apiUrl               :: Text
+     , office               :: GeoPoint
+     , localWarehouseId     :: Text
+     , warehouseName        :: Text
+     , address              :: Address
+     , contact              :: Contact
+     , warehousePostfix     :: Text
+     , pickupParcels        :: Int
+     , pickupWeight         :: Int
+     , pickupWindow         :: PickupWindow
+     , shipmentCreation     :: Int
+     , shipmentCancellation :: Int
      } deriving (Show, Eq, Generic)
 
 instance FromJSON YandexConfig where
