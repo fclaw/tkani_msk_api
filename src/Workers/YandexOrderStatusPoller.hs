@@ -104,11 +104,13 @@ mapYandexToInternal (KnownStatus yandex) current =
             DeliveryUpdatedByShop           -> OnRoute -- Date changed, but still active
             DeliveryUpdatedByRecipient      -> OnRoute
             DeliveryUpdatedByDelivery       -> OnRoute
+            DeliveryAttemptFailed           -> OnRoute
 
             -- STAGE D: TERMINAL / RETURNS
+            -- Physical handover (Trigger the 'Congratulations' message here)
             DeliveryTransmittedToRecipient  -> Delivered
-            DeliveryDelivered               -> Delivered
-            DeliveryAttemptFailed           -> PickupFailed
+            -- Final Business Outcome (Close the DB record)
+            DeliveryDelivered               -> Completed
             
             -- Any Cancellation = Cancelled
             GeneralCancelled                -> Cancelled
@@ -118,16 +120,16 @@ mapYandexToInternal (KnownStatus yandex) current =
             SortingCenterCancelled          -> Cancelled
             
             -- Any Return status = Cancelled (Logic: sale is dead, parcel returning)
-            SortingCenterReturnPreparing    -> Cancelled
+            SortingCenterReturnPreparing       -> Cancelled
             SortingCenterReturnPreparingSender -> Cancelled
-            SortingCenterReturnArrived      -> Cancelled
-            SortingCenterReturnReturned     -> Cancelled
-            ReturnPreparing                 -> Cancelled
-            ReturnTransportationStarted      -> Cancelled
-            ReturnArrivedDelivery           -> Cancelled
-            ReturnTransmittedFulfilment      -> Cancelled
-            ReturnReadyForPickup            -> Cancelled
-            ReturnReturned                  -> Cancelled
+            SortingCenterReturnArrived         -> Cancelled
+            SortingCenterReturnReturned        -> Cancelled
+            ReturnPreparing                    -> Cancelled
+            ReturnTransportationStarted        -> Cancelled
+            ReturnArrivedDelivery              -> Cancelled
+            ReturnTransmittedFulfilment        -> Cancelled
+            ReturnReadyForPickup               -> Cancelled
+            ReturnReturned                     -> Cancelled
     in
         if isNewer proposed current then proposed else current
 
