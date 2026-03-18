@@ -72,13 +72,10 @@ runYandexOrderStatusPoller = do
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for YANDEX order statuses, error " <> fromLeft undefined eDbRes
 
 
--- | Updated mapping based on the latest Yandex Status definitions.
 mapYandexToInternal :: YandexOrderStatus -> OrderStatus -> OrderStatus
 mapYandexToInternal yandex current =
     let proposed = case yandex of
-            -- =================================================================
             -- STAGE A: PRE-TRANSIT
-            -- =================================================================
             Draft                          -> Registered
             Validating                     -> Registered
             Created                        -> Registered
@@ -91,28 +88,45 @@ mapYandexToInternal yandex current =
             DeliveryLoaded                 -> ScheduledForPickup
             SortingCenterLoaded            -> ScheduledForPickup
 
-            -- =================================================================
-            -- STAGE B: PICKED UP (Warehouse to Sender's Hub)
-            -- =================================================================
+            -- STAGE B: PICKED UP
             SortingCenterAtStart           -> PickedUpByCourier
             SortingCenterPrepared          -> PickedUpByCourier
 
-            -- =================================================================
-            -- STAGE C: ACTIVE TRANSIT (Between Hubs and to Customer)
-            -- =================================================================
-            SortingCenterTransmitted       -> OnRoute
-            DeliveryAtStart                -> OnRoute
-            DeliveryAtStartSort            -> OnRoute  -- Destination city sorting
-            DeliveryTransportationRecipient -> OnRoute -- Courier on the way
-            DeliveryAttemptFailed          -> PickupFailed -- UI needs to know about the failure
+            -- STAGE C: ACTIVE TRANSIT / MODIFICATIONS
+            SortingCenterTransmitted        -> OnRoute
+            DeliveryAtStart                 -> OnRoute
+            DeliveryAtStartSort             -> OnRoute
+            DeliveryTransportationRecipient -> OnRoute
+            DeliveryUpdatedByShop           -> OnRoute -- Date changed, but still active
+            DeliveryUpdatedByRecipient      -> OnRoute
+            DeliveryUpdatedByDelivery       -> OnRoute
 
-            -- =================================================================
-            -- STAGE D: FINAL STAGES (Handover and Closure)
-            -- =================================================================
-            DeliveryTransmittedToRecipient -> Delivered
-            DeliveryDelivered              -> Delivered
+            -- STAGE D: TERMINAL / RETURNS
+            DeliveryTransmittedToRecipient  -> Delivered
+            DeliveryDelivered               -> Delivered
+            DeliveryAttemptFailed           -> PickupFailed
+            
+            -- Any Cancellation = Cancelled
+            GeneralCancelled                -> Cancelled
+            CancelledByRecipient            -> Cancelled
+            CancelledUser                   -> Cancelled
+            CancelledInPlatform             -> Cancelled
+            SortingCenterCancelled          -> Cancelled
+            
+            -- Any Return status = Cancelled (Logic: sale is dead, parcel returning)
+            SortingCenterReturnPreparing    -> Cancelled
+            SortingCenterReturnPreparingSender -> Cancelled
+            SortingCenterReturnArrived      -> Cancelled
+            SortingCenterReturnReturned     -> Cancelled
+            ReturnPreparing                 -> Cancelled
+            ReturnTransportationStarted      -> Cancelled
+            ReturnArrivedDelivery           -> Cancelled
+            ReturnTransmittedFulfilment      -> Cancelled
+            ReturnReadyForPickup            -> Cancelled
+            ReturnReturned                  -> Cancelled
     in
         if isNewer proposed current then proposed else current
+
 
 -- | Ranking logic updated to handle specific delivery failures.
 isNewer :: OrderStatus -> OrderStatus -> Bool

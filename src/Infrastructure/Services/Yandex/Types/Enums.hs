@@ -95,6 +95,31 @@ data YandexOrderStatus
   | DeliveryTransmittedToRecipient -- ^ Order handed over to the recipient
   | DeliveryAttemptFailed          -- ^ Unsuccessful delivery attempt
   | DeliveryDelivered              -- ^ Order delivered to the customer
+
+  -- Rescheduling Statuses
+  | DeliveryUpdatedByShop           -- ^ Delivery rescheduled by the shop
+  | DeliveryUpdatedByRecipient      -- ^ Delivery rescheduled by the buyer
+  | DeliveryUpdatedByDelivery       -- ^ Delivery rescheduled by the carrier
+  
+  -- Cancellation Statuses
+  | GeneralCancelled                -- ^ General cancellation
+  | CancelledByRecipient            -- ^ Cancelled by client request
+  | CancelledUser                   -- ^ Cancelled by the user
+  | CancelledInPlatform             -- ^ Cancelled within the Yandex platform
+  | SortingCenterCancelled          -- ^ Cancelled by the sorting center
+  
+  -- Return (Reverse Logistics) Statuses
+  | SortingCenterReturnPreparing    -- ^ Preparing for return at sorting center
+  | SortingCenterReturnPreparingSender -- ^ Preparing for dispatch back to you
+  | SortingCenterReturnArrived      -- ^ Arrived at your pickup point
+  | SortingCenterReturnReturned     -- ^ Returned to acceptance point
+  | ReturnPreparing                 -- ^ Return process initiated
+  | ReturnTransportationStarted      -- ^ Return package is in transit back to you
+  | ReturnArrivedDelivery           -- ^ Package arrived back at the warehouse
+  | ReturnTransmittedFulfilment      -- ^ Handed over to fulfillment for return processing
+  | ReturnReadyForPickup            -- ^ Package is ready for you to pick up from Yandex
+  | ReturnReturned                  -- ^ Return cycle completed
+
   deriving (Show, Eq, Generic)
 
 -- =============================================================================
@@ -106,6 +131,7 @@ yandexStatusOptions = defaultOptions
   { constructorTagModifier = \case
       -- The API preserves this specific spelling mistake
       "DeliveryTrackReceived" -> "DELIVERY_TRACK_RECIEVED"
+      "GeneralCancelled"      -> "CANCELLED"
       -- Common CamelCase -> UPPER_SNAKE_CASE conversion
       other -> map toUpper (camelToSnake other)
   }
