@@ -21,7 +21,7 @@ import Concurrency (pooledForConcurrentlyN)
 import Infrastructure.Database (getYandexOrdersInTransit, updateYandexOrderStatus)
 import Infrastructure.Services.Yandex.Types (OrderParticulars (..), osStatus)
 import qualified Infrastructure.Services.Yandex.Types as YA
-import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus (..))
+import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus (..), YandexStatusCode (..))
 import Infrastructure.Services.Yandex (fetchOrderParticulars)
 
 
@@ -73,7 +73,11 @@ runYandexOrderStatusPoller = do
 
 
 mapYandexToInternal :: YandexOrderStatus -> OrderStatus -> OrderStatus
-mapYandexToInternal yandex current =
+mapYandexToInternal (UnknownStatus _) current =
+  -- SAFE: If we don't know what the tag means, don't change the local state.
+  -- However, you should still append 'rawTag' to your DB history log! 
+  current
+mapYandexToInternal (KnownStatus yandex) current =
     let proposed = case yandex of
             -- STAGE A: PRE-TRANSIT
             Draft                          -> Registered

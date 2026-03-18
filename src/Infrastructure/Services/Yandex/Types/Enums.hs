@@ -7,9 +7,11 @@ module Infrastructure.Services.Yandex.Types.Enums where
 
 import Data.Aeson.TH
 import Data.Text (unpack)
-import Data.Aeson (defaultOptions, SumEncoding(..), FromJSON (..), ToJSON (..), withText, genericParseJSON, genericToJSON)
+import qualified Data.Text as T
+import Data.Aeson (defaultOptions, Value (String), SumEncoding(..), FromJSON (..), ToJSON (..), withText, genericParseJSON, genericToJSON)
 import GHC.Generics (Generic)
 import Data.Char (toLower, toUpper)
+import qualified Data.Map as M
 
 import Text (camelToSnake)
 
@@ -73,8 +75,9 @@ instance ToJSON Tariff where
     TimeInterval  -> "time_interval"
 
 
--- | Statuses of a Yandex Delivery Request (Claim) based on current documentation.
-data YandexOrderStatus
+-- | All specific tags recognized by the Yandex API.
+-- Because all constructors are nullary, we can derive Enum and Bounded.
+data YandexStatusCode
   = Draft                          -- ^ Order created
   | Validating                     -- ^ Request is under verification
   | ValidatingError                -- ^ Order not confirmed at the sorting center
@@ -120,12 +123,13 @@ data YandexOrderStatus
   | ReturnReadyForPickup            -- ^ Package is ready for you to pick up from Yandex
   | ReturnReturned                  -- ^ Return cycle completed
 
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Ord, Generic, Enum, Bounded)
 
 -- =============================================================================
 -- JSON Configuration (Mapping constructor names to Yandex Upper Snake Case)
 -- =============================================================================
 
+-- | Use your existing Options to ensure the map matches Yandex strings
 yandexStatusOptions :: Options
 yandexStatusOptions = defaultOptions
   { constructorTagModifier = \case
@@ -136,13 +140,29 @@ yandexStatusOptions = defaultOptions
       other -> map toUpper (camelToSnake other)
   }
 
-instance ToJSON YandexOrderStatus where
-  toJSON = genericToJSON yandexStatusOptions
+-- | Mapping: "UPPER_SNAKE_STRING" -> YandexStatusCode
+-- Utilizes Enum and Bounded to be 100% automatic
+knownStatuses :: M.Map T.Text YandexStatusCode
+knownStatuses = M.fromList 
+  [ (T.pack $ (constructorTagModifier yandexStatusOptions) (show s), s) 
+  | s <- [minBound .. maxBound] 
+  ]
+
+-- | The actual type used in your ADTs
+data YandexOrderStatus 
+  = KnownStatus   YandexStatusCode 
+  | UnknownStatus T.Text
+  deriving (Show, Eq)
 
 instance FromJSON YandexOrderStatus where
-  parseJSON = genericParseJSON yandexStatusOptions
+  parseJSON = withText "YandexOrderStatus" $ \t ->
+    pure $ case M.lookup t knownStatuses of
+      Just code -> KnownStatus code
+      Nothing   -> UnknownStatus t
 
-
+instance ToJSON YandexOrderStatus where
+  toJSON (KnownStatus code) = genericToJSON yandexStatusOptions code
+  toJSON (UnknownStatus t)  = String t
 
 
 data PickupStatus = Scheduled | Completed | Cancelled deriving (Show, Eq)
