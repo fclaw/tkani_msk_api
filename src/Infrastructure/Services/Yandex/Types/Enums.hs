@@ -73,45 +73,40 @@ instance ToJSON Tariff where
     TimeInterval  -> "time_interval"
 
 
-
--- | Statuses of a Yandex Delivery Request (Claim)
+-- | Statuses of a Yandex Delivery Request (Claim) based on current documentation.
 data YandexOrderStatus
-  = Draft                          -- ^ Order draft created
-  | Validating                     -- ^ Request is being validated/checked
-  | ValidatingError                -- ^ Order not confirmed by sorting center (error)
+  = Draft                          -- ^ Order created
+  | Validating                     -- ^ Request is under verification
+  | ValidatingError                -- ^ Order not confirmed at the sorting center
   | Created                        -- ^ Order created and confirmed
-  | DeliveryProcessingStarted      -- ^ Order being created at sorting center
-  | DeliveryTrackReceived          -- ^ Order created in the carrier's system (API typo: RECIEVED)
-  | SortingCenterProcessingStarted -- ^ Processing started at sorting center (SC)
-  | SortingCenterTrackReceived     -- ^ Order processed at sorting center
-  | SortingCenterTrackLoaded       -- ^ Order record created at sorting center
-  | DeliveryLoaded                 -- ^ Order added to current shipment (batch)
-  | SortingCenterLoaded            -- ^ Order confirmed at sorting center
-  | SortingCenterAtStart           -- ^ Order arrived at sorting center
-  | SortingCenterPrepared          -- ^ Order ready for dispatch to carrier
-  | SortingCenterTransmitted       -- ^ Order is currently being delivered
-  | DeliveryAtStart                -- ^ Order being prepared for final delivery
-  | DeliveryTransportation         -- ^ Order departed for destination (in transit)
-  | DeliveryArrivedPickupPoint     -- ^ Order arrived at pickup point (PVZ)
-  | DeliveryTransmittedToRecipient -- ^ Order handed over to recipient
-  | DeliveryStoragePeriodExpired   -- ^ Storage period at pickup point expired
-  | DeliveryStoragePeriodExtended  -- ^ Storage period at pickup point extended
-  | ConfirmationCodeReceived       -- ^ Confirmation code received
-  | ParticularlyDelivered          -- ^ Order partially delivered
-  | DeliveryDelivered              -- ^ Order delivered to recipient (final)
-  | Finished                       -- ^ Order confirmed/closed
+  | DeliveryProcessingStarted      -- ^ Order is being created at the sorting center
+  | DeliveryTrackReceived          -- ^ Order created in the delivery service system (API typo: RECIEVED)
+  | SortingCenterProcessingStarted -- ^ Order processing started at the sorting center
+  | SortingCenterTrackReceived     -- ^ Order processed at the sorting center
+  | SortingCenterTrackLoaded       -- ^ Order created at the sorting center
+  | DeliveryLoaded                 -- ^ Order added to the current shipment
+  | SortingCenterLoaded            -- ^ Order confirmed at the sorting center
+  | SortingCenterAtStart           -- ^ Order arrived at the acceptance point
+  | SortingCenterPrepared          -- ^ Order ready for dispatch to the delivery service
+  | SortingCenterTransmitted       -- ^ Order is being delivered to the last mile
+  | DeliveryAtStart                -- ^ Order is in the recipient's city, preparing for courier delivery
+  | DeliveryAtStartSort            -- ^ Order is in the recipient's city, preparing for courier delivery (sorting stage)
+  | DeliveryTransportationRecipient -- ^ Order is being delivered to the customer
+  | DeliveryTransmittedToRecipient -- ^ Order handed over to the recipient
+  | DeliveryAttemptFailed          -- ^ Unsuccessful delivery attempt
+  | DeliveryDelivered              -- ^ Order delivered to the customer
   deriving (Show, Eq, Generic)
 
 -- =============================================================================
--- JSON Configuration
+-- JSON Configuration (Mapping constructor names to Yandex Upper Snake Case)
 -- =============================================================================
 
 yandexStatusOptions :: Options
 yandexStatusOptions = defaultOptions
   { constructorTagModifier = \case
-      -- Fix for the typo in Yandex API: they send "RECIEVED" not "RECEIVED"
+      -- The API preserves this specific spelling mistake
       "DeliveryTrackReceived" -> "DELIVERY_TRACK_RECIEVED"
-      -- General rule for others: CamelCase -> UPPER_SNAKE_CASE
+      -- Common CamelCase -> UPPER_SNAKE_CASE conversion
       other -> map toUpper (camelToSnake other)
   }
 
@@ -120,6 +115,8 @@ instance ToJSON YandexOrderStatus where
 
 instance FromJSON YandexOrderStatus where
   parseJSON = genericParseJSON yandexStatusOptions
+
+
 
 
 data PickupStatus = Scheduled | Completed | Cancelled deriving (Show, Eq)

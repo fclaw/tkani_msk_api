@@ -37,6 +37,7 @@ runYandexOrderStatusPoller = do
        , Delivered
        , PickedUpByCourier
        , ScheduledForPickup
+       , AddedToPickupQueue
        , PickupFailed
        ]
   eDbRes <- getYandexOrdersInTransit requiredStatuses pool
@@ -70,14 +71,14 @@ runYandexOrderStatusPoller = do
 
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for YANDEX order statuses, error " <> fromLeft undefined eDbRes
 
--- | Universal mapping with state-drift protection
--- | Prevents older API statuses from overwriting newer local stages.
+
+-- | Updated mapping based on the latest Yandex Status definitions.
 mapYandexToInternal :: YandexOrderStatus -> OrderStatus -> OrderStatus
 mapYandexToInternal yandex current =
-    let 
-        -- Helper: Determine what the Yandex status suggests the NEW status should be
-        proposed = case yandex of
+    let proposed = case yandex of
+            -- =================================================================
             -- STAGE A: PRE-TRANSIT
+            -- =================================================================
             Draft                          -> Registered
             Validating                     -> Registered
             Created                        -> Registered
@@ -90,55 +91,56 @@ mapYandexToInternal yandex current =
             DeliveryLoaded                 -> ScheduledForPickup
             SortingCenterLoaded            -> ScheduledForPickup
 
-            -- STAGE B: PICKED UP (At Source SC)
+            -- =================================================================
+            -- STAGE B: PICKED UP (Warehouse to Sender's Hub)
+            -- =================================================================
             SortingCenterAtStart           -> PickedUpByCourier
             SortingCenterPrepared          -> PickedUpByCourier
 
-            -- STAGE C: ACTIVE TRANSIT (In network or at PVZ)
+            -- =================================================================
+            -- STAGE C: ACTIVE TRANSIT (Between Hubs and to Customer)
+            -- =================================================================
             SortingCenterTransmitted       -> OnRoute
             DeliveryAtStart                -> OnRoute
-            DeliveryTransportation         -> OnRoute
-            DeliveryArrivedPickupPoint     -> OnRoute
-            DeliveryStoragePeriodExtended  -> OnRoute
+            DeliveryAtStartSort            -> OnRoute  -- Destination city sorting
+            DeliveryTransportationRecipient -> OnRoute -- Courier on the way
+            DeliveryAttemptFailed          -> PickupFailed -- UI needs to know about the failure
 
-            -- STAGE D: FINAL STAGES
+            -- =================================================================
+            -- STAGE D: FINAL STAGES (Handover and Closure)
+            -- =================================================================
             DeliveryTransmittedToRecipient -> Delivered
-            ConfirmationCodeReceived       -> Delivered
-            ParticularlyDelivered          -> Delivered
             DeliveryDelivered              -> Delivered
-            Finished                       -> Completed
-            DeliveryStoragePeriodExpired   -> Cancelled -- Unclaimed return
     in
-        -- Decision Logic: Only update if the 'proposed' state is "Ahead" 
-        -- or "Terminal" (Cancelled/Completed) compared to the 'current' state.
         if isNewer proposed current then proposed else current
 
--- | Helper to define the "Ranking" or priority of statuses.
--- | A status is "Newer" if it is further down the logistics chain.
+-- | Ranking logic updated to handle specific delivery failures.
 isNewer :: OrderStatus -> OrderStatus -> Bool
 isNewer proposed current = 
     rank proposed > rank current
   where
     rank :: OrderStatus -> Int
     rank = \case
-        -- [0] Pre-payment / Intent phase
+        -- [0] Registration
         Registered          -> 0 
         
-        -- [1] Business Goal achieved: Payment received
-        -- Fulfillment begins here.
+        -- [1] User paid for goods
         Paid                -> 1 
 
-        -- [2] Warehouse / Logistics Prep
+        -- [2] Order being packed/batched
         AddedToPickupQueue  -> 2
         ScheduledForPickup  -> 3
 
-        -- [3] Out for Delivery (Physically moved from warehouse)
+        -- [3] Physically departed warehouse
         PickedUpByCourier   -> 4
+        
+        -- [4] Logistics grid movement
         OnRoute             -> 5
+        PickupFailed        -> 5 -- Note: Attempt failed, still considered "active/on route" rank
 
-        -- [4] arrival at pickup point
+        -- [5] Arrived at destination / Point
         Delivered           -> 6
         
-        -- [5] Terminal States
+        -- [6] Reached terminal outcome
         Completed           -> 7
         Cancelled           -> 7
