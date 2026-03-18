@@ -538,12 +538,12 @@ main = do
                      runShelfOrderRegister
                      >>= showErrorInWorker
                            ShelfOrderRegister)
-              , (YandexOrderStatusPoller,
-                 runForever 5 $
-                   appMToHandler
-                   runYandexOrderStatusPoller
-                    >>= showErrorInWorker
-                          YandexOrderStatusPoller)
+              -- , (YandexOrderStatusPoller,
+              --    runForever 5 $
+              --      appMToHandler
+              --      runYandexOrderStatusPoller
+              --       >>= showErrorInWorker
+              --             YandexOrderStatusPoller)
               ]
 
         let courierPickupTasks 
