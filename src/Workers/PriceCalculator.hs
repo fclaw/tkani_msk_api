@@ -385,7 +385,7 @@ doYandexCalculation orderId = do
              }
         $(logTM) InfoS $ "PriceCalculatorReq: -> " <> ls (encodePretty priceCalcReq)
         cal@PriceCalculatorResp {..} <- calculatePrice priceCalcReq
-        let intPrice = toKopecks pcrPricingTotal
+        let intPrice = calculateFinalConsumerPrice $ toKopecks pcrPricingTotal
         let orderReq = 
               draftOrderReq { 
                 billingInfo = 
@@ -439,6 +439,17 @@ toKopecks input = fromMaybe 0 $ do
     -- 3. Multiply by 100 and round to Int
     return $ round (val * 100)
 
+
+-- | Calculates the final total the customer must see on their screen/receipt
+-- | to cover the Yandex 3% acquiring fee.
+calculateFinalConsumerPrice :: Int32 -> Int32
+calculateFinalConsumerPrice deliveryBaseKopecks =
+  let 
+      subtotal = deliveryBaseKopecks
+      -- We multiply by 1.03 to cover the ~3% fee
+      feeBuffer = ceiling (fromIntegral subtotal * 0.032 :: Double)
+  in 
+      subtotal + feeBuffer
 
 -- | 
 -- Attempts to generate and fetch the parcel label.
