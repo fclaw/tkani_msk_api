@@ -42,7 +42,7 @@ runYandexOrderStatusPoller = do
        ]
   eDbRes <- getYandexOrdersInTransit requiredStatuses pool
   for_ eDbRes $ \xs ->
-    void $ pooledForConcurrentlyN 5 xs $ 
+    void $ pooledForConcurrentlyN 1 xs $ 
       \(orderId, yandexOrderId, requestId, status) -> do 
         $(logTM) InfoS $ ls $ "requesting status for: " <> requestId
         OrderParticulars {state=yaState@YA.OrderStatus{osStatus=yaStatus}} <- fetchOrderParticulars requestId
