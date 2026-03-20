@@ -240,7 +240,8 @@ fetchOrderParticulars orderId =  do
   let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/request/info"
   let token = mkDefToken (apiKey cfg)
   let params = [("request_id", orderId)]
-  eResp <- getReq manager url params [] (Just token)
+  let userAgent = ("User-Agent", "Tkani-MSK-Internal-Sync-Service/1.0 (contact: fclaw007@gmail.com)") 
+  eResp <- getReq manager url params [userAgent] (Just token)
   handleApiResponse @_ @OrderParticulars $(currentModule) eResp $ pure
 
 -- post req helper 
@@ -290,3 +291,5 @@ fetchPickupPointAddress req = do
 cancelShipment :: CancelPickupReq -> AppM (Either HttpError ())
 cancelShipment = makePostReq "/api/b2b/platform/pickups/cancel"
 {-# INLINE cancelShipment #-}
+
+
