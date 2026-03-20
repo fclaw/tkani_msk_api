@@ -27,7 +27,7 @@ import Domain.Services.Warehouse (ensureWarehousePlatformId)
 import API.Types (ShelfShipmentDetails (..), InitiateShelfShipment (..))
 import  Workers.SimpleOrderOrchestrator.Yandex (PlaceOrderError (..))
 import Workers.ShelfOrderRegister.Sdek (notifyShelfChannel, mkDbOrder)
-import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup))
+import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup), PaymentMethod (AlreadyPaid, CardOnReceipt))
 import Infrastructure.Services.Yandex.Types (YandexCreateOrderReq (..), platformStationId)
 import Infrastructure.Services.Yandex.Order
 import Infrastructure.Database (fetchShelfItemsForShipment, placeNewShelfOrder, OrderItem (..), ShelfItemsForShipment (..), _orderYandex, YandexOrder (..))
@@ -71,7 +71,7 @@ go userId cfg init shipment = do
          Nothing            -> Left WarehouseNotSet
          Just warehouseId   -> Right $ platformStationId warehouseId
   sourcePointId <- except eWarehouseId
-  let yaOrder = mkYaOrder ssdOrderId sourcePointId (issPointId init) shipment
+  let yaOrder = mkYaOrder ssdOrderId sourcePointId (issPointId init) (issIsPrepaid init) shipment
   let dbOrder = mkDbOrder userId init shipment ssdOrderId telegramMsgId
   pool <- fmap _appDBPool $ lift ask
   let clearArtifacts = void $ deleteMessage (coerce telegramMsgId) SHELF
@@ -82,14 +82,20 @@ go userId cfg init shipment = do
   return ShelfShipmentDetails {..}
 
 
-mkYaOrder :: Text -> Text -> Text -> ShelfItemsForShipment -> YandexOrder
-mkYaOrder orderId sourcePointId destPointId ShelfItemsForShipment {..} =
+mkYaOrder :: Text -> Text -> Text -> Bool -> ShelfItemsForShipment -> YandexOrder
+mkYaOrder orderId sourcePointId destPointId isPrepaid ShelfItemsForShipment {..} =
   let draftJson = toJSON $
         YandexCreateOrderReq
         { info         = defRequestInfo { riOperatorRequestId = orderId }
          , source      = SourceRequestNode (PlatformStation sourcePointId)
          , destination = defDestinationRequestNode { drnPlatformStation = Just (PlatformStation destPointId) }
-         , billingInfo = defBillingInfo
+         , billingInfo = 
+             defBillingInfo 
+             { biPaymentMethod = 
+                if isPrepaid then 
+                  AlreadyPaid 
+                else CardOnReceipt 
+             }
          , items       = 
              sifsItems <&> \OrderItem {..} -> 
                Item 
@@ -112,4 +118,5 @@ mkYaOrder orderId sourcePointId destPointId ShelfItemsForShipment {..} =
     { yaDeliveryPoint  = destPointId
     , yaTariff         = SelfPickup
     , yaDraftJson      = draftJson
+    , yaIsPrepaid      = isPrepaid
     }

@@ -184,3 +184,8 @@ cancelTinkoffPayment cancelReq = do
   let url = tinkoffUrl $ _tinkoffCred cfg
   let httpManager = _configHttpManager cfg
   postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq [] Nothing
+
+
+
+-- https://developer.tbank.ru/docs/api/payments-core-pay
+initiatePayment = undefined

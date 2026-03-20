@@ -240,6 +240,7 @@ data OrderRequest = OrderRequest
   , orDeliveryProviderId :: Providers  -- The code for the provider, e.g., "sdek".
   , orDeliveryPointId    :: Text       -- The unique ID of the chosen delivery point.
   , orChatId             :: Int64
+  , orIsPrepaid          :: Bool
   } deriving (Show, Generic)
 
 -- We'll need ToJSON/FromJSON instances for this to be sent over the API
@@ -688,8 +689,9 @@ mkDefPutOnShelfPaymentOptions = PutOnShelfPaymentOptions Nothing Nothing Nothing
 
 data InitiateShelfShipment =
      InitiateShelfShipment
-     { issProvider :: Providers
-     , issPointId  :: Text
+     { issProvider  :: Providers
+     , issPointId   :: Text
+     , issIsPrepaid :: Bool
      } deriving (Show, Generic)
       
 
@@ -758,7 +760,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ydc" } '
 data YandexPickupPointsResp = 
      YandexPickupPointsResp
      { ypprTotal  :: Int
-     , ypprPoints :: [WithField "dpMetros" [Text] DeliveryPoint]
+     , ypprPoints :: [WithField "isPrepaid" Bool (WithField "dpMetros" [Text] DeliveryPoint)]
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yppr" } ''YandexPickupPointsResp)

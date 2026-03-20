@@ -70,7 +70,7 @@ data Routes route = Routes
        :> "pickup-points"
        :> RateLimitPerUser (Second 1) 'Nothing
        :> QueryParam "city" Text
-       :> Get '[JSON] (ApiResponse [WithField "dpMetros" [Text] DeliveryPoint])
+       :> Get '[JSON] (ApiResponse [WithField "isPrepaid" Bool (WithField "dpMetros" [Text] DeliveryPoint)])
    , _getProviders
        :: route
        :- "providers"

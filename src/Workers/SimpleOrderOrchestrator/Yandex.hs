@@ -42,7 +42,7 @@ import Infrastructure.Database (getOrderItems)
 import Infrastructure.Services.Yandex.Types
 import Infrastructure.Services.Yandex.Order
 import Domain.Services.Warehouse (ensureWarehousePlatformId)
-import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup))
+import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup), PaymentMethod (AlreadyPaid, CardOnReceipt))
 import Infrastructure.Services.Telegram (MessageIdResponse (..))
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import Infrastructure.Database (Order, OrderItem (..), NewPaymentRecord (..), oiTotalPrice, finalizeYandexOrderRegistration, YandexOrder (..), Order (..))
@@ -160,7 +160,13 @@ place orderRequest@OrderRequest {..} = do
          { info          = defRequestInfo { riOperatorRequestId = orderId }
          , source        = SourceRequestNode (PlatformStation (platformStationId sourcePointId))
          , destination   = defDestinationRequestNode { drnPlatformStation = Just (PlatformStation orDeliveryPointId) }
-         , billingInfo   = defBillingInfo
+         , billingInfo   =
+            defBillingInfo 
+            { biPaymentMethod = 
+                if orIsPrepaid then 
+                  AlreadyPaid 
+                else CardOnReceipt
+            }
          , items         = 
              items <&> \OrderItem {..} -> 
                Item 
@@ -207,6 +213,7 @@ mkDbOrder OrderRequest {..} orderId msgId draftJson =
         { yaDeliveryPoint  = orDeliveryPointId
         , yaTariff         = SelfPickup
         , yaDraftJson      = draftJson
+        , yaIsPrepaid      = orIsPrepaid
         }
   in
     Order 

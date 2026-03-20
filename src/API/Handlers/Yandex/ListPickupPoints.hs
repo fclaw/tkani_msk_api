@@ -7,6 +7,7 @@ import Katip
 import Data.Functor ((<&>))
 import Data.Bifunctor (first)
 import Data.Text (Text)
+import Control.Monad (join)
 import qualified Data.Text as T
 import Data.Maybe (catMaybes)
 import Control.Monad.IO.Class (liftIO)
@@ -15,8 +16,9 @@ import Control.Monad.IO.Class (liftIO)
 import App (AppM)
 import API.WithField (WithField (..))
 import Infrastructure.Services.Yandex.Geo (latitude, longitude)
-import Infrastructure.Services.Yandex.Types (fullAddress, ppId, ppName, ppAddress, ppPosition)
+import Infrastructure.Services.Yandex.Types (fullAddress, ppId, ppName, ppAddress, ppPosition, ppPaymentMethods)
 import Infrastructure.Services.Yandex.CachedPickupPoints (storeDeliveryPoints)
+import Infrastructure.Services.Yandex.Types.Enums (PaymentMethod (AlreadyPaid, CardOnReceipt, PostPay))
 import API.Types (ApiResponse, mkError, YandexPickupPointsResp (..), DeliveryPoint (..), PointLocation (..), DisplayInfo (..))
 
 
@@ -64,8 +66,10 @@ handler (Just geoId) = do
       let points = 
             catMaybes $ 
               pickupPoints <&> \(WithField metros point) ->
-                ppId point <&> \code ->
-                  let dp =
+                join $ ppId point <&> \code ->
+                  let onSitePayments = [ p | p <- ppPaymentMethods point, p == CardOnReceipt || p == PostPay ]
+                      isPrepaid = (AlreadyPaid `elem` ppPaymentMethods point) && null onSitePayments
+                      dp =
                         DeliveryPoint
                         { dpCode    = code
                         , dpName    = ppName point
@@ -82,5 +86,7 @@ handler (Just geoId) = do
                            }
                         , dpDisplay = DisplayInfo mempty mempty -- Placeholder, replace with actual display info if available in the response
                         }
-                  in WithField metros dp
+                  in if length onSitePayments > 0 || isPrepaid then
+                       Just $ WithField isPrepaid $ WithField metros dp
+                     else Nothing  
       in return $ Right $ YandexPickupPointsResp (length points) points

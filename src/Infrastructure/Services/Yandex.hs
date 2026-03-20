@@ -190,15 +190,13 @@ fetchAndCache = do
             Just (cachedTime, pointsWithId) 
           }
 
-calculatePrice :: PriceCalculatorReq -> AppM PriceCalculatorResp
+calculatePrice :: PriceCalculatorReq -> AppM (Either HttpError PriceCalculatorResp)
 calculatePrice req = do
   cfg <- fmap _yandexConfig ask
   manager <- fmap _configHttpManager ask
   let url = show HTTPS <> unpack (apiUrl cfg) <> "/api/b2b/platform/pricing-calculator"
   let token = mkDefToken (apiKey cfg)
-  eResp <- postReq manager url req [] (Just token)
-  handleApiResponse @_ @PriceCalculatorResp $(currentModule) eResp $ pure
-
+  postReq @PriceCalculatorResp manager url req [] (Just token)
 
 createOrder :: YandexCreateOrderReq -> AppM (Either HttpError YandexCreateOrderResp)
 createOrder req = do

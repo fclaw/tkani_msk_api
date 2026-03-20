@@ -118,6 +118,7 @@ module Infrastructure.Database
   , resetOrderDimensionsAndWeight
   , fetchEmptyPickupForTomorrow
   , eraseEmptyTomorrowPickup
+  , saveYandexPrepaidDeliveryCost
   ) where
 
 
@@ -491,17 +492,19 @@ createSdekOrderStatement =
     RETURNING id :: int8    
   |]
 
-createYandexOrderStatement :: Hasql.Statement (Text, Text, Value) Int64
+createYandexOrderStatement :: Hasql.Statement (Text, Text, Value, Bool) Int64
 createYandexOrderStatement =
   [Hasql.singletonStatement|
     INSERT INTO yandex_orders (
       delivery_point,
       tariff,
-      draft_order_request
+      draft_order_request,
+      is_prepaid
     ) VALUES (
       $1 :: text,
       $2 :: text,
-      $3 :: jsonb
+      $3 :: jsonb,
+      $4 :: bool
     )
     RETURNING id :: int8   
   |]
@@ -532,7 +535,8 @@ placeNewOrderTransaction Order {..} = do
         Hasql.statement 
          ( yaDeliveryPoint
          , encodeToText yaTariff
-         , yaDraftJson)
+         , yaDraftJson
+         , yaIsPrepaid)
          createYandexOrderStatement
     else return Nothing
 
@@ -3044,7 +3048,8 @@ placeNewShelfOrder order@Order {..} pool =
             Hasql.statement 
             ( yaDeliveryPoint
             , encodeToText yaTariff
-            , yaDraftJson)
+            , yaDraftJson
+            , yaIsPrepaid)
             createYandexOrderStatement
         else return Nothing 
 
@@ -3473,7 +3478,8 @@ getYandexOrderDetailsForPricing orderId pool = do
           'height', o.height,
           'weight', o.actual_weight_grams,
           'draft_order_req_json', yo.draft_order_request,
-          'customer', o.customer_full_name
+          'customer', o.customer_full_name,
+          'is_prepaid', yo.is_prepaid
         ) :: jsonb
        FROM orders AS o
        INNER JOIN yandex_orders AS yo
@@ -3686,4 +3692,18 @@ eraseEmptyTomorrowPickup pickupId pool =
       [Hasql.resultlessStatement|
        DELETE FROM yandex_courier_pickups
        WHERE pickup_id = $1 :: text
+      |]
+
+saveYandexPrepaidDeliveryCost :: Text -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+saveYandexPrepaidDeliveryCost orderId deliveryCost pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (orderId, deliveryCost) $
+      [Hasql.resultlessStatement|
+       UPDATE yandex_orders
+       SET prepaid_cost = $2 :: int4
+       WHERE id = (
+         SELECT yandex_order_id 
+         FROM orders 
+         WHERE id = $1 :: text)
       |]

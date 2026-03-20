@@ -48,6 +48,7 @@ data YandexOrder =
      { yaDeliveryPoint :: Text
      , yaTariff        :: Tariff
      , yaDraftJson     :: Value
+     , yaIsPrepaid     :: Bool
      } deriving (Show, Eq, Generic)
 
 -- | Represents a complete Order in our system, mirroring the 'orders' DB table.
@@ -438,6 +439,7 @@ data YandexOrderDetailsForPricing =
      , yodpWeight            :: Int32
      , yodpDraftOrderReqJson :: Value
      , yodpCustomer          :: Text
+     , yodpIsPrepaid         :: Bool
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yodp" } ''YandexOrderDetailsForPricing)
