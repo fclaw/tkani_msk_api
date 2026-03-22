@@ -98,6 +98,7 @@ import Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller)
 import Workers.YandexShipmentJanitor (runYandexShipmentJanitor)
 import Workers.ShippingInvoiceJanitor (runShippingInvoiceJanitor)
 import Workers.TinkoffShipmentPaymentStatusPoller (runTinkoffShipmentPaymentStatusPoller)
+import Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -138,6 +139,7 @@ data Workers =
       | YandexShipmentJanitor
       | ShippingInvoiceJanitor
       | TinkoffShipmentPaymentStatusPoller
+      | YandexPrepaidOrderRegistrar
 
 
 
@@ -171,6 +173,7 @@ instance Show Workers where
   show YandexShipmentJanitor              = "Yandex Shipment Janitor"
   show ShippingInvoiceJanitor             = "Shipping Invoice Janitor"
   show TinkoffShipmentPaymentStatusPoller = "Tinkoff Shipment Payment Status Poller"
+  show YandexPrepaidOrderRegistrar        = "Yandex Prepaid Order Registrar"
 
 
 --
@@ -565,6 +568,13 @@ main = do
                     runTinkoffShipmentPaymentStatusPoller
                     >>= showErrorInWorker
                           TinkoffShipmentPaymentStatusPoller)
+              , (YandexPrepaidOrderRegistrar,
+                  appMToHandler
+                    (runYandexPrepaidOrderRegistrar 
+                     connInfo 
+                     appMToHandler)
+                    >>= showErrorInWorker
+                          YandexPrepaidOrderRegistrar)
               ]
 
         let courierPickupTasks 

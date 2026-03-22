@@ -60,4 +60,29 @@ CREATE INDEX idx_shipment_payments_parcel_order_id ON shipment_payments(parcel_o
 CREATE INDEX idx_shipment_payments_status ON shipment_payments(status);
 CREATE INDEX idx_shipment_payments_provider_payment_id ON shipment_payments(provider_payment_id);
 
+
+CREATE OR REPLACE FUNCTION notify_shipment_payment_confirmed()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Only fire when status transitions to 'confirmed'
+    IF (OLD.status IS DISTINCT FROM 'confirmed' AND NEW.status = 'confirmed') THEN
+        PERFORM pg_notify(
+            'shipment_payment_events', -- Channel name
+            jsonb_build_object(
+                'parcel_order_id', NEW.parcel_order_id,
+                'amount',          NEW.amount
+            )::text
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE TRIGGER shipment_payment_confirmed_trigger
+AFTER UPDATE ON shipment_payments
+FOR EACH ROW
+EXECUTE FUNCTION notify_shipment_payment_confirmed();
+
 COMMIT;
