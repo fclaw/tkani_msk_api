@@ -22,11 +22,13 @@ import Infrastructure.Services.Yandex.Types.Enums (PaymentMethod (AlreadyPaid, C
 import API.Types (ApiResponse, mkError, YandexPickupPointsResp (..), DeliveryPoint (..), PointLocation (..), DisplayInfo (..))
 
 
--- | Targeted PVZ formatting for rural and urban areas
+-- | Formats Yandex/CDEK raw address strings for professional UI buttons.
+-- | Handles rural settlements, urban-type settlements (пгт), and filler city tokens.
 formatPvzUniversal :: T.Text -> T.Text
 formatPvzUniversal raw =
-  let -- 1. Basic cleaning and standard abbreviations
+  let -- 1. Basic cleaning and common Russian administrative abbreviations
       clean = T.replace "рабочий посёлок" "рп."
+            . T.replace "посёлок городского типа" "пгт"
             . T.replace "деревня" "д."
             . T.replace "село" "с."
             . T.replace "посёлок" "п."
@@ -35,21 +37,34 @@ formatPvzUniversal raw =
             $ raw
             
       ws = T.words clean
+      
+      -- Set of tokens that denote 'city' which are redundant if found in the middle
+      isFiller w = w `elem` ["г", "г.", "гор"]
   in case ws of
-    -- Logic A: Multi-word prefixes like "рп. Винзили"
-    (prefix:name:rest) | prefix `elem` ["рп.", "п.", "д.", "с.", "г."] ->
-        let identity = prefix <> " " <> name
-            house    = last rest
-            street   = T.unwords (init rest)
-        in identity <> ", " <> street <> ", " <> house
+    -- CASE 1: City + Filler + Street (e.g., "Сургут г Энгельса ул. 11")
+    -- We drop BOTH the city and the filler 'г'.
+    (city:filler:streetStart:rest) | isFiller filler ->
+        let house  = last rest
+            street = T.unwords (streetStart : init rest)
+        in street <> ", " <> house
 
-    -- Logic B: Standard city like "Новосибирск Спортивная ул. 19"
-    (city:rest) ->
-        if length rest >= 2 then 
-          let house  = last rest
-              street = T.unwords (init rest)
-          in street <> ", " <> house
-        else clean
+    -- CASE 2: Multi-word Identity with prefixes (e.g., "пгт. Малаховка", "д. Патрушева")
+    -- We keep the Identity but format the street and house clearly.
+    (prefix:name:rest) | prefix `elem` ["рп.", "пгт", "п.", "д.", "с."] ->
+        if null rest 
+        then prefix <> " " <> name
+        else let house  = last rest
+                 street = T.unwords (init rest)
+             in prefix <> " " <> name <> ", " <> street <> ", " <> house
+
+    -- CASE 3: Standard City Format (e.g., "Новосибирск Спортивная 19")
+    -- We hide the City and show only the internal location details.
+    (city:rest) | length rest >= 2 ->
+        let house  = last rest
+            street = T.unwords (init rest)
+        in street <> ", " <> house
+
+    -- FALLBACK: For extremely short strings, return the cleaned version.
     _ -> clean
 
 
@@ -57,7 +72,6 @@ handler :: Maybe Int -> AppM (ApiResponse YandexPickupPointsResp)
 handler Nothing = return $ Left $ mkError "geoId not provided"
 handler (Just geoId) = do
   eRes <- storeDeliveryPoints geoId
-  liftIO $ print eRes
   case eRes of
     Left err -> do
       $(logTM) ErrorS $ "Failed to fetch pickup points from Yandex" <> ls (show err)
