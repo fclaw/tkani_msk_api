@@ -399,7 +399,7 @@ doYandexCalculation orderId = do
             let intPrice = calculateFinalConsumerPrice $ toKopecks pcrPricingTotal
 
             if yodpIsPrepaid then do
-              void $ saveYandexPrepaidDeliveryCost orderId intPrice pool
+              void $ saveYandexPrepaidDeliveryCost orderId intPrice pcrDeliveryDays pool
               sendPrepaidPaymentLink orderId intPrice yodpWeight
             else do
               let orderReq =

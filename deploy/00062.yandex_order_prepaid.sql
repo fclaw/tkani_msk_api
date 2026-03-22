@@ -6,7 +6,7 @@ BEGIN;
 ALTER TABLE yandex_orders ADD COLUMN is_prepaid BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE yandex_orders ADD COLUMN prepaid_cost INTEGER; -- in kopecks
 ALTER TABLE yandex_orders ADD COLUMN is_shipment_paid BOOLEAN NOT NULL DEFAULT FALSE;
-
+ALTER TABLE yandex_orders ADD COLUMN delivery_days INTEGER;
 
 CREATE TABLE shipment_payments (
     -- Internal unique ID for the payment attempt.
@@ -63,14 +63,25 @@ CREATE INDEX idx_shipment_payments_provider_payment_id ON shipment_payments(prov
 
 CREATE OR REPLACE FUNCTION notify_shipment_payment_confirmed()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_delivery_days INT; -- Define a variable to hold the joined data
 BEGIN
     -- Only fire when status transitions to 'confirmed'
     IF (OLD.status IS DISTINCT FROM 'confirmed' AND NEW.status = 'confirmed') THEN
+        
+        -- 1. Fetch the estimated delivery days from the joined tables
+        SELECT yo.delivery_days INTO v_delivery_days
+        FROM orders AS o
+        INNER JOIN yandex_orders AS yo ON o.yandex_order_id = yo.id
+        WHERE o.id = NEW.parcel_order_id;
+
+        -- 2. Send notification with the extra field
         PERFORM pg_notify(
-            'shipment_payment_events', -- Channel name
+            'shipment_payment_events',
             jsonb_build_object(
                 'parcel_order_id', NEW.parcel_order_id,
-                'amount',          NEW.amount
+                'amount',          NEW.amount,
+                'days',            COALESCE(v_delivery_days, 0) -- Safety fallback
             )::text
         );
     END IF;

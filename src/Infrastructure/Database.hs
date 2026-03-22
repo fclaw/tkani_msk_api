@@ -123,6 +123,7 @@ module Infrastructure.Database
   , insertShipmentPaymentRecord
   , fetchPendingShipmentPayments
   , updateShipmentPaymentStatus
+  , setIsShipmentPaid
   ) where
 
 
@@ -3717,14 +3718,15 @@ eraseEmptyTomorrowPickup pickupId pool =
        WHERE pickup_id = $1 :: text
       |]
 
-saveYandexPrepaidDeliveryCost :: Text -> Int32 -> Hasql.Pool -> AppM (Either Text ())
-saveYandexPrepaidDeliveryCost orderId deliveryCost pool =
+saveYandexPrepaidDeliveryCost :: Text -> Int32 -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+saveYandexPrepaidDeliveryCost orderId deliveryCost days pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $
-      Hasql.statement (orderId, deliveryCost) $
+      Hasql.statement (orderId, deliveryCost, days) $
       [Hasql.resultlessStatement|
        UPDATE yandex_orders
-       SET prepaid_cost = $2 :: int4
+       SET prepaid_cost = $2 :: int4,
+           delivery_days = $3 :: int4
        WHERE id = (
          SELECT yandex_order_id 
          FROM orders 
@@ -3778,10 +3780,10 @@ insertShipmentPaymentRecord paymentRecord pool =
           $10 :: int8)
           |]
 
-updateShipmentPaymentStatus :: Text -> Status -> Hasql.Pool -> AppM (Either Text ())
-updateShipmentPaymentStatus orderId status pool =
+updateShipmentPaymentStatus :: Text -> Status -> Hasql.Pool -> Maybe (Text -> Hasql.Transaction ()) -> AppM (Either Text ())
+updateShipmentPaymentStatus orderId status pool onSuccess =
   fmap (first (pack . show)) $
-    runTransactionM pool Hasql.Write $
+    runTransactionM pool Hasql.Write $ do
       Hasql.statement 
         ( orderId
         , encodeToText status
@@ -3792,3 +3794,21 @@ updateShipmentPaymentStatus orderId status pool =
           WHERE order_id = $1 :: text
           AND status = CAST(LOWER($3 :: text) as payment_status)
         |]
+      for_ onSuccess $ \trans -> trans orderId
+
+setIsShipmentPaid :: Text -> Hasql.Transaction ()
+setIsShipmentPaid orderId =
+  Hasql.statement () $
+    lmap (const orderId)
+    [Hasql.resultlessStatement|
+     UPDATE yandex_orders
+     SET is_shipment_paid = TRUE
+     WHERE id = (
+       SELECT
+        o.yandex_order_id 
+       FROM shipment_payments AS so
+       INNER JOIN orders AS o
+       ON so.parcel_order_id = o.id
+       WHERE so.order_id = $1 :: text
+       )
+    |]

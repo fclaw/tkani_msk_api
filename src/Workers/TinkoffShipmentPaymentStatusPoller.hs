@@ -45,7 +45,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState
 import Concurrency (runJobWithCleanup)
 import TH.Location (currentModule)
 import Infrastructure.Services.Tinkoff.Types.Cancel
-import Infrastructure.Database (fetchPendingShipmentPayments, updateShipmentPaymentStatus)
+import Infrastructure.Database (fetchPendingShipmentPayments, updateShipmentPaymentStatus, setIsShipmentPaid)
 import Workers.TinkoffPaymentStatusPoller (getAdaptiveDelay, resendFinalizedMessage, delayFast, delayMedium, delaySlow)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, ParseMode (MarkdownV2), try', TelegramError (ApiRequestFailed))
 import Infrastructure.Services.Tinkoff (checkTinkoffPaymentStatus, cancelTinkoffPayment)
@@ -124,12 +124,12 @@ workerLogic TinkoffShipmentPaymentJob {..} = do
         case status of
           s | s `elem` [CONFIRMED, AUTHORIZED] -> do
             pool <- fmap _appDBPool ask
-            void $ updateShipmentPaymentStatus tspjOrderId s pool
+            void $ updateShipmentPaymentStatus tspjOrderId s pool (Just setIsShipmentPaid)
             sendPaymentResultToUser tspjOrderId tspjChatId tspjMessageId "Confirmed"
             -- EXIT LOOP
           s | s `elem` [REJECTED, REVERSED]    -> do
             pool <- fmap _appDBPool ask
-            void $ updateShipmentPaymentStatus tspjOrderId REJECTED pool
+            void $ updateShipmentPaymentStatus tspjOrderId REJECTED pool Nothing
             let rejectedMsg = 
                   escapeMarkdownV2 $ 
                     "‼️ payment for order " <> 
@@ -140,7 +140,7 @@ workerLogic TinkoffShipmentPaymentJob {..} = do
           -- EXIT LOOP
           DEADLINE_EXPIRED                     -> do
             pool <- fmap _appDBPool ask
-            void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool
+            void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool Nothing
             let deadlineMsg = 
                   escapeMarkdownV2 $ 
                     "‼️ payment for order " <> 
@@ -151,7 +151,7 @@ workerLogic TinkoffShipmentPaymentJob {..} = do
           -- EXIT LOOP
           CANCELLED                            -> do
             pool <- fmap _appDBPool ask
-            void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool
+            void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool Nothing
             let cancelledMsg = 
                   escapeMarkdownV2 $ 
                     "‼️ payment for order " <> 
@@ -196,7 +196,7 @@ workerLogic TinkoffShipmentPaymentJob {..} = do
               decodeUtf8 (BL.toStrict (encodePretty makeCancelReq))     
         sendMsgToPrepaidOrderChannel errorMsg
     pool <- fmap _appDBPool ask
-    void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool
+    void $ updateShipmentPaymentStatus tspjOrderId CANCELLED pool Nothing
 
 
 sendPaymentResultToUser :: Text -> Int64 -> Int64 -> Text -> AppM ()
