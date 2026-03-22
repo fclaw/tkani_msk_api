@@ -31,6 +31,7 @@ module App
     NormalizedRoute (..),
     SdekCourierJob (..),
     SdekPointCode (..),
+    TinkoffShipmentPaymentJob (..),
     currentTime,
     render,
     runAppM,
@@ -88,7 +89,7 @@ import Control.Concurrent.STM (TVar, TChan, readTVar, modifyTVar', atomically, r
 
 import API.WithField (WithField)
 import Text (recordLabelModifier, camelToSnake)
-import API.Types (ProviderInfo, DeliveryPoint, OrderRequest, InitiateShelfShipment)
+import API.Types (ProviderInfo, DeliveryPoint, OrderRequest, InitiateShelfShipment, YandexShipmentFinalizeReq)
 import Infrastructure.Templating (TemplateMap, renderTemplate, TemplateData)
 import Domain.Warehouse.Enums (FabricLifecycle)
 import Infrastructure.Services.Yandex.Config (YandexConfig)
@@ -101,6 +102,7 @@ import Infrastructure.Services.Sdek.Types.Config (SdekConfig)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig)
 import Infrastructure.Services.Dostavista.Types.Enums (DostavistaOrderStatus)
 import Infrastructure.Services.Sdek.Types.State (SdekRequestState)
+import qualified Infrastructure.Services.Tinkoff.Types.GetState as Tinkoff
 import Infrastructure.Services.Yandex.Types (GeoId, PlatformStationId, PickupPoint, DropOffPoint)
 
 
@@ -202,6 +204,13 @@ data DostavistaJob =
 data PaymentFlow = PutOnShelf | ShipNow
   deriving (Show, Eq)
 
+data TinkoffShipmentPaymentJob = 
+     TinkoffShipmentPaymentJob
+     { tspjOrderId      :: Text
+     , tspjStateRequest :: GetStateRequest
+     , tspjChatId       :: Int64
+     , tspjMessageId    :: Int64
+     }
 
 -- This newtype wraps our tuple. Its only purpose is to provide a custom Ord instance.
 newtype NormalizedRoute = NormalizedRoute (Location, Location) deriving (Show)
@@ -287,6 +296,8 @@ data State = State
   , _sdekPointsCodes     :: Maybe (UTCTime, [SdekPointCode])
   , _simpleOrdersChan    :: TChan OrderRequest
   , _shelfOrdersChan     :: TChan (Int64, WithField "chat_id" Int64 InitiateShelfShipment)
+  , _shipmentChan        :: TChan YandexShipmentFinalizeReq
+  , _tinkoffShipmentChan :: TChan TinkoffShipmentPaymentJob
   }
 
 
@@ -299,6 +310,7 @@ data ChatKey =
       | SHELF
       | PICKUP
       | SPECIAL_POST
+      | PREPAID_ORDER
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int64)

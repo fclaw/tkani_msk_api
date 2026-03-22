@@ -119,6 +119,10 @@ module Infrastructure.Database
   , fetchEmptyPickupForTomorrow
   , eraseEmptyTomorrowPickup
   , saveYandexPrepaidDeliveryCost
+  , fetchShipmentCost
+  , insertShipmentPaymentRecord
+  , fetchPendingShipmentPayments
+  , updateShipmentPaymentStatus
   ) where
 
 
@@ -875,6 +879,23 @@ fetchPendingPayments pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $ 
       PENDING `Hasql.statement` fetchPendingPaymentsStatement
+
+fetchPendingShipmentPayments :: Hasql.Pool -> AppM (Either Text (V.Vector (Text, Text, Int64, Int64)))
+fetchPendingShipmentPayments pool =
+ fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $ 
+      Hasql.statement PENDING $
+       lmap encodeToText
+       [Hasql.vectorStatement|
+        SELECT 
+         order_id :: text,
+         provider_payment_id :: text,
+         chat_id :: int8,
+         message_id :: int8
+        FROM shipment_payments
+        WHERE status = CAST(LOWER($1 :: text) as payment_status)
+       |]
+
 
 updatePaymentStatusStatement :: Hasql.Statement (Text, Status, Status) Int
 updatePaymentStatusStatement = 
@@ -3602,6 +3623,8 @@ fetchOrdersForYandexCourierPickup status pool =
         LEFT JOIN yandex_courier_pickups AS ycp
         ON o.yandex_courier_pickup_id = ycp.id
         WHERE o.status = CAST($1 :: text AS order_status)
+        AND ((yo.is_prepaid AND yo.is_shipment_paid = TRUE)
+             OR NOT yo.is_prepaid)
         AND ycp.id IS NULL
       |]
 
@@ -3707,3 +3730,65 @@ saveYandexPrepaidDeliveryCost orderId deliveryCost pool =
          FROM orders 
          WHERE id = $1 :: text)
       |]
+
+fetchShipmentCost :: Text -> Hasql.Pool -> AppM (Either Text (Maybe (Int32, Text)))
+fetchShipmentCost orderId pool =
+ fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (orderId) $
+      rmap (\(mCost, phone) -> fmap (,phone) mCost)
+      [Hasql.singletonStatement|
+       SELECT 
+        yo.prepaid_cost :: int4?,
+        o.customer_phone :: text
+       FROM orders AS o
+       INNER JOIN yandex_orders AS yo
+       ON yo.id = o.yandex_order_id
+       WHERE o.id = $1 :: text AND yo.is_prepaid = TRUE
+      |]
+
+insertShipmentPaymentRecord :: ShipmentPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
+insertShipmentPaymentRecord paymentRecord pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (paymentRecord) $
+        lmap (app3 encodeToText  . $(recordToTuple ''ShipmentPaymentRecord))
+        [Hasql.resultlessStatement|
+          INSERT INTO shipment_payments
+          ( order_id
+          , parcel_order_id
+          , provider         
+          , provider_payment_id 
+          , amount    
+          , payment_url       
+          , error
+          , token
+          , chat_id
+          , message_id)
+          VALUES (
+          $1 :: text,
+          $2 :: text,
+          CAST($3 :: text AS payment_provider),
+          $4 :: text,
+          $5 :: int4,
+          $6 :: text,
+          $7 :: text?,
+          $8 :: text,
+          $9 :: int8,
+          $10 :: int8)
+          |]
+
+updateShipmentPaymentStatus :: Text -> Status -> Hasql.Pool -> AppM (Either Text ())
+updateShipmentPaymentStatus orderId status pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement 
+        ( orderId
+        , encodeToText status
+        , encodeToText PENDING) $
+        [Hasql.resultlessStatement|
+          UPDATE shipment_payments
+          SET status = CAST(LOWER($2 :: text) as payment_status)
+          WHERE order_id = $1 :: text
+          AND status = CAST(LOWER($3 :: text) as payment_status)
+        |]

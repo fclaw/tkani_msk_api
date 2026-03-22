@@ -51,7 +51,7 @@ import Control.Lens ((&), (.~), (^.))
 
 
 import API.Types (OrderStatus (Cancelled), Providers (SDEK))
-import App (AppM, _configHttpManager, render, _appDBPool, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER, MAIN), forkAppM, _bots, extractFromEither)
+import App (AppM, _configHttpManager, render, _appDBPool, _conciergeBotUrl, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER, MAIN), forkAppM, _bots, extractFromEither)
 import Text (camelToSnake, tshow)
 import TH.Location (currentModule)
 import Infrastructure.Database 
@@ -398,8 +398,9 @@ doYandexCalculation orderId = do
 
             let intPrice = calculateFinalConsumerPrice $ toKopecks pcrPricingTotal
 
-            if yodpIsPrepaid then
+            if yodpIsPrepaid then do
               void $ saveYandexPrepaidDeliveryCost orderId intPrice pool
+              sendPrepaidPaymentLink orderId intPrice yodpWeight
             else do
               let orderReq =
                     draftOrderReq {
@@ -532,8 +533,52 @@ sendPriceAndTrackingNumber orderId yandexOrderId pickupId PriceCalculatorResp {.
                 disableLinkPreviewOption
             , "reply_markup"         .= button
             ]
+      httpManager <- fmap _configHttpManager ask 
+      eTelResp <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
+      when (isLeft eTelResp) $ do
+        $(logTM) ErrorS $ 
+          "telegram failed to deliver message " <> 
+          ls (show eTelResp)
+        notifyOrderChannelAboutError $ tshow eTelResp
+
+sendPrepaidPaymentLink :: Text -> Int32 -> Int32 -> AppM ()
+sendPrepaidPaymentLink orderId price weight = do
+  cfg <- ask
+  let pool = _appDBPool cfg
+  eDbRes <- getChatDetails orderId pool
+  extractFromEither eDbRes $ \maybeDetails ->
+    extractFromMaybe maybeDetails $ \(chatId, _) -> do
+      bots <- fmap _bots ask
+      let (bot,_) = (M.!) bots MAIN
+      let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+      let templateData = 
+            HM.fromList 
+            [ ("orderId", orderId)
+            , ("weight", tshow weight)
+            , ("inflatedPrice", tshow (fromIntegral price / 100.0))
+            ]
+      let botUrl = _conciergeBotUrl cfg
+      let deepLinkUrl = botUrl <> "?start=prepaid_" <> orderId
+      let button = 
+            object [
+             "inline_keyboard" .=
+             [[ object 
+              [ "text" .= ("💳 Получить ссылку на оплату" :: Text)
+              , "url"  .= deepLinkUrl
+              ]
+             ]]
+            ]
+      message <- fmap escapeMarkdownV2 $ render ($currentModule <> ".Yandex.Prepaid") templateData
+      let payload =
+            object
+            [ "chat_id"              .= chatId
+            , "text"                 .= message
+            , "parse_mode"           .= tshow MarkdownV2
+            , "link_preview_options" .= 
+                disableLinkPreviewOption
+            , "reply_markup"         .= button
+            ]
       httpManager <- fmap _configHttpManager ask
-      let 
       eTelResp <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
       when (isLeft eTelResp) $ do
         $(logTM) ErrorS $ 

@@ -764,3 +764,13 @@ data YandexPickupPointsResp =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "yppr" } ''YandexPickupPointsResp)
+
+data YandexShipmentFinalizeReq = 
+      YandexShipmentFinalizeReq 
+      { ysfrOrderId    :: Text
+      , ysfrUserId     :: Int64
+      , ysfrChatId     :: Int64
+      , ysfrWaitMsgId  :: Int64
+      } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ysfr" } ''YandexShipmentFinalizeReq)

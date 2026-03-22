@@ -40,6 +40,8 @@ library:
     - Workers.YandexOrderStatusPoller
     - Workers.YandexPickupStatusPoller
     - Workers.YandexShipmentJanitor
+    - Workers.ShippingInvoiceJanitor
+    - Workers.TinkoffShipmentPaymentStatusPoller
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

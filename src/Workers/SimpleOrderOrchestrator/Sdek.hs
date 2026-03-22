@@ -207,7 +207,7 @@ place orderRequest@OrderRequest {..} = do
   let getStateRequest = 
         Tinkoff.GetStateRequest
         { gsrqPaymentId = tinkoffPaymentId
-        , gsrqToken = 
+        , gsrqToken =
             Tinkoff.generateGetStateToken $
               Tinkoff.GetStateToken
               tinkoffPaymentId
@@ -282,7 +282,12 @@ buildTemplateData orderId localTime orderReq items =
     -- 2. Build the 'itemsBlock' by mapping over the list
     itemLines = map formatOrderItemLine items
     itemsBlock = T.unlines itemLines
-    
+
+    prepaidWarning | orIsPrepaid orderReq = 
+                      "⚠️ WARNING!! before having the order fulfilled \
+                      \ make sure that it is paid on \
+                      \ https://t.me/+HyVlDklGJ0tjMzIy"
+                   | otherwise = mempty 
   in
     -- 3. Construct the final HashMap
     HM.fromList
@@ -299,6 +304,7 @@ buildTemplateData orderId localTime orderReq items =
       , ("deliveryProvider", T.pack $ show $ orDeliveryProviderId orderReq) -- Assuming this is already Text
       , ("deliveryPoint", orDeliveryPointId orderReq)
       , ("status", formatStatus Registered) -- You can format this from an Enum if you have one
+      , ("prePaid", prepaidWarning)
       ]
 
 -- | Helper function to format a single line in the 'itemsBlock'.

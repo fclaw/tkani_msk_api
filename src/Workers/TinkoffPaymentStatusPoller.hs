@@ -1,10 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE TypeApplications  #-}
 
-module Workers.TinkoffPaymentStatusPoller (runTinkoffPaymentStatusPoller) where
+module Workers.TinkoffPaymentStatusPoller 
+       ( runTinkoffPaymentStatusPoller
+       , getAdaptiveDelay
+       , delayFast
+       , delayMedium
+       , delaySlow
+       , resendFinalizedMessage
+       ) where
 
 import Katip
 import Control.Concurrent (threadDelay)

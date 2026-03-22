@@ -18,6 +18,7 @@ module Infrastructure.Services.Telegram
   , MessageIdResponse (..)
   , ParseMode (..)
   , disableLinkPreviewOption
+  , try'
   )
 where
 

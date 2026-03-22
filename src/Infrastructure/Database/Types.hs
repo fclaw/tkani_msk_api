@@ -456,3 +456,17 @@ data OrdersForYandexCourierPickupItem =
      } deriving (Show)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "oycpi" } ''OrdersForYandexCourierPickupItem)
+
+data ShipmentPaymentRecord = 
+     ShipmentPaymentRecord
+     { sprOrderId            :: Text
+     , sprParcelOrderId      :: Text
+     , sprProvider           :: PaymentProvider
+     , sprProviderPaymentId  :: Text
+     , sprAmountKopecks      :: Int32
+     , sprPaymentUrl         :: Text
+     , sprError              :: Maybe Text
+     , sprToken              :: Text
+     , sprChatId             :: Int64
+     , sprMessageId          :: Int64
+     }

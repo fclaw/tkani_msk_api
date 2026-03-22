@@ -22,4 +22,6 @@
 • *Пункт выдачи:* `{{deliveryPoint}}`
 ---
 
+{{prePaid}}
+
 *Статус:* **{{status}}** (#registered)

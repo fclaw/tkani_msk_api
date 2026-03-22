@@ -292,6 +292,16 @@ data Routes route = Routes
        :> RateLimitPerUser (Minute 10) ('Just "user")
        :> QueryParam "geocode" Int
        :> Get '[JSON] (ApiResponse YandexPickupPointsResp)
+
+    , _finalizeShipment
+       :: route
+       :- "yandex"
+       :> "shipment"
+       :> "finalize"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> ReqBody '[JSON] YandexShipmentFinalizeReq
+       :> Post '[JSON] (ApiResponse ())
+
   } deriving (Generic)
 
 

@@ -44,6 +44,8 @@ library
       Workers.YandexOrderStatusPoller
       Workers.YandexPickupStatusPoller
       Workers.YandexShipmentJanitor
+      Workers.ShippingInvoiceJanitor
+      Workers.TinkoffShipmentPaymentStatusPoller
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -87,6 +89,7 @@ library
       API.Handlers.UploadMediaForFabric
       API.Handlers.ViewCart
       API.Handlers.Yandex.DetectLocation
+      API.Handlers.Yandex.FinalizeShipment
       API.Handlers.Yandex.ListPickupPoints
       API.WithField
       Concurrency

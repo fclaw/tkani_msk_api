@@ -96,6 +96,8 @@ import Workers.ShelfOrderRegister (runShelfOrderRegister)
 import Workers.YandexPickupStatusPoller (runYandexPickupStatusPoller)
 import Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller)
 import Workers.YandexShipmentJanitor (runYandexShipmentJanitor)
+import Workers.ShippingInvoiceJanitor (runShippingInvoiceJanitor)
+import Workers.TinkoffShipmentPaymentStatusPoller (runTinkoffShipmentPaymentStatusPoller)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -134,37 +136,41 @@ data Workers =
       | YandexOrderStatusPoller
       | YandexPickupStatusPoller
       | YandexShipmentJanitor
+      | ShippingInvoiceJanitor
+      | TinkoffShipmentPaymentStatusPoller
 
 
 
 instance Show Workers where
-  show WebServer                        = "Web Server"
-  show SdekOrderStatusPoller            = "SDEK Order Status Poller"
-  show Tinkoff                          = "Tinkoff Poller"
-  show CollageMaker                     = "Collage Maker"
-  show CartsCleaner                     = "Carts Cleaner"
-  show CourierPickUpScheduler           = "Courier Pickup Scheduler"
-  show SdekStatusPoller                 = "SDEK Status Poller"
-  show PriceCalculator                  = "Price Calculator"
-  show SdekGenerateReceipt              = "SDEK Generate Receipt"
-  show OrderDeliveryScheduler           = "Order Delivery Scheduler"
-  show DailyWeightTracker               = "Daily Weight Tracker"
-  show DostavistaOrderStatusPoller      = "Dostavista Order Status Poller"
-  show SpecialPostManager               = "Special Post Manager"
-  show OrderCancellationHandler         = "Order Cancellation Handler"
-  show FabricLifecycleObserver          = "Fabric Lifecycle Observer"
-  show DailyCleanupNotificationsJanitor = "Daily Cleanup Notifications Janitor"
-  show ShelfSubmissionObserver          = "Shelf Submission Observer"
-  show SdekCourierStatusPoller          = "SDEK Courier Status Poller"
-  show SdekPickupAppStatusPoller        = "SDEK Pickup App Status Poller"
-  show CancelledOrdersCleaner           = "Cancelled Orders Cleaner"
-  show ParcelDeliveryWatcher            = "Parcel Delivery Watcher"
-  show DeliveryCostListener             = "Delivery Cost Listener"
-  show SimpleOrderOrchestrator          = "Simple Order Orchestrator"
-  show ShelfOrderRegister               = "Shelf Order Register"
-  show YandexOrderStatusPoller          = "Yandex Order Status Poller"
-  show YandexPickupStatusPoller         = "Yandex Pickup Status Poller"
-  show YandexShipmentJanitor            = "Yandex Shipment Janitor"
+  show WebServer                          = "Web Server"
+  show SdekOrderStatusPoller              = "SDEK Order Status Poller"
+  show Tinkoff                            = "Tinkoff Poller"
+  show CollageMaker                       = "Collage Maker"
+  show CartsCleaner                       = "Carts Cleaner"
+  show CourierPickUpScheduler             = "Courier Pickup Scheduler"
+  show SdekStatusPoller                   = "SDEK Status Poller"
+  show PriceCalculator                    = "Price Calculator"
+  show SdekGenerateReceipt                = "SDEK Generate Receipt"
+  show OrderDeliveryScheduler             = "Order Delivery Scheduler"
+  show DailyWeightTracker                 = "Daily Weight Tracker"
+  show DostavistaOrderStatusPoller        = "Dostavista Order Status Poller"
+  show SpecialPostManager                 = "Special Post Manager"
+  show OrderCancellationHandler           = "Order Cancellation Handler"
+  show FabricLifecycleObserver            = "Fabric Lifecycle Observer"
+  show DailyCleanupNotificationsJanitor   = "Daily Cleanup Notifications Janitor"
+  show ShelfSubmissionObserver            = "Shelf Submission Observer"
+  show SdekCourierStatusPoller            = "SDEK Courier Status Poller"
+  show SdekPickupAppStatusPoller          = "SDEK Pickup App Status Poller"
+  show CancelledOrdersCleaner             = "Cancelled Orders Cleaner"
+  show ParcelDeliveryWatcher              = "Parcel Delivery Watcher"
+  show DeliveryCostListener               = "Delivery Cost Listener"
+  show SimpleOrderOrchestrator            = "Simple Order Orchestrator"
+  show ShelfOrderRegister                 = "Shelf Order Register"
+  show YandexOrderStatusPoller            = "Yandex Order Status Poller"
+  show YandexPickupStatusPoller           = "Yandex Pickup Status Poller"
+  show YandexShipmentJanitor              = "Yandex Shipment Janitor"
+  show ShippingInvoiceJanitor             = "Shipping Invoice Janitor"
+  show TinkoffShipmentPaymentStatusPoller = "Tinkoff Shipment Payment Status Poller"
 
 
 --
@@ -328,7 +334,8 @@ main = do
                    (YAML_ORDER, (configWarehouseBotToken, configYamlOrderChatId)),
                    (SHELF, (configConciergeBotToken, configShelfChatId)),
                    (PICKUP, (configConciergeBotToken, configPickupChatId)),
-                   (SPECIAL_POST, (configConciergeBotToken, configSpecialPostChatId))
+                   (SPECIAL_POST, (configConciergeBotToken, configSpecialPostChatId)),
+                   (PREPAID_ORDER, (configConciergeBotToken, configPrepaidOrderChatId))
                    ]
             , _configHttpManager = tlsManager
             , configTemplateMap = tplMap
@@ -361,12 +368,14 @@ main = do
             , _consolidationTime = configPickupConsolidationTm
             }
 
-      tinkoffPaymentChan <- newTChanIO
-      sdekOrderChan      <- newTChanIO
-      sdekCourierChan    <- newTChanIO
-      simpleOrdersChan   <- newTChanIO
-      shelfOrdersChan    <- newTChanIO
-      dostavistaChan     <- newTChanIO
+      tinkoffPaymentChan  <- newTChanIO
+      sdekOrderChan       <- newTChanIO
+      sdekCourierChan     <- newTChanIO
+      simpleOrdersChan    <- newTChanIO
+      shelfOrdersChan     <- newTChanIO
+      dostavistaChan      <- newTChanIO
+      shipmentChan        <- newTChanIO
+      tinkoffShipmentChan <- newTChanIO
 
       cityCacheVar <- newTVarIO M.empty
       pvzCacheVar  <- newTVarIO M.empty
@@ -390,6 +399,8 @@ main = do
            , _yandexPickupPoints  = mempty
            , _yandexDropOffPoints = Nothing
            , _yandexWarehouseId   = Nothing
+           , _shipmentChan        = shipmentChan
+           , _tinkoffShipmentChan = tinkoffShipmentChan
            }
       initialState <- newTVarIO state
   
@@ -544,6 +555,16 @@ main = do
                    runYandexOrderStatusPoller
                     >>= showErrorInWorker
                           YandexOrderStatusPoller)
+              , (ShippingInvoiceJanitor,
+                   appMToHandler
+                     runShippingInvoiceJanitor 
+                     >>= showErrorInWorker
+                           ShippingInvoiceJanitor)
+              , (TinkoffShipmentPaymentStatusPoller,
+                  appMToHandler
+                    runTinkoffShipmentPaymentStatusPoller
+                    >>= showErrorInWorker
+                          TinkoffShipmentPaymentStatusPoller)
               ]
 
         let courierPickupTasks 

@@ -139,8 +139,8 @@ buildAndSendPaymentDetailsMessage chatId provider OrderConfirmationDetails {..} 
 
 notifyOrderChannelAboutError :: Text -> AppM ()
 notifyOrderChannelAboutError error = do
-  let error = escapeMarkdownV2 $ "‼️ Error in calling orchestrateSingleOrder: " <> error
-  void $ sendOrEditTelegramMessage mempty error ORDER Nothing Nothing Nothing
+  let errorMsg = escapeMarkdownV2 $ "‼️ Error in calling orchestrateSingleOrder: " <> error
+  void $ sendOrEditTelegramMessage mempty errorMsg ORDER Nothing Nothing Nothing
 
 
 sendErrorMessageToUser :: Int64 -> Text -> AppM ()
