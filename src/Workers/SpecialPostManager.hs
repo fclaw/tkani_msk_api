@@ -39,7 +39,7 @@ import App (AppM, _postsCfgs, _thresholdMetres, _messageCannotBeDeleted, _appDBP
 
 
 maxNamesToList :: Int
-maxNamesToList = 10
+maxNamesToList = 7
 
 
 runSpecialPostManager :: AppM ()
