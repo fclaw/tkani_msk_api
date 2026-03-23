@@ -73,7 +73,7 @@ go userId cfg init@InitiateShelfShipment {..} shipment@ShelfItemsForShipment {..
   trackingNumber <- except $ (first SdekPollerError) ePollerRes
   ssdOrderId <- liftIO generateOrderId
 
-  telegramMsgId <- wrapOrCancel (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed $ void (Sdek.cancelOrder uuid)
+  telegramMsgId <- wrapOrCancel (notifyShelfChannel shipment ssdOrderId False) NotificationSendFailed $ void (Sdek.cancelOrder uuid)
   let sdekOrder = mkSdekOrder issPointId uuid trackingNumber optimalTariff
   let dbOrder = mkDbOrder userId init shipment ssdOrderId telegramMsgId
   pool <- fmap _appDBPool $ lift ask
@@ -97,16 +97,16 @@ tryTariffs InitiateShelfShipment {..} ShelfItemsForShipment {..} shipmentPoint t
   wrap (fmap (second (,optimalTariff)) (Sdek.registerOrder (Sdek.buildMinimalOderRequest minOderReq))) SdekRegistrationFailed
 
 
-notifyShelfChannel :: ShelfItemsForShipment -> Text -> AppM (Either Text MessageIdResponse)
-notifyShelfChannel shipment orderId = do
+notifyShelfChannel :: ShelfItemsForShipment -> Text -> Bool -> AppM (Either Text MessageIdResponse)
+notifyShelfChannel shipment orderId isPrePaid = do
   tm <- currentTime
   tz <- liftIO getCurrentTimeZone
   let localTime = utcToLocalTime tz tm
-  messageText <- render $currentModule $ buildTemplateData orderId shipment localTime
+  messageText <- render $currentModule $ buildTemplateData orderId shipment localTime isPrePaid
   fmap (first (T.pack . show)) $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 messageText) SHELF Nothing Nothing Nothing
 
-buildTemplateData :: Text -> ShelfItemsForShipment -> LocalTime -> HM.HashMap Text Text
-buildTemplateData orderId ShelfItemsForShipment {..} localTime =
+buildTemplateData :: Text -> ShelfItemsForShipment -> LocalTime -> Bool -> HM.HashMap Text Text
+buildTemplateData orderId ShelfItemsForShipment {..} localTime isPrePaid =
   let
     -- 1. Format common values
     timeStr = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" localTime
@@ -116,6 +116,12 @@ buildTemplateData orderId ShelfItemsForShipment {..} localTime =
     itemLines = map formatOrderItemLine sifsItems
     itemsBlock = T.unlines itemLines
     
+    prepaidWarning | isPrePaid = 
+                      "⚠️ WARNING!! before having the order fulfilled \
+                      \ make sure that it is paid on \
+                      \ https://t.me/+HyVlDklGJ0tjMzIy"
+                   | otherwise = mempty 
+
   in
     -- 3. Construct the final HashMap
     HM.fromList
@@ -128,6 +134,7 @@ buildTemplateData orderId ShelfItemsForShipment {..} localTime =
       -- NEW: Variables for the item list
       , ("itemCount", itemCount)
       , ("itemsBlock", itemsBlock)
+      , ("prePaid", prepaidWarning)
       ]
 
 

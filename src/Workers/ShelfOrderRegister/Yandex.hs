@@ -61,7 +61,7 @@ place userId init = do
 go :: Int64 -> Config -> InitiateShelfShipment -> ShelfItemsForShipment -> ExceptT PlaceOrderError AppM ShelfShipmentDetails
 go userId cfg init shipment = do
   ssdOrderId <- liftIO generateOrderId
-  telegramMsgId <- wrap (notifyShelfChannel shipment ssdOrderId) NotificationSendFailed
+  telegramMsgId <- wrap (notifyShelfChannel shipment ssdOrderId (issIsPrepaid init)) NotificationSendFailed
   cfg <- lift ask
   -- drop off point (platform station id)
   stateVar <- lift get
