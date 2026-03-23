@@ -47,6 +47,7 @@ library
       Workers.ShippingInvoiceJanitor
       Workers.TinkoffShipmentPaymentStatusPoller
       Workers.YandexPrepaidOrderRegistrar
+      Workers.StuckOrdersWatcher
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

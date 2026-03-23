@@ -99,6 +99,7 @@ import Workers.YandexShipmentJanitor (runYandexShipmentJanitor)
 import Workers.ShippingInvoiceJanitor (runShippingInvoiceJanitor)
 import Workers.TinkoffShipmentPaymentStatusPoller (runTinkoffShipmentPaymentStatusPoller)
 import Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar)
+import Workers.StuckOrdersWatcher (runStuckOrdersWatcher)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -140,6 +141,7 @@ data Workers =
       | ShippingInvoiceJanitor
       | TinkoffShipmentPaymentStatusPoller
       | YandexPrepaidOrderRegistrar
+      | StuckOrdersWatcher
 
 
 
@@ -174,6 +176,7 @@ instance Show Workers where
   show ShippingInvoiceJanitor             = "Shipping Invoice Janitor"
   show TinkoffShipmentPaymentStatusPoller = "Tinkoff Shipment Payment Status Poller"
   show YandexPrepaidOrderRegistrar        = "Yandex Prepaid Order Registrar"
+  show StuckOrdersWatcher                 = "Stuck Orders. Watcher"
 
 
 --
@@ -573,6 +576,12 @@ main = do
                     (runYandexPrepaidOrderRegistrar 
                      connInfo 
                      appMToHandler)
+                    >>= showErrorInWorker
+                          YandexPrepaidOrderRegistrar)
+              , (StuckOrdersWatcher,
+                 runForever 5 $
+                  appMToHandler
+                    runStuckOrdersWatcher
                     >>= showErrorInWorker
                           YandexPrepaidOrderRegistrar)
               ]

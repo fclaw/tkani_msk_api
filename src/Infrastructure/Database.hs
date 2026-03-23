@@ -124,6 +124,8 @@ module Infrastructure.Database
   , fetchPendingShipmentPayments
   , updateShipmentPaymentStatus
   , setIsShipmentPaid
+    --- stall orders
+  , collectOrdersStuckInPaid
   ) where
 
 
@@ -3812,3 +3814,19 @@ setIsShipmentPaid orderId =
        WHERE so.order_id = $1 :: text
        )
     |]
+
+collectOrdersStuckInPaid :: Hasql.Pool -> AppM (Either Text (V.Vector (Text, Int64)))
+collectOrdersStuckInPaid pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement ()
+      [Hasql.vectorStatement|
+       SELECT
+       o.id :: text,
+       ofb.chat_id  :: int8
+       FROM orders AS o
+       INNER JOIN order_telegram_bindings AS ofb
+       ON o.id = ofb.order_id
+       WHERE o.status = 'paid' 
+       AND o.updated_at < (now() - interval '2 days')
+      |]
