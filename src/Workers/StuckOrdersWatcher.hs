@@ -22,7 +22,7 @@ import TH.Location (currentModule)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Workers.SimpleOrderOrchestrator (try')
 import App (AppM, _appDBPool, ChatKey (ORDER, MAIN), render, _bots, _configHttpManager)
-import Infrastructure.Database (collectOrdersStuckInPaid)
+import Infrastructure.Database (collectOrdersStuckInPaid, insertStallOrder)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, ParseMode(MarkdownV2))
 
 
@@ -37,7 +37,8 @@ runStuckOrdersWatcher = do
         "collectOrdersStuckInPaid db failure " <> 
         ls (tshow eStallOrders)
     Right stallOrders ->
-      for_ stallOrders $ \order ->  do
+      for_ stallOrders $ \order -> do
+        void $ insertStallOrder (fst order) pool
         uncurry notifyCustomer order
         let warnMsg = escapeMarkdownV2 $ "⚠️ order is stall: " <> fst order
         void $ sendOrEditTelegramMessage mempty warnMsg ORDER Nothing Nothing Nothing

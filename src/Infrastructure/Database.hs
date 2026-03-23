@@ -126,6 +126,7 @@ module Infrastructure.Database
   , setIsShipmentPaid
     --- stall orders
   , collectOrdersStuckInPaid
+  , insertStallOrder
   ) where
 
 
@@ -3828,5 +3829,19 @@ collectOrdersStuckInPaid pool =
        INNER JOIN order_telegram_bindings AS ofb
        ON o.id = ofb.order_id
        WHERE o.status = 'paid' 
-       AND o.updated_at < (now() - interval '2 days')
+       AND o.updated_at < 
+           (now() - interval '2 days')
+       AND NOT EXISTS (
+        SELECT 1 
+        FROM stall_orders_log AS sol 
+        WHERE sol.order_id = o.id)
       |]
+
+insertStallOrder :: Text -> Hasql.Pool -> AppM (Either Text ())
+insertStallOrder orderId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+    Hasql.statement (orderId) 
+    [Hasql.resultlessStatement|
+     INSERT INTO stall_orders_log (order_id) VALUES ($1 :: text)
+    |]
