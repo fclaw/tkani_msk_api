@@ -436,14 +436,14 @@ finalizeYandexOrder orderId pickupId resp cal customer = do
       todayHashtag <- ((<>) "#t" . T.pack . formatTime defaultTimeLocale "%Y_%m_%d") <$> (liftIO getZonedTime)
       let caption = 
             "📄 Новая квитанция Yandex для заказа `" <> 
-            escapeMarkdownV2 orderId <> 
+            orderId <> 
             "`\n" <> 
             customer <>
             "\n" <> 
-            escapeMarkdownV2 todayHashtag
+            todayHashtag
       let filename = "receipt-" <> orderId <> ".pdf"
       -- 2. Call the new service function
-      void $ sendDocument ORDER caption filename pdfBytes "application/pdf"
+      void $ sendDocument ORDER (escapeMarkdownV2 caption) filename pdfBytes "application/pdf"
       $(logTM) InfoS $ "Successfully sent Yandex receipt for " <> ls orderId <> " to admin channel."
       -- send message about price and tracking number to the telegram channel
       forkAppM $ sendPriceAndTrackingNumber orderId (requestId resp) pickupId cal
