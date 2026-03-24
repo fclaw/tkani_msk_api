@@ -50,8 +50,8 @@ import Network.Wreq (postWith, defaults, manager, responseBody)
 import Control.Lens ((&), (.~), (^.))
 
 
+import App
 import API.Types (OrderStatus (Cancelled), Providers (SDEK))
-import App (AppM, _configHttpManager, render, _appDBPool, _conciergeBotUrl, _sdekConfig, extractFromMaybe, extractFromEither, ChatKey (ORDER, MAIN), forkAppM, _bots, extractFromEither)
 import Text (camelToSnake, tshow)
 import TH.Location (currentModule)
 import Infrastructure.Database 
@@ -584,8 +584,21 @@ sendPrepaidPaymentLink orderId price weight = do
             ]
       httpManager <- fmap _configHttpManager ask
       eTelResp <- liftIO $ try' $ postWith (defaults & manager .~ Right httpManager) url payload
-      when (isLeft eTelResp) $ do
-        $(logTM) ErrorS $ 
-          "telegram failed to deliver message " <> 
-          ls (show eTelResp)
-        notifyOrderChannelAboutError $ tshow eTelResp
+      case eTelResp of
+        Left err -> do
+          $(logTM) ErrorS $ 
+            "telegram failed to deliver message " <> 
+            ls (show err)
+          let errMsg = 
+                 escapeMarkdownV2 $ 
+                   "`" <> orderId <> 
+                   "` telegram failure " <> 
+                   tshow err
+          void $ sendOrEditTelegramMessage mempty errMsg PREPAID_ORDER Nothing Nothing Nothing
+      for_ eTelResp $ const $ do
+        let linkMsg = 
+              escapeMarkdownV2 $ 
+                "`" <> orderId <> 
+                "` the payment link for \
+                \ shipping has been sent"
+        void $ sendOrEditTelegramMessage mempty linkMsg PREPAID_ORDER Nothing Nothing Nothing
