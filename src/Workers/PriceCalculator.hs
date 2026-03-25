@@ -595,10 +595,10 @@ sendPrepaidPaymentLink orderId price weight = do
                    "` telegram failure " <> 
                    tshow err
           void $ sendOrEditTelegramMessage mempty errMsg PREPAID_ORDER Nothing Nothing Nothing
-      for_ eTelResp $ const $ do
-        let linkMsg = 
-              escapeMarkdownV2 $ 
-                "`" <> orderId <> 
-                "` the payment link for \
-                \ shipping has been sent"
-        void $ sendOrEditTelegramMessage mempty linkMsg PREPAID_ORDER Nothing Nothing Nothing
+        Right _ -> do
+          let linkMsg = 
+                escapeMarkdownV2 $ 
+                  "`" <> orderId <> 
+                  "` the payment link for \
+                  \ shipping has been sent"
+          void $ sendOrEditTelegramMessage mempty linkMsg PREPAID_ORDER Nothing Nothing Nothing
