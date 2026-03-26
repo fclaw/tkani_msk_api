@@ -62,7 +62,7 @@ generateConsignmentPdf orderId items = do
         let p = setStdin (byteStringInput htmlInput)
                 $ setStdout byteStringOutput
                 $ setStderr byteStringOutput
-                $ proc "wkhtmltopdf" ["--quiet", "-", "-"]
+                $ proc "/usr/local/bin/wkhtmltopdf" ["--quiet", "-", "-"]
 
         (exitCode, pdfStdout, stderr) <- readProcess p
     
