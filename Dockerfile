@@ -38,7 +38,7 @@ RUN mkdir -p /deploy/nix/store && \
 # ==========================================
 # STAGE 2: RUNNER
 # ==========================================
-FROM debian:bullseye-slim
+FROM debian:stable-slim
 
 
 WORKDIR /app
@@ -56,11 +56,26 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
-    wkhtmltopdf \
-    # 2. INSTALL FONTS FOR CYRILLIC SUPPORT (Crucial!)
-    fonts-dejavu-core \
+    # wkhtmltopdf dependencies
     fontconfig \
+    libxrender1 \
+    libxext6 \
+    libfontconfig1 \
+    xfonts-75dpi \
+    xfonts-base \
+    wget \
+    # Cyrillic Fonts
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# 2. Download and install wkhtmltopdf for Bookworm
+# The version 0.12.6.1-3 is specifically built for Debian 12 (Bookworm)
+RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb \
+    && dpkg -i wkhtmltopdf_0.12.6.1-2.bookworm_amd64.deb \
+    || apt-get install -f -y \
+    && rm wkhtmltopdf_0.12.6.1-2.bookworm_amd64.deb
+
+
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
 # We download it directly to a system path. No local file needed.
