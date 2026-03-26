@@ -1,14 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Infrastructure.Services.PdfGenerator (generateConsignmentPdf) where
 
 import           Data.Aeson                  (ToJSON, toJSON)
 import qualified Data.ByteString             as B
-import qualified Data.ByteString.Lazy        as BL
 import qualified Data.Text                   as T
-import           Data.Text.Lazy              (toStrict)
 import           GHC.Generics                (Generic)
-import           System.Process.Typed
 import           System.Exit                 (ExitCode(..))
 import           Text.Ginger                 (easyRender, parseGingerFile)  
 import           Data.Aeson                  (object, (.=))
@@ -16,8 +15,16 @@ import           Control.Monad.IO.Class      (liftIO)
 import           System.Directory            (doesFileExist)
 import qualified Data.Text.Encoding          as T
 import qualified Data.Text.IO                as TIO
+import           Network.Wreq                ( postWith, defaults, auth, basicAuth
+                                             , partBS, responseBody, partText
+                                             , responseStatus, statusCode
+                                             )
+import           Control.Exception           (try)
+import           Network.HTTP.Client         (HttpException)
+import           Control.Lens                ((&), (?~), (^.))
+import           Control.Monad.Reader.Class  (ask)
 
-import           App                         (AppM)
+import           App                         (AppM, _pdfCrowdUser, _pdfCrowdApiKey)
 import           Infrastructure.Database     (ConsignmentPdfItem (..))
 
 
@@ -30,6 +37,7 @@ fileResolver path = do
   if exists 
     then Just <$> TIO.readFile path 
     else return Nothing
+
 
 generateConsignmentPdf :: T.Text -> [ConsignmentPdfItem] -> AppM (Either T.Text B.ByteString)
 generateConsignmentPdf orderId items = do
@@ -52,25 +60,39 @@ generateConsignmentPdf orderId items = do
 
       -- 3. Render Template to HTML (Text)
       let htmlContent = easyRender context template
-      -- Render htmlContent to ByteString (UTF-8)
-      let htmlInput = BL.fromStrict $ T.encodeUtf8 htmlContent
-        
-      -- FIX: Use readProcessWithExitCode for binary data
-      liftIO $ do
-        -- setStdin (byteStringInput ...) and setStdout byteStringOutput
-        -- ensures binary data is handled correctly.
-        let p = setStdin (byteStringInput htmlInput)
-                $ setStdout byteStringOutput
-                $ setStderr byteStringOutput
-                $ proc "wkhtmltopdf" ["--quiet", "-", "-"]
+              
+      let url = "https://api.pdfcrowd.com/convert/24.04/"
 
-        (exitCode, pdfStdout, stderr) <- readProcess p
+      cfg <- ask
+      let pdfCrowdUser   = T.encodeUtf8 $ _pdfCrowdUser cfg
+      let pdfCrowdApiKey = T.encodeUtf8 $ _pdfCrowdApiKey cfg
+
+      -- Prepare the Auth options
+      let opts = defaults & auth ?~ basicAuth pdfCrowdUser pdfCrowdApiKey
     
-        case exitCode of
-          ExitSuccess -> 
-            -- pdfStdout is already a strict ByteString, no decoding needed!
-            pure $ Right $ BL.toStrict pdfStdout
-          ExitFailure n -> do
-            -- stderr is binary too, decode it to see what went wrong
-            let errDetail = T.decodeUtf8  $ BL.toStrict stderr
-            pure $ Left $ "wkhtmltopdf failed (exit " <> T.pack (show n) <> "): " <> errDetail
+      let payload = 
+            [ -- 1. THE SOURCE DATA
+              -- We use "text" instead of "file" to send raw HTML string from RAM
+              partText "text"                   htmlContent
+            
+              -- 2. INPUT FORMATTING
+            , partText "input_format"           "html"
+            
+              -- 3. LAYOUT CONTROL
+              -- Ensures the table fits width-wise on the A4 page
+            , partText "content_viewport_width" "balanced"
+            
+              -- 4. OUTPUT OPTIONS (Professional Additions)
+            , partText "page_size"              "A4"
+            , partText "orientation"            "portrait"
+            ]
+
+      liftIO (try $ postWith opts url payload) >>= \case
+        Left (err :: HttpException) -> 
+            pure $ Left $ "API connection failed: " <> T.pack (show err)
+        
+        Right resp ->
+            let code = resp ^. responseStatus . statusCode
+            in if code == 200
+               then pure $ Right (B.toStrict $ resp ^. responseBody)
+               else pure $ Left $ "Pdfcrowd Error: Status " <> T.pack (show code)

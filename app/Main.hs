@@ -375,6 +375,8 @@ main = do
             , _shelfCapacity = configShelfCapacity
             , _totalShelves = configTotalShelves
             , _consolidationTime = configPickupConsolidationTm
+            , _pdfCrowdUser = configPdfCrowdUser
+            , _pdfCrowdApiKey = configPdfCrowdApiKey
             }
 
       tinkoffPaymentChan  <- newTChanIO

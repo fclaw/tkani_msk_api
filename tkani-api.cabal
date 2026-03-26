@@ -221,7 +221,6 @@ library
     , transformers
     , transformers-base
     , tuple-sop
-    , typed-process
     , unix
     , unliftio
     , unordered-containers
