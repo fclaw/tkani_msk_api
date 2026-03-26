@@ -56,11 +56,19 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
-    wkhtmltopdf \
-    # 2. INSTALL FONTS FOR CYRILLIC SUPPORT (Crucial!)
-    fonts-dejavu-core \
     fontconfig \
+    fonts-dejavu-core \
+    libxrender1 \
+    libxext6 \
+    libfontconfig1 \
+    xfonts-75dpi \
+    xfonts-base \
     && rm -rf /var/lib/apt/lists/*
+
+RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltopdf_0.12.6.1-2.bullseye_amd64.deb \
+    && dpkg -i wkhtmltopdf_0.12.6.1-2.bullseye_amd64.deb \
+    || apt-get install -f -y \
+    && rm wkhtmltopdf_0.12.6.1-2.bullseye_amd64.deb
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
 # We download it directly to a system path. No local file needed.
