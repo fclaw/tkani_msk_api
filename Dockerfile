@@ -63,6 +63,7 @@ RUN apt-get update && \
     libfontconfig1 \
     xfonts-75dpi \
     xfonts-base \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltopdf_0.12.6.1-2.bullseye_amd64.deb \
