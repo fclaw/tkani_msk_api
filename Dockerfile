@@ -75,14 +75,6 @@ RUN apt-get update && \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Download and install wkhtmltopdf for Bookworm
-# The version 0.12.6.1-3 is specifically built for Debian 12 (Bookworm)
-RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb \
-    && dpkg -i wkhtmltox_0.12.6.1-2.bullseye_amd64.deb \
-    || apt-get install -f -y \
-    && rm wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
-
-
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
 # We download it directly to a system path. No local file needed.
