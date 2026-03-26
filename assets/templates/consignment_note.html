@@ -1,30 +1,71 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- ADD THIS LINE: It's the most critical part for Russian text -->
     <meta charset="UTF-8">
     <style>
-        body { font-family: sans-serif; } /* See note on fonts below */
+        body { font-family: "Helvetica", "Arial", sans-serif; color: #333; margin: 0; padding: 20px; line-height: 1.4; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 30px; }
+        .title { font-size: 24px; font-weight: bold; text-transform: uppercase; }
+        .order-info { text-align: right; font-size: 14px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #f8f8f8; text-align: left; padding: 12px 8px; border-bottom: 1px solid #ccc; font-size: 12px; text-transform: uppercase; color: #666; }
+        td { padding: 12px 8px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 14px; }
+        
+        .sku { font-family: monospace; font-weight: bold; color: #555; width: 15%; }
+        .name { width: 55%; }
+        .quantity { width: 15%; text-align: right; }
+        .price { width: 15%; text-align: right; font-weight: bold; }
+        
+        .summary-wrapper { margin-top: 40px; display: flex; justify-content: flex-end; }
+        .summary-table { width: 300px; border-top: 2px solid #000; }
+        .summary-row { display: flex; justify-content: space-between; padding: 10px 0; font-size: 16px; }
+        .grand-total { font-size: 20px; font-weight: bold; border-top: 1px solid #eee; }
+
+        .footer { margin-top: 60px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
     </style>
 </head>
 <body>
-<div class="header">
-    <h1>Накладная №{{ orderId }}</h1>
-</div>
+    <div class="header">
+        <div class="title">Товарная накладная</div>
+        <div class="order-info">
+            <strong>Заказ №:</strong> {{ orderId }}<br>
+            <strong>Дата:</strong> {{ timestamp }}
+        </div>
+    </div>
 
-<table>
-    {% for item in items %}
-    <tr>
-        <td>{{ item.article }}</td>
-        <td>{{ item.name }}</td>
-        <td>{{ item.length_m }} м</td>
-        <td>{{ item.total_price }} ₽</td>
-    </tr>
-    {% endfor %}
-</table>
+    <table>
+        <thead>
+            <tr>
+                <th>Артикул</th>
+                <th>Наименование товара</th>
+                <th>Кол-во</th>
+                <th>Сумма</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="sku">{{ item.article }}</td>
+                <td class="name">{{ item.name }}</td>
+                <td class="quantity">{{ item.length_m }} м</td>
+                <td class="price">{{ item.total_price }} ₽</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
-<div class="footer">
-    Итого к оплате: <strong>{{ totalSum }} руб.</strong>
-</div>
+    <div class="summary-wrapper">
+        <div class="summary-table">
+            <div class="summary-row grand-total">
+                <span>Итого к оплате:</span>
+                <span>{{ totalSum }} ₽</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Отправитель: ИП Сидоренкова (Tkani MSK). Пожалуйста, проверьте целостность упаковки и количество отрезов при получении в пункте выдачи.
+    </div>
 </body>
 </html>

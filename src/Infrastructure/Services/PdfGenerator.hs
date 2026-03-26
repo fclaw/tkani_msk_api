@@ -23,6 +23,7 @@ import           Control.Exception           (try)
 import           Network.HTTP.Client         (HttpException)
 import           Control.Lens                ((&), (?~), (^.))
 import           Control.Monad.Reader.Class  (ask)
+import           Data.Time                   (getCurrentTime, utctDay, showGregorian)
 
 import           App                         (AppM, _pdfCrowdUser, _pdfCrowdApiKey)
 import           Infrastructure.Database     (ConsignmentPdfItem (..))
@@ -50,12 +51,16 @@ generateConsignmentPdf orderId items = do
     Right template -> do
       let total = sum $ map cpdfTotalPrice items
         
+      now <- liftIO getCurrentTime
+      let timestamp = T.pack $ showGregorian (utctDay now)
+
       -- 2. Use Aeson's object builder instead of a custom function.
       -- This is automatically compatible with easyRender.
       let context = object 
-            [ "orderId"  .= orderId
-            , "items"    .= items
-            , "totalSum" .= (total :: Int)
+            [ "orderId"   .= orderId
+            , "items"     .= items
+            , "totalSum"  .= (total :: Int)
+            , "timestamp" .= timestamp    -- NEW: Today's date
             ]
 
       -- 3. Render Template to HTML (Text)
