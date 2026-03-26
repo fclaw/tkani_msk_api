@@ -100,6 +100,7 @@ import Workers.ShippingInvoiceJanitor (runShippingInvoiceJanitor)
 import Workers.TinkoffShipmentPaymentStatusPoller (runTinkoffShipmentPaymentStatusPoller)
 import Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar)
 import Workers.StuckOrdersWatcher (runStuckOrdersWatcher)
+import Workers.ConsignmentNoteWatcher (runConsignmentNoteWatcher)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -142,6 +143,7 @@ data Workers =
       | TinkoffShipmentPaymentStatusPoller
       | YandexPrepaidOrderRegistrar
       | StuckOrdersWatcher
+      | ConsignmentNoteWatcher
 
 
 
@@ -177,6 +179,7 @@ instance Show Workers where
   show TinkoffShipmentPaymentStatusPoller = "Tinkoff Shipment Payment Status Poller"
   show YandexPrepaidOrderRegistrar        = "Yandex Prepaid Order Registrar"
   show StuckOrdersWatcher                 = "Stuck Orders. Watcher"
+  show ConsignmentNoteWatcher             = "Consignment Note Watcher"
 
 
 --
@@ -583,7 +586,14 @@ main = do
                   appMToHandler
                     runStuckOrdersWatcher
                     >>= showErrorInWorker
-                          YandexPrepaidOrderRegistrar)
+                          StuckOrdersWatcher)
+              , (ConsignmentNoteWatcher,
+                  appMToHandler
+                    (runConsignmentNoteWatcher 
+                     connInfo 
+                     appMToHandler)
+                    >>= showErrorInWorker
+                          ConsignmentNoteWatcher)
               ]
 
         let courierPickupTasks 

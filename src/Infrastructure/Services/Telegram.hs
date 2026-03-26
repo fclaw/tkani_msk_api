@@ -333,7 +333,6 @@ sendDocument chatKey caption filename fileContent contentType = do
     -- 3. The 'post' function takes a list of 'Part's.
     let parts = [chatPart, captionPart, parseModePart, filePart]
     eResponse <- liftIO $ try' (postWith opts fullUrl parts)
-    -- liftIO $ eResponse
     case eResponse of
       Left httpErr -> return $ Left (ApiRequestFailed (toException httpErr))
       Right _ -> return $ Right () 

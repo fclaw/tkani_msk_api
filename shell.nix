@@ -31,6 +31,11 @@ let
     ps.pillow
   ]);
 
+  # 1. Create a version of nixpkgs forced to Intel architecture
+  intelPkgs = if pkgs.stdenv.isDarwin && pkgs.stdenv.isAarch64 then
+    import pkgs.path { system = "x86_64-darwin"; }
+  else
+    pkgs;
 in
 pkgs.mkShell {
     # NATIVE inputs = Build tools (must exist during compilation)
@@ -47,6 +52,8 @@ pkgs.mkShell {
     pkgs.docker
     pkgs.docker-compose
     pkgs.sqitchPg
+    intelPkgs.wkhtmltopdf
+    pkgs.dejavu_fonts
 
     # --- System Dependencies (The ones you identified) ---
     pkgs.postgresql
@@ -58,6 +65,11 @@ pkgs.mkShell {
     # for a collage
     pythonEnv
   ];
+
+  # Ensure wkhtmltopdf can find the fonts
+  FONTCONFIG_FILE = pkgs.makeFontsConf { 
+    fontDirectories = [ pkgs.dejavu_fonts ]; 
+  };
 
   # Configure the Nix path to our own `pkgs`, to ensure Stack-with-Nix uses the correct one rather than the global <nixpkgs> when looking for the right `ghc` argument to pass in `nix/stack-integration.nix`
   # See https://nixos.org/nixos/nix-pills/nix-search-paths.html for more information

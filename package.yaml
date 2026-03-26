@@ -44,6 +44,7 @@ library:
     - Workers.TinkoffShipmentPaymentStatusPoller
     - Workers.YandexPrepaidOrderRegistrar
     - Workers.StuckOrdersWatcher
+    - Workers.ConsignmentNoteWatcher
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit
@@ -111,6 +112,8 @@ library:
     - servant-auth-server
     - time-units
     - time-units-types
+    - ginger
+    - typed-process
 
 executables:
   tkani-api-exe:

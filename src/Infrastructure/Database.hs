@@ -127,6 +127,8 @@ module Infrastructure.Database
     --- stall orders
   , collectOrdersStuckInPaid
   , insertStallOrder
+    -- consignment note
+  , fetchConsignmentPdfItems
   ) where
 
 
@@ -3845,3 +3847,137 @@ insertStallOrder orderId pool =
     [Hasql.resultlessStatement|
      INSERT INTO stall_orders_log (order_id) VALUES ($1 :: text)
     |]
+
+fetchConsignmentPdfItems :: Text -> Hasql.Pool -> AppM (Either Text ((Int64, [ConsignmentPdfItem])))
+fetchConsignmentPdfItems orderId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (orderId) $
+      rmap (second (V.toList . extractADT . sequence . V.map (convertFromJson @ConsignmentPdfItem))) $
+      [Hasql.singletonStatement|
+       WITH filtered_order AS (
+        SELECT id 
+        FROM orders 
+        WHERE id = $1 :: text
+        ), 
+        items AS (
+         SELECT
+          o.id AS order_id,
+          array_agg(
+           jsonb_build_object(
+            'name', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN f.name 
+              ELSE fpc.name 
+             END,
+            'fabric_type', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN 'roll' 
+              ELSE 'pre_cut' 
+             END,
+            'price_per_metre', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN f.price_per_meter
+              ELSE NULL 
+             END,
+            'length_m', 
+             CASE 
+              WHEN pc.id IS NULL
+              THEN ofb.length_m
+              ELSE pc.length_m
+             END, 
+            'article', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN f.article
+              ELSE fpc.article 
+             END,
+            'total_price', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN ROUND(f.price_per_meter * 
+                         (1 - f.discount) * 
+                         ofb.length_m)
+              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+             END
+           )) :: jsonb[] AS items 
+         FROM orders AS o
+         INNER JOIN order_fabric_bindings AS ofb
+         ON o.id = ofb.order_id
+         LEFT JOIN fabrics AS f
+         ON ofb.fabric_id = f.id
+         LEFT JOIN pre_cuts AS pc
+         ON ofb.pre_cut_id = pc.id
+         LEFT JOIN fabrics AS fpc
+         ON pc.fabric_id = fpc.id
+         GROUP BY o.id
+
+         UNION ALL
+
+         SELECT
+          o.id AS order_id,
+          array_agg(
+           jsonb_build_object(
+            'name', 
+             CASE 
+               WHEN pc.id IS NULL 
+               THEN f.name 
+               ELSE fpc.name 
+             END,
+            'fabric_type', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN 'roll' 
+              ELSE 'pre_cut' 
+             END,
+            'price_per_metre', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN f.price_per_meter
+              ELSE NULL 
+             END,
+            'length_m',
+             CASE
+              WHEN pc.id IS NULL 
+              THEN si.length_m
+              ELSE pc.length_m
+             END,
+            'article', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN f.article
+              ELSE fpc.article 
+             END,
+            'total_price', 
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN ROUND(f.price_per_meter * 
+                         (1 - f.discount) * 
+                         si.length_m)
+              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+             END
+           )) ::jsonb[] AS items 
+        FROM orders AS o
+        INNER JOIN shelf_items AS si
+        ON o.id = si.main_order_id
+        LEFT JOIN fabrics AS f
+        ON si.fabric_id = f.id
+        LEFT JOIN pre_cuts AS pc
+        ON si.pre_cut_id = pc.id
+        LEFT JOIN fabrics AS fpc
+        ON pc.fabric_id = fpc.id
+        GROUP BY o.id
+       )
+       SELECT
+         COALESCE(otb.chat_id, 0) :: int8,
+         COALESCE(i.items, '{}'::jsonb[]) :: jsonb[]
+       FROM filtered_order AS o
+       LEFT JOIN order_telegram_bindings AS otb
+       ON o.id = otb.order_id
+       LEFT JOIN items AS i
+       ON o.id = i.order_id
+       WHERE o.id = $1 :: text
+      |]

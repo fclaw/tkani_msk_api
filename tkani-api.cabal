@@ -48,6 +48,7 @@ library
       Workers.TinkoffShipmentPaymentStatusPoller
       Workers.YandexPrepaidOrderRegistrar
       Workers.StuckOrdersWatcher
+      Workers.ConsignmentNoteWatcher
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -119,6 +120,7 @@ library
       Infrastructure.Services.Google.Geocode
       Infrastructure.Services.Overpass.Geo
       Infrastructure.Services.Overpass.Types
+      Infrastructure.Services.PdfGenerator
       Infrastructure.Services.Sdek
       Infrastructure.Services.Sdek.Auth
       Infrastructure.Services.Sdek.CachedCityCodes
@@ -183,6 +185,7 @@ library
     , exceptions
     , file-embed
     , filepath
+    , ginger
     , hasql
     , hasql-pool
     , hasql-th
@@ -218,6 +221,7 @@ library
     , transformers
     , transformers-base
     , tuple-sop
+    , typed-process
     , unix
     , unliftio
     , unordered-containers

@@ -56,6 +56,10 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
+    wkhtmltopdf \
+    # 2. INSTALL FONTS FOR CYRILLIC SUPPORT (Crucial!)
+    fonts-dejavu-core \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. DOWNLOAD THE CERTIFICATE (Self-contained)
@@ -69,6 +73,7 @@ COPY providers.yaml /app/
 COPY templates /app/templates
 COPY data /app/data
 COPY config /app/config
+COPY assets/templates/ /app/assets/templates
 
 # 5. THE FIX: Update Entrypoint to look in System Folders too
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \

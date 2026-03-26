@@ -470,3 +470,23 @@ data ShipmentPaymentRecord =
      , sprChatId             :: Int64
      , sprMessageId          :: Int64
      }
+
+data ConsignmentPdfItem = 
+     ConsignmentPdfItem
+     { -- | The human-readable name of the fabric being purchased (e.g., "Пальтовый кашемир от Dior").
+       --   Source: Bot context, from the product the user initially selected. 
+      cpdfName           :: Text
+       -- | The unique article number or SKU for the fabric in our internal system.
+       --   This is crucial for SDEK fiscalization and our own database records.
+       --   Source: Bot context, from the product the user initially selected.
+     , cpdfArticle       :: Text
+       -- the part is required for the bank
+     , cpdfFabricType    :: FabricType    -- The Fabric type
+     , cpdfPricePerMetre :: Maybe Double  -- Price per meter for rolls
+       -- | The final calculated price for the specific cut or piece of fabric.
+       --   Source: Bot context, calculated based on length/pre-cut choice.
+     , cpdfTotalPrice    :: Int        -- Total price for this line item
+     , cpdfLengthM       :: Double  -- Length, only for rolls
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpdf" } ''ConsignmentPdfItem)
