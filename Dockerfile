@@ -56,15 +56,22 @@ RUN apt-get update && \
     libdw1 \
     libnuma1 \
     curl \
-    # wkhtmltopdf dependencies
+    wget \
+    # Haskell server needs
+    libgmp10 liblzma5 zlib1g \
+    # Mandatory wkhtmltopdf shared libraries
     fontconfig \
-    libxrender1 \
+    libfreetype6 \
+    libjpeg62-turbo \
+    libpng16-16 \
+    libx11-6 \
+    libxcb1 \
     libxext6 \
+    libxrender1 \
     libfontconfig1 \
     xfonts-75dpi \
     xfonts-base \
-    wget \
-    # Cyrillic Fonts
+    # Russian character support
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
