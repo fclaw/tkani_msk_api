@@ -113,6 +113,7 @@ library:
     - time-units
     - time-units-types
     - ginger
+    - hashable
 
 executables:
   tkani-api-exe:

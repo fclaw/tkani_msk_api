@@ -21,7 +21,7 @@ import App (AppM, _appDBPool, _bots, ChatKey (WAREHOUSE), _thresholdMetres)
 handler :: Maybe FabricLifecycle -> AppM (ApiResponse CatalogSummary)
 handler Nothing = return $ Left $ mkError "FabricLifecycle is required"
 handler (Just lifeCycle) 
-  | lifeCycle == OnSale || 
+  | lifeCycle == OnSale ||
     lifeCycle == Regular || 
     lifeCycle == Advertised || 
     lifeCycle == NewArrival = 

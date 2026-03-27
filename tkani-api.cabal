@@ -186,6 +186,7 @@ library
     , file-embed
     , filepath
     , ginger
+    , hashable
     , hasql
     , hasql-pool
     , hasql-th

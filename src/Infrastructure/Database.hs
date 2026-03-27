@@ -2425,7 +2425,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'media_type', to_jsonb(f.media_type),
                     'width', f.width,
                     'discount', f.discount,
-                    'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
+                    'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
+                    'hash', f.hash
                   ) AS item_json
                 FROM 
                   fabrics AS f
@@ -2500,7 +2501,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'media_type', to_jsonb(f.media_type),
                         'width', f.width,
                         'discount', f.discount,
-                        'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
+                        'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
+                        'hash', f.hash
                     ) :: jsonb AS item_json
                 FROM pre_cuts AS pc
                 LEFT JOIN cart_items AS ci

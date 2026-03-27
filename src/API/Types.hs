@@ -407,7 +407,7 @@ data CatalogSummaryItem = CatalogSummaryItem
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)
 
 
-type CatalogSummaryItemExt = WithField "discount" (Maybe Double) (CatalogSummaryItem)
+type CatalogSummaryItemExt = WithField "hash" (Maybe Int64) (WithField "discount" (Maybe Double) (CatalogSummaryItem))
 
 -- | The top-level response for a catalog request.
 data CatalogSummary = CatalogSummary

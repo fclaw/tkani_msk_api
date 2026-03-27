@@ -8,25 +8,15 @@ import Data.Text (Text, toLower)
 import Data.Aeson.TH
 import GHC.Generics (Generic)
 import Web.HttpApiData (FromHttpApiData(..))
+import Data.Hashable
 
 import Text (camelToSnake) 
 
--- The target data structure we are parsing into.
-data Fabric = Fabric
-  { fName        :: Text
-  , fPrice       :: Int
-  , fArticle     :: Maybe Text
-  , fDescription :: Text
-  , fType        :: FabricType
-  , fLength      :: Double
-  , fWidth       :: Int
-  , fIsSearchable :: Bool
-  } deriving (Show, Eq)
 
 data FabricType = Roll | PreCut
   deriving (Show, Eq, Generic)
 
-$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''FabricType)
+instance Hashable FabricType
 
 instance FromHttpApiData FabricType where
   parseUrlPiece text =
@@ -36,6 +26,21 @@ instance FromHttpApiData FabricType where
       "precut"   -> Right PreCut
       _          -> Left "Unknown fabric type"
 
+
+-- The target data structure we are parsing into.
+data Fabric = Fabric
+  { fName         :: Text
+  , fPrice        :: Int
+  , fArticle      :: Maybe Text
+  , fDescription  :: Text
+  , fType         :: FabricType
+  , fLength       :: Double
+  , fWidth        :: Int
+  , fIsSearchable :: Bool
+  } deriving (Show, Eq, Generic)
+
+instance Hashable Fabric
+
 -- All possible validation errors.
 data ParseError
   = StructureError FabricType Text
@@ -44,3 +49,6 @@ data ParseError
   | AmbiguousFormat Text -- For when we can't even guess
   | MissingVisibilityTag
   deriving (Show, Eq)
+
+
+$(deriveJSON defaultOptions { constructorTagModifier = camelToSnake, sumEncoding = UntaggedValue } ''FabricType)

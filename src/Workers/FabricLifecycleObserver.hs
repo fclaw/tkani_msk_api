@@ -13,6 +13,7 @@ module Workers.FabricLifecycleObserver (runFabricLifecycleObserver) where
 
 
 import Katip
+import Data.Int (Int64)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Data.Foldable (for_)
@@ -28,7 +29,7 @@ import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Notification as PG
 
 
-import Text (encodeToText)
+import Text (encodeToText, tshow)
 import App (AppM, _conciergeBotUrl, ChatKey (MAIN), _appDBPool, _bots)
 import Concurrency (runJobWithCleanup)
 import Domain.Warehouse.Enums (FabricLifecycle (..))
@@ -42,13 +43,12 @@ import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdRes
 data FabricLifecycleEvent = FabricLifecycleEvent
   { fabric_name   :: Text
   , new_lifecycle :: FabricLifecycle -- Your existing enum
+  , hash          :: Int64
   } deriving (Show, Generic, FromJSON)
 
 -- ==========================================================
 --                  THE HELPER FUNCTIONS
 -- ==========================================================
-
-importantNote = "Примечание: Данное сообщение является уведомлением. Кнопка ниже открывает общий список товаров, где можно найти указанную ткань."
 
 -- | Generates the call-to-action button text for a given lifecycle.
 buttonText :: FabricLifecycle -> Text
@@ -72,7 +72,7 @@ notificationText lifecycle fabricName =
       Advertised -> "🔔 Анонсирован новый товар"
       _          -> "✅ В каталог добавлен новый товар" -- Fallback for Regular, etc.
 
-  in introPhrase <> ": *" <> fabricName <> "*!\n\n" <> importantNote
+  in introPhrase <> ": *" <> fabricName <> "*!"
 
 
 runFabricLifecycleObserver :: PG.ConnectInfo -> (forall a. AppM a -> IO (Either ServerError a)) -> AppM ()
@@ -104,7 +104,7 @@ processSingleJob (Right event) = do
   cfg <- ask
 
   let botUrl = _conciergeBotUrl cfg
-  let deepLinkUrl = botUrl <> "?start=" <> encodeToText targetLifecycle
+  let deepLinkUrl = botUrl <> "?start=" <> encodeToText targetLifecycle <> "_" <> tshow (hash event)
   let buttonText = buttonTextForLifecycle targetLifecycle
   let keyboard = 
        object

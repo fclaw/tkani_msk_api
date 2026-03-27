@@ -13,6 +13,7 @@ import Data.Text (Text)
 import Data.Maybe (fromMaybe, isJust)
 import Control.Monad (void, when)
 import Data.Time (Day)
+import Data.Hashable (hash)
 
 import Text (encodeToText)
 
@@ -26,6 +27,8 @@ ingestFabricDB fabric req = do
         case fType fabric of
           Roll -> Just (fPrice fabric)
           PreCut -> Nothing
+
+  let fabricHash = abs $ fromIntegral $ hash fabric
 
   -- 2. UPSERT the Parent Fabric
   -- If Article exists: Update Name, Price, Description, Media.
@@ -48,7 +51,8 @@ ingestFabricDB fabric req = do
       fIsSearchable fabric && 
       fType fabric == Roll,
       encodeToText (fpDensity (rawFabricProperties req)),
-      fpWeightPerMetre (rawFabricProperties req)
+      fpWeightPerMetre (rawFabricProperties req),
+      fabricHash
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -84,7 +88,8 @@ type RawFabric =
      , Int32
      , Bool
      , Text
-     , Double)
+     , Double
+     , Int64)
 
 upsertFabricQuery :: Hasql.Statement RawFabric (Int64, Text)
 upsertFabricQuery = 
@@ -104,7 +109,8 @@ upsertFabricQuery =
       width,
       is_searchable,
       density,
-      weight_per_metre
+      weight_per_metre,
+      hash
     ) 
     VALUES (
       COALESCE($1 :: text?, next_fabric_article()),
@@ -121,7 +127,8 @@ upsertFabricQuery =
       $11 :: int4,
       $12 :: bool,
       CAST($13 :: text AS fabric_density),
-      $14 :: float8  
+      $14 :: float8,
+      $15 :: int8
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -143,7 +150,10 @@ upsertFabricQuery =
         is_searchable = EXCLUDED.is_searchable,
         updated_at = NOW(),
         in_stock = TRUE,
-        is_sold = FALSE
+        is_sold = FALSE,
+        density = EXCLUDED.density,
+        weight_per_metre = EXCLUDED.weight_per_metre,
+        hash = EXCLUDED.hash
     RETURNING id :: int8, article :: text
   |]
 
