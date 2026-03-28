@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module Workers.CourierPickUpScheduler (runCourierPickUpScheduler) where
+module Workers.CourierPickUpScheduler (runCourierPickUpScheduler, LastRunDay) where
 
 
 import Katip
@@ -12,7 +12,7 @@ import Data.Time.Calendar.WeekDate (dayOfWeek)
 import Data.Time.Calendar (addDays, toGregorian)
 import Data.Time.LocalTime (localTimeOfDay, TimeOfDay(..), utcToLocalTime, zonedTimeToUTC, TimeZone(..))
 import Control.Monad.Reader.Class (ask)
-import Control.Concurrent.STM (TVar, newTVarIO, readTVar, writeTVar, atomically)
+import Control.Concurrent.STM (TVar, readTVar, writeTVar, atomically)
 import Data.Maybe (fromMaybe)
 import Control.Monad (when, void)
 
@@ -28,7 +28,7 @@ import qualified Infrastructure.Services.Sdek.Types.Config as Cfg
 type LastRunDay = TVar (Maybe Day)
 
 -- | The main scheduler function. It takes the TVar as an argument.
-runCourierPickUpScheduler :: TVar (Maybe Day) -> AppM ()
+runCourierPickUpScheduler :: LastRunDay -> AppM ()
 runCourierPickUpScheduler lastRunVar = do
   $(logTM) InfoS "Courier Pickup Scheduler thread started."
   -- A. Get current time info

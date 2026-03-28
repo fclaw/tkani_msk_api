@@ -124,6 +124,7 @@ module Infrastructure.Database
   , fetchPendingShipmentPayments
   , updateShipmentPaymentStatus
   , setIsShipmentPaid
+  , fetchCatchupYandexOrders
     --- stall orders
   , collectOrdersStuckInPaid
   , insertStallOrder
@@ -3982,4 +3983,21 @@ fetchConsignmentPdfItems orderId pool =
        LEFT JOIN items AS i
        ON o.id = i.order_id
        WHERE o.id = $1 :: text
+      |]
+
+fetchCatchupYandexOrders :: Hasql.Pool -> AppM (Either Text (V.Vector (Text, Int32, Int32)))
+fetchCatchupYandexOrders pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement () $
+      [Hasql.vectorStatement|
+       SELECT
+        o.id :: text,
+        yo.prepaid_cost :: int4,
+        yo.delivery_days :: int4
+       FROM orders AS o
+       INNER JOIN yandex_orders AS yo
+       ON o.yandex_order_id = yo.id
+       WHERE yo.is_shipment_paid = TRUE
+       AND o.status = 'paid'
       |]

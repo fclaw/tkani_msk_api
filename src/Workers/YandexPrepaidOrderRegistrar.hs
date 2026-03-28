@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 
-module Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar) where
+module Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar, registerOrder) where
 
 
 import Katip
@@ -76,10 +76,12 @@ runYandexPrepaidOrderRegistrar connInfo appMToHandler = do
 
 processSingleEvent :: Either String ShipmentPaymentEvent -> AppM ()
 processSingleEvent (Left err) = $(logTM) ErrorS $ ls $ "Failed to parse payload (ShipmentPaymentEvent), error: " <> err
-processSingleEvent (Right ShipmentPaymentEvent {..}) = do
+processSingleEvent (Right ShipmentPaymentEvent {..}) = registerOrder parcel_order_id amount days
+
+registerOrder :: Text -> Int -> Int -> AppM ()
+registerOrder orderId amount days = do
   cfg <- ask
   let pool = _appDBPool cfg
-  let orderId = parcel_order_id
   eDbRes <- getYandexOrderDetailsForPricing orderId pool
   extractValue eDbRes $ \YandexOrderDetailsForPricing {..} -> do
     let resultOrderReq = fromJSON @YandexCreateOrderReq yodpDraftOrderReqJson
@@ -107,3 +109,5 @@ processSingleEvent (Right ShipmentPaymentEvent {..}) = do
             void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 msg) PREPAID_ORDER Nothing Nothing Nothing
             let cal = PriceCalculatorResp (fromIntegral days) "0"
             finalizeYandexOrder orderId pickupId resp cal yodpCustomer
+
+

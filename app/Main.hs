@@ -101,6 +101,7 @@ import Workers.TinkoffShipmentPaymentStatusPoller (runTinkoffShipmentPaymentStat
 import Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar)
 import Workers.StuckOrdersWatcher (runStuckOrdersWatcher)
 import Workers.ConsignmentNoteWatcher (runConsignmentNoteWatcher)
+import Workers.YandexCatchupJanitor (runYandexCatchupJanitor)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -144,6 +145,7 @@ data Workers =
       | YandexPrepaidOrderRegistrar
       | StuckOrdersWatcher
       | ConsignmentNoteWatcher
+      | YandexCatchupJanitor
 
 
 
@@ -180,6 +182,8 @@ instance Show Workers where
   show YandexPrepaidOrderRegistrar        = "Yandex Prepaid Order Registrar"
   show StuckOrdersWatcher                 = "Stuck Orders. Watcher"
   show ConsignmentNoteWatcher             = "Consignment Note Watcher"
+  show YandexCatchupJanitor               = "Yandex Catchup Janitor"
+
 
 
 --
@@ -620,37 +624,53 @@ main = do
                       -- Initialize the lock variable
                       lastRunVar <- newTVarIO Nothing
                       runForever 10 $
-                        appMToHandler (runCourierPickUpScheduler lastRunVar)
+                        appMToHandler 
+                        (runCourierPickUpScheduler 
+                         lastRunVar)
                           >>= showErrorInWorker
                             CourierPickUpScheduler)
                     sdekCourierStatusPoller =
                      (SdekCourierStatusPoller,
-                      appMToHandler (runSdekCourierStatusPoller)
+                      appMToHandler 
+                      (runSdekCourierStatusPoller)
                         >>= showErrorInWorker
                           SdekCourierStatusPoller)
                     sdekPickupAppStatusPoller =
                      (SdekPickupAppStatusPoller,
                       runForever 5 $
-                        appMToHandler (runSdekPickupAppStatusPoller)
+                        appMToHandler 
+                        (runSdekPickupAppStatusPoller)
                           >>= showErrorInWorker
                             SdekPickupAppStatusPoller)
                     yandexPickupStatusPoller =
                      (YandexPickupStatusPoller,
                       runForever 5 $
-                        appMToHandler (runYandexPickupStatusPoller)
+                        appMToHandler 
+                        (runYandexPickupStatusPoller)
                           >>= showErrorInWorker
                             YandexPickupStatusPoller)
                     yandexShipmentJanitor =
                      (YandexShipmentJanitor,
                       runForever 5 $
-                        appMToHandler (runYandexShipmentJanitor)
+                        appMToHandler 
+                        (runYandexShipmentJanitor)
                           >>= showErrorInWorker
                             YandexShipmentJanitor)
+                    yandexCatchupJanitor =
+                     (YandexCatchupJanitor, do
+                      lastRunVar <- newTVarIO Nothing
+                      runForever 10 $
+                        appMToHandler 
+                        (runYandexCatchupJanitor 
+                         lastRunVar)
+                          >>= showErrorInWorker
+                            YandexCatchupJanitor)
                 in [ courierWorker
                    , sdekCourierStatusPoller
                    , yandexShipmentJanitor
                    , sdekPickupAppStatusPoller
                    , yandexPickupStatusPoller
+                   , yandexCatchupJanitor
                    ]
               | otherwise = []
 
