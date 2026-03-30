@@ -3833,9 +3833,12 @@ collectOrdersStuckInPaid pool =
        FROM orders AS o
        INNER JOIN order_telegram_bindings AS ofb
        ON o.id = ofb.order_id
-       WHERE o.status = 'paid' 
-       AND o.updated_at < 
-           (now() - interval '2 days')
+       WHERE o.status = 'paid'
+       AND (
+        SELECT count(*) 
+        FROM generate_series(o.updated_at, now(), '1 hour'::interval) as h 
+        WHERE extract(isodow from h) < 6
+       ) > 48
        AND NOT EXISTS (
         SELECT 1 
         FROM stall_orders_log AS sol 
