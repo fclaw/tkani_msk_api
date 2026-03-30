@@ -2617,9 +2617,9 @@ fetchSpecialPostDetails lifeCycle threshold pool =
           ) AS pc
           ON pc.fabric_id = f.id
           WHERE f.lifecycle = CAST($1 :: text AS fabric_lifecycle)
-          AND (f.available_length_m >= $2 :: float8
+          AND (f.available_length_m > $2 :: float8
                OR (COALESCE(pc.in_stock_pre_cuts_count, 0) > 0
-                   AND f.available_length_m < $2 :: float8))
+                   AND f.available_length_m <= $2 :: float8))
         ),
         fabric_summary AS (
           SELECT
