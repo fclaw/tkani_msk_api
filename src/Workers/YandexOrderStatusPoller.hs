@@ -7,17 +7,26 @@
 module Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller) where
 
 
+import Data.Text (Text)
 import Data.Foldable (for_)
 import Control.Monad (void, when)
 import Data.Either (isLeft, fromLeft)
 import Katip (logTM, Severity(..), ls)
 import Control.Monad.Reader.Class (ask)
+-- retry imports
+import Control.Monad.IO.Class    (liftIO)
+import Control.Exception.Lifted  (throwIO, try)
+import qualified Network.Wreq    as Wreq
+import Network.HTTP.Client       (HttpException(..), HttpExceptionContent(..), responseStatus)
+import Network.HTTP.Types.Status (statusCode)
+import Control.Concurrent        (threadDelay)
+import Control.Lens              ((^.))
 
 
 import Text (tshow)
 import App (AppM, _appDBPool)
 import API.Types (OrderStatus (..))
-import Concurrency (pooledForConcurrentlyN)
+import Concurrency (pooledForConcurrentlyN, runJobWithCleanup)
 import Infrastructure.Database (getYandexOrdersInTransit, updateYandexOrderStatus)
 import Infrastructure.Services.Yandex.Types (OrderParticulars (..), osStatus)
 import qualified Infrastructure.Services.Yandex.Types as YA
@@ -43,34 +52,35 @@ runYandexOrderStatusPoller = do
   eDbRes <- getYandexOrdersInTransit requiredStatuses pool
   for_ eDbRes $ \xs ->
     void $ pooledForConcurrentlyN 1 xs $ 
-      \(orderId, yandexOrderId, requestId, status) -> do 
-        $(logTM) InfoS $ ls $ "requesting status for: " <> requestId
-        OrderParticulars {state=yaState@YA.OrderStatus{osStatus=yaStatus}} <- fetchOrderParticulars requestId
-        let newStatus = mapYandexToInternal yaStatus status
-        if newStatus == status
-        then 
-          $(logTM) InfoS $ ls $ 
-            "order " <> 
-            orderId <> 
-            " has not changed status, status: " <> 
-            (tshow status) <> 
-            ", YANDEX status: " <>
-            (tshow yaStatus)
-        else do
-          $(logTM) InfoS $ ls $ 
-            "order " <> 
-            orderId <> 
-            " has changed status from " <> 
-            (tshow status) <> " to " <> 
-            (tshow newStatus) <>
-            ", YANDEX status: " <> 
-            (tshow yaStatus)
-          pool <- fmap _appDBPool ask
-          eDbRes <- updateYandexOrderStatus orderId yandexOrderId newStatus yaState pool
-          when (isLeft eDbRes) $ $(logTM) ErrorS $  "failed to update YANDEX order status, error: " <> ls (fromLeft undefined eDbRes)
+      \(orderId, yandexOrderId, requestId, status) ->
+        runJobWithCleanup $
+          withYaRetry 5 $ do
+            $(logTM) InfoS $ ls $ "requesting status for: " <> requestId
+            OrderParticulars {state=yaState@YA.OrderStatus{osStatus=yaStatus}} <- fetchOrderParticulars requestId
+            let newStatus = mapYandexToInternal yaStatus status
+            if newStatus == status
+            then logStatusNoChange orderId status yaStatus
+            else do 
+              logStatusChange orderId status newStatus yaStatus
+              pool <- fmap _appDBPool ask
+              eDbRes <- updateYandexOrderStatus orderId yandexOrderId newStatus yaState pool
+              when (isLeft eDbRes) $ $(logTM) ErrorS $  "failed to update YANDEX order status, error: " <> ls (fromLeft undefined eDbRes)
 
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for YANDEX order statuses, error " <> fromLeft undefined eDbRes
 
+
+logStatusChange :: Text -> OrderStatus -> OrderStatus -> YandexOrderStatus -> AppM ()
+logStatusChange orderId oldStatus newStatus yaStatus = 
+  $(logTM) InfoS $ ls $ 
+    "order " <> orderId <> " has changed status from " <> 
+    (tshow oldStatus) <> " to " <> (tshow newStatus) <> 
+    ", YANDEX status: " <> (tshow yaStatus)
+
+logStatusNoChange :: Text -> OrderStatus -> YandexOrderStatus -> AppM ()
+logStatusNoChange orderId status yaStatus =
+  $(logTM) InfoS $ ls $
+    "order " <> orderId <> " has not changed status, status: " <>
+    (tshow status) <> ", YANDEX status: " <> (tshow yaStatus)
 
 mapYandexToInternal :: YandexOrderStatus -> OrderStatus -> OrderStatus
 mapYandexToInternal (UnknownStatus _) current =
@@ -164,3 +174,25 @@ isNewer proposed current =
         -- [6] Reached terminal outcome
         Completed           -> 7
         Cancelled           -> 7
+
+
+-- | A wrapper that retries a specific operation if it hits a 429 error.
+withYaRetry :: Int -> AppM () -> AppM ()
+withYaRetry attempt action = do
+  result <- try action
+  case result of
+    Right val -> pure val -- Success!
+    
+    -- Catch HTTP status code errors
+    Left (HttpExceptionRequest _ (StatusCodeException resp _)) 
+      | resp ^. Wreq.responseStatus . Wreq.statusCode == 429 -> 
+          if attempt > 5 -- Stop after 5 retries to prevent infinite loops
+          then error "Max retries reached for Yandex API"
+          else do
+            -- Wait longer with each attempt (1s, 2s, 4s, 8s...)
+            let delay = (2 ^ attempt) * 1000000 
+            liftIO $ threadDelay delay
+            withYaRetry (attempt + 1) action
+
+    -- Throw other exceptions upward
+    Left err -> throwIO err
