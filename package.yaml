@@ -45,7 +45,8 @@ library:
     - Workers.YandexPrepaidOrderRegistrar
     - Workers.StuckOrdersWatcher
     - Workers.ConsignmentNoteWatcher
-    - Workers.YandexCatchupJanitor 
+    - Workers.YandexCatchupJanitor
+    - Workers.ExtraDiscountPromotionScheduler
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

@@ -130,6 +130,11 @@ module Infrastructure.Database
   , insertStallOrder
     -- consignment note
   , fetchConsignmentPdfItems
+    -- extra discount promotion
+  , fetchExtraDiscountDetails
+  , updateExtraDiscountPromotions
+  , setMessageIdExtraDiscountPromotions
+  , insertStartPromotion
   ) where
 
 
@@ -4003,4 +4008,64 @@ fetchCatchupYandexOrders pool =
        ON o.yandex_order_id = yo.id
        WHERE yo.is_shipment_paid = TRUE
        AND o.status = 'paid'
+      |]
+
+fetchExtraDiscountDetails :: Hasql.Pool -> AppM (Either Text (Maybe (Int64, Day, Bool, Int32, Maybe Int64)))
+fetchExtraDiscountDetails pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement () $
+      [Hasql.maybeStatement|
+       SELECT
+        id :: int8,
+        lucky_day :: date,
+        is_enabled :: bool,
+        ROUND(extra_discount * 100) :: int4,
+        message_id :: int8?
+       FROM monthly_special_promos
+       ORDER BY lucky_day DESC
+       LIMIT 1
+      |]
+
+updateExtraDiscountPromotions :: Int64 -> Day -> Double -> Hasql.Pool -> AppM (Either Text ())
+updateExtraDiscountPromotions promoId nextDate nextDiscount pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+      -- deactivate current promo
+      Hasql.statement (promoId) $
+       [Hasql.resultlessStatement|
+        UPDATE monthly_special_promos
+        SET is_enabled = FALSE
+        WHERE id = $1 :: int8
+       |]
+      -- activate new promo
+      Hasql.statement (nextDate, nextDiscount) $
+       [Hasql.resultlessStatement|
+        INSERT INTO monthly_special_promos
+        (lucky_day, extra_discount)
+        VALUES ($1 :: date, $2 :: float8)
+       |]
+
+setMessageIdExtraDiscountPromotions :: Int64 -> Int64 -> Hasql.Pool -> AppM (Either Text ())
+setMessageIdExtraDiscountPromotions promoId messageId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (promoId, messageId) $
+       [Hasql.resultlessStatement|
+        UPDATE monthly_special_promos
+        SET message_id = $2 :: int8
+        WHERE id = $1 :: int8
+       |]
+
+insertStartPromotion :: Day -> Hasql.Pool -> AppM (Either Text Int64)
+insertStartPromotion day pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement day $
+       [Hasql.singletonStatement|
+        INSERT INTO 
+        monthly_special_promos 
+        (lucky_day, extra_discount, is_enabled)
+        VALUES ($1 :: date, 0.20, TRUE)
+        RETURNING id :: int8
       |]

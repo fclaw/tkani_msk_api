@@ -27,7 +27,7 @@ import API.Types (OrderStatus (..))
 import Infrastructure.Database (getSdekOrdersInTransit, updateSdekOrderStatus, markOrderAsInvalid)
 import qualified Infrastructure.Services.Sdek as Sdek
 import Infrastructure.Services.Sdek.Types.OrderInTransit
-import Concurrency (pooledForConcurrentlyN)
+import Concurrency (pooledForConcurrentlyN, runJobWithCleanup)
 import Infrastructure.Utils.Http (handleWorkerApiResponse)
 import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError (..))
@@ -50,15 +50,13 @@ runSdekOrderStatusPoller = do
        ]
   eDbRes <- getSdekOrdersInTransit requiredStatuses pool
   for_ eDbRes $ \xs ->
-    void $ pooledForConcurrentlyN 5 xs $ 
-      \(orderId, sdekOrderId, uuid, status) -> do 
-        $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
-        eSdekRes <- Sdek.getOrdersInTransit uuid
-        handleWorkerApiResponse 
-          $(currentModule) 
-          eSdekRes
-          (handleSdekFailure orderId uuid) 
-          (onSdekSuccess orderId sdekOrderId status)
+    void $ pooledForConcurrentlyN 5 xs $
+      \(orderId, sdekOrderId, uuid, status) ->
+         runJobWithCleanup $ do
+          $(logTM) InfoS $ ls $ "requesting status for: " <> show uuid
+          eSdekRes <- Sdek.getOrdersInTransit uuid
+          let cm = $(currentModule)
+          handleWorkerApiResponse cm eSdekRes (handleSdekFailure orderId uuid) (onSdekSuccess orderId sdekOrderId status)
 
   when(isLeft eDbRes) $ $(logTM) ErrorS $ ls $ "Polling for SDEK order statuses, error " <> fromLeft undefined eDbRes
 

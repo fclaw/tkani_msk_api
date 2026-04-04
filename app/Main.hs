@@ -102,6 +102,7 @@ import Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar)
 import Workers.StuckOrdersWatcher (runStuckOrdersWatcher)
 import Workers.ConsignmentNoteWatcher (runConsignmentNoteWatcher)
 import Workers.YandexCatchupJanitor (runYandexCatchupJanitor)
+import Workers.ExtraDiscountPromotionScheduler (runExtraDiscountPromotionScheduler)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -146,6 +147,7 @@ data Workers =
       | StuckOrdersWatcher
       | ConsignmentNoteWatcher
       | YandexCatchupJanitor
+      | ExtraDiscountPromotionScheduler
 
 
 
@@ -183,6 +185,7 @@ instance Show Workers where
   show StuckOrdersWatcher                 = "Stuck Orders. Watcher"
   show ConsignmentNoteWatcher             = "Consignment Note Watcher"
   show YandexCatchupJanitor               = "Yandex Catchup Janitor"
+  show ExtraDiscountPromotionScheduler    = "Extra Discount Promotion Scheduler"
 
 
 
@@ -600,6 +603,12 @@ main = do
                      appMToHandler)
                     >>= showErrorInWorker
                           ConsignmentNoteWatcher)
+              , (ExtraDiscountPromotionScheduler,
+                  runForever 5 $
+                    appMToHandler
+                      runExtraDiscountPromotionScheduler
+                      >>= showErrorInWorker
+                            ExtraDiscountPromotionScheduler)
               ]
 
         let courierPickupTasks 
