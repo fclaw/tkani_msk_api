@@ -301,7 +301,7 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', ROUND(f.price_per_meter * (1 - f.discount)) :: int4,
+        'price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) :: int4,
         'stock_available', 
           (f.available_length_m - 
            COALESCE(cl.length, 0.0)) :: float8,
@@ -330,7 +330,7 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', ROUND(pc.price_rub * (1 - f.discount)),
+        'price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
         'stock_available', pc.length_m,
         'status',
           CASE 
@@ -380,9 +380,9 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', ROUND(f.price_per_meter * (1 - f.discount) * ci.length_m),
+        'total_price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ci.length_m),
         'fabric_type', ci.item_type,
-        'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
+        'price_per_metre', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
         'length_m', ci.length_m,
         'telegram_url', ci.telegram_url,
         'thumbnail_url', f.thumbnail_url
@@ -400,7 +400,7 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', ROUND(pc.price_rub * (1 - f.discount)),
+        'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
         'fabric_type', ci.item_type,
         'price_per_metre', null,
         'length_m', null,
@@ -1001,7 +1001,7 @@ searchFabricCardStatement =
             'name', f.name,
             'article', f.article,
             'type', 'roll',
-            'price_per_meter', ROUND(f.price_per_meter * (1 - f.discount)),
+            'price_per_meter', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
             'total_price', NULL,
             'length_m', NULL,
             'available_length', 
@@ -1035,7 +1035,7 @@ searchFabricCardStatement =
             'article', f.article,
             'type', 'pre_cut',
             'price_per_meter', NULL,
-            'total_price', ROUND(pc.price_rub * (1 - f.discount)),
+            'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
             'length_m', pc.length_m,
             'is_sold_out', FALSE,
             'warehouse_message_id', f.warehouse_message_id,
@@ -1376,7 +1376,7 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', ci.length_m,
-        'price', ROUND(ci.length_m * f.price_per_meter * (1 - f.discount))
+        'price', ROUND(ci.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
        ) :: jsonb
      FROM carts as c 
      INNER JOIN cart_items as ci
@@ -1393,7 +1393,7 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', pc.length_m,
-        'price', ROUND(pc.price_rub * (1 - f.discount))
+        'price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
        ) :: jsonb
      FROM cart_items as ci
 	   INNER JOIN carts as c
@@ -1836,8 +1836,8 @@ getSdekOrderDetailsForPricing orderId pool =
               'price',
                 CASE
                  WHEN ofb.pre_cut_id IS NULL
-                 THEN ROUND(ofb.length_m * f.price_per_meter * (1 - f.discount))
-                 ELSE ROUND(pc.price_rub * (1 - f.discount))
+                 THEN ROUND(ofb.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+                 ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
                 END          
               )) :: jsonb[] AS items
           FROM orders AS o
@@ -1870,8 +1870,8 @@ getSdekOrderDetailsForPricing orderId pool =
               'price',
                CASE
                  WHEN si.pre_cut_id IS NULL
-                 THEN ROUND(si.length_m * f.price_per_meter * (1 - f.discount))
-                 ELSE ROUND(pc.price_rub * (1 - f.discount))
+                 THEN ROUND(si.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+                 ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
                 END 
               )) :: jsonb[] AS items
           FROM orders AS o
@@ -1916,8 +1916,8 @@ getPatchedOrderDetails orderId pool =
            END AS weight,
            CASE
             WHEN ofb.length_m IS NOT NULL
-            THEN ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
-            ELSE ROUND(pc.price_rub * (1 - f.discount))
+            THEN ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ofb.length_m)
+            ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
            END AS total_price
           FROM order_fabric_bindings AS ofb
           LEFT JOIN fabrics AS f
@@ -1948,8 +1948,8 @@ getPatchedOrderDetails orderId pool =
            END AS weight,
            CASE
             WHEN si.length_m IS NOT NULL
-            THEN ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
-            ELSE ROUND(pc.price_rub * (1 - f.discount))
+            THEN ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * si.length_m)
+            ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
            END AS total_price
           FROM shelf_items AS si
           LEFT JOIN fabrics AS f
@@ -2417,7 +2417,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'name', f.name,
                     'article', f.article,
                     'type', 'roll',
-                    'price_per_meter', ROUND(f.price_per_meter * (1 - f.discount)),
+                    'price_per_meter', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
                     'total_price', NULL,
                     'length_m', NULL,
                     'available_length', 
@@ -2430,7 +2430,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'description', f.description,
                     'media_type', to_jsonb(f.media_type),
                     'width', f.width,
-                    'discount', f.discount,
+                    'discount', calculate_total_discount(f.discount, f.lifecycle :: text),
                     'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
                     'hash', f.hash
                   ) AS item_json
@@ -2496,7 +2496,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'article', f.article,
                         'type', 'pre_cut',
                         'price_per_meter', NULL,
-                        'total_price', ROUND(pc.price_rub * (1 - f.discount)),
+                        'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
                         'length_m', pc.length_m,
                         'available_length', null,
                         'is_sold_out', FALSE,
@@ -2506,7 +2506,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'description', f.description,
                         'media_type', to_jsonb(f.media_type),
                         'width', f.width,
-                        'discount', f.discount,
+                        'discount', calculate_total_discount(f.discount, f.lifecycle :: text),
                         'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
                         'hash', f.hash
                     ) :: jsonb AS item_json
@@ -2560,8 +2560,8 @@ fetchDostavistaPackages ordersId pool =
             SUM(COALESCE(ofb.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
-              ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
-             ELSE ROUND(pc.price_rub * (1 - f.discount))
+              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ofb.length_m)
+             ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
             END) AS price
           FROM order_fabric_bindings AS ofb
           INNER JOIN fabrics AS f
@@ -2578,8 +2578,8 @@ fetchDostavistaPackages ordersId pool =
             SUM(COALESCE(soi.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pc.id IS NULL THEN
-              ROUND(f.price_per_meter * (1 - f.discount) * soi.length_m)
-             ELSE ROUND(pc.price_rub * (1 - f.discount))
+              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * soi.length_m)
+             ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
             END) AS price
           FROM shelf_order_items AS soi
           INNER JOIN shelf_orders AS so
@@ -2783,9 +2783,9 @@ fetchShelfItems userId pool =
             'price',
              CASE
               WHEN pc.id IS NULL THEN
-               ROUND(f.price_per_meter * (1 - f.discount))
+               ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
               ELSE
-               ROUND(pc.price_rub * (1 - f.discount))
+               ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
              END
            ) AS item_json
           FROM shelf_items AS si
@@ -2817,9 +2817,9 @@ getPutOnDShelfDetailsStatement =
         jsonb_build_object(
           'name', f.name,
           'article', f.article,
-          'total_price', ROUND(f.price_per_meter * (1 - f.discount) * ci.length_m),
+          'total_price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ci.length_m),
           'fabric_type', ci.item_type,
-          'price_per_metre', ROUND(f.price_per_meter * (1 - f.discount)),
+          'price_per_metre', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
           'length_m', ci.length_m,
           'telegram_url', ci.telegram_url,
           'thumbnail_url', f.thumbnail_url
@@ -2838,7 +2838,7 @@ getPutOnDShelfDetailsStatement =
         jsonb_build_object(
           'name', f.name,
           'article', f.article,
-          'total_price', ROUND(pc.price_rub * (1 - f.discount)),
+          'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
           'fabric_type', ci.item_type,
           'price_per_metre', null,
           'length_m', null,
@@ -3014,9 +3014,9 @@ fetchShelfItemsForShipmentStatement =
          'total_price', 
           CASE 
            WHEN pc.id IS NULL THEN
-            ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
+            ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * si.length_m)
            ELSE
-            ROUND(pc.price_rub * (1 - f.discount))
+            ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
           END,
          'fabric_type',
           CASE 
@@ -3028,7 +3028,7 @@ fetchShelfItemsForShipmentStatement =
           'price_per_metre',
            CASE 
             WHEN pc.id IS NULL THEN
-             ROUND(f.price_per_meter * (1 - f.discount))
+             ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
             ELSE
              NULL
            END,
@@ -3379,8 +3379,8 @@ fetchOrderDetailsForYaml orderId pool =
             'total_price', 
              CASE 
               WHEN pc.id IS NULL THEN 
-              ROUND(f.price_per_meter * (1 - f.discount) * ofb.length_m)
-              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ofb.length_m)
+              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
              END,
             'length_m', COALESCE(ofb.length_m, pc.length_m),
             'weight', 
@@ -3435,8 +3435,8 @@ fetchOrderDetailsForYaml orderId pool =
             'total_price', 
              CASE 
               WHEN pc.id IS NULL THEN 
-              ROUND(f.price_per_meter * (1 - f.discount) * si.length_m)
-              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * si.length_m)
+              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) 
              END,
             'length_m', COALESCE(si.length_m, pc.length_m),
             'weight', 
@@ -3910,9 +3910,9 @@ fetchConsignmentPdfItems orderId pool =
              CASE 
               WHEN pc.id IS NULL 
               THEN ROUND(f.price_per_meter * 
-                         (1 - f.discount) * 
+                         (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * 
                          ofb.length_m)
-              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) 
              END
            )) :: jsonb[] AS items 
          FROM orders AS o
@@ -3966,9 +3966,9 @@ fetchConsignmentPdfItems orderId pool =
              CASE 
               WHEN pc.id IS NULL 
               THEN ROUND(f.price_per_meter * 
-                         (1 - f.discount) * 
+                         (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * 
                          si.length_m)
-              ELSE ROUND(pc.price_rub * (1 - f.discount)) 
+              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) 
              END
            )) ::jsonb[] AS items 
         FROM orders AS o
