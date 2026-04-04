@@ -4057,15 +4057,15 @@ setMessageIdExtraDiscountPromotions promoId messageId pool =
         WHERE id = $1 :: int8
        |]
 
-insertStartPromotion :: Day -> Hasql.Pool -> AppM (Either Text Int64)
-insertStartPromotion day pool =
+insertStartPromotion :: Day -> Double -> Hasql.Pool -> AppM (Either Text Int64)
+insertStartPromotion day extraDiscount pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $
-      Hasql.statement day $
+      Hasql.statement (day, extraDiscount) $
        [Hasql.singletonStatement|
         INSERT INTO 
         monthly_special_promos 
         (lucky_day, extra_discount, is_enabled)
-        VALUES ($1 :: date, 0.20, TRUE)
+        VALUES ($1 :: date, $2 :: float8, TRUE)
         RETURNING id :: int8
       |]

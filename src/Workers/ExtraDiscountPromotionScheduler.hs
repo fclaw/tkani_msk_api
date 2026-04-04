@@ -78,7 +78,10 @@ runExtraDiscountPromotionScheduler = do
           "No active promotions found in the database. \
           \ Fall back to default behavior (if any)."
         let promDay = read @Day "2026-04-05"
-        void $ insertStartPromotion promDay pool
+        let extraDiscount = 0.20
+        let extraDiscountInt = round (extraDiscount * 100) :: Int32
+        eIdent <- insertStartPromotion promDay extraDiscount pool
+        when(day == promDay) $ for_ eIdent $ \ident -> activatePromotion ident promDay extraDiscountInt -- default 20% discount
 
 
 activatePromotion :: Int64 -> Day -> Int32 -> AppM ()
