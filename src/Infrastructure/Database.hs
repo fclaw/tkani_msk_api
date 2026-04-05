@@ -2590,7 +2590,7 @@ fetchDostavistaPackages ordersId pool =
 
           SELECT
             ofb.order_id,
-            STRING_AGG(f.name, ', ') AS description,
+            STRING_AGG(COALESCE(f.name, fpc.name), ', ') AS description,
             SUM(COALESCE(ofb.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
@@ -2605,9 +2605,9 @@ fetchDostavistaPackages ordersId pool =
              ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
-                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
-                 ELSE COALESCE(f.discount, 0)
+                      fpc.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(fpc.discount, 0)
                 END
              ))
             END) AS price
@@ -2616,6 +2616,8 @@ fetchDostavistaPackages ordersId pool =
           ON ofb.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
           INNER JOIN orders AS o
           ON ofb.order_id = o.id
           LEFT JOIN monthly_special_promos AS msp 
@@ -2641,9 +2643,9 @@ fetchDostavistaPackages ordersId pool =
              ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
-                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
-                 ELSE COALESCE(f.discount, 0)
+                      fpc.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(fpc.discount, 0)
                 END
              ))
             END) AS price
