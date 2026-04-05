@@ -2560,37 +2560,69 @@ fetchDostavistaPackages ordersId pool =
             SUM(COALESCE(ofb.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pre_cut_id IS NULL THEN
-              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ofb.length_m)
-             ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+              ROUND(f.price_per_meter * ofb.length_m * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END
+              ))
+             ELSE ROUND(pc.price_rub * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END
+             ))
             END) AS price
           FROM order_fabric_bindings AS ofb
           INNER JOIN fabrics AS f
           ON ofb.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
+          INNER JOIN orders AS o
+          ON ofb.order_id = o.id
+          LEFT JOIN monthly_special_promos AS msp 
+          ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
           GROUP BY ofb.order_id
 
           UNION
 
           SELECT
-            so.order_id AS order_id,
+            si.main_order_id AS order_id,
             STRING_AGG(COALESCE(f.name, fpc.name), ', ') AS description,
-            SUM(COALESCE(soi.length_m, pc.length_m)) AS length,
+            SUM(COALESCE(si.length_m, pc.length_m)) AS length,
             SUM(CASE 
              WHEN pc.id IS NULL THEN
-              ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * soi.length_m)
-             ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+              ROUND(f.price_per_meter * si.length_m * (1 - 
+               CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END
+              ))
+             ELSE ROUND(pc.price_rub * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END
+             ))
             END) AS price
-          FROM shelf_order_items AS soi
-          INNER JOIN shelf_orders AS so
-          ON soi.shelf_order_id = so.id
+          FROM shelf_items AS si
           LEFT JOIN fabrics AS f
-          ON soi.fabric_id = f.id
+          ON si.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc
-          ON soi.pre_cut_id = pc.id
+          ON si.pre_cut_id = pc.id
           LEFT JOIN fabrics AS fpc
           ON pc.fabric_id = fpc.id
-          GROUP BY so.order_id
+          LEFT JOIN monthly_special_promos AS msp 
+          ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
+          GROUP BY si.main_order_id
         ) AS oi
         ON o.id = oi.order_id
         WHERE o.id = ANY($1 :: text[])
