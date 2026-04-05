@@ -2781,18 +2781,26 @@ fetchShelfItems userId pool =
               ELSE 1.0
              END,
             'price',
-             CASE
-              WHEN pc.id IS NULL THEN
-               ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
-              ELSE
-               ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
-             END
+              ROUND(
+               (CASE WHEN si.pre_cut_id IS NULL 
+                     THEN f.price_per_meter * si.length_m 
+                     ELSE pc.price_rub END) *
+                (1 - (
+                  CASE 
+                   WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                   THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                   ELSE COALESCE(f.discount, 0)
+                  END
+                ))
+              )
            ) AS item_json
           FROM shelf_items AS si
           INNER JOIN fabrics AS f 
           ON si.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc 
           ON pc.fabric_id = f.id
+          LEFT JOIN monthly_special_promos AS msp
+          ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
           WHERE si.status = 'ON_SHELF'
           ) AS item_details
           GROUP BY shelf_id

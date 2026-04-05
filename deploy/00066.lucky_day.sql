@@ -29,7 +29,7 @@ BEGIN
     INTO v_lucky_discount
     FROM monthly_special_promos
     WHERE is_enabled = TRUE 
-    AND lucky_day = now() :: date;
+    AND lucky_day = (now() AT TIME ZONE 'Europe/Moscow')::date;
     RETURN COALESCE(v_lucky_discount, 0);
 END;
 $$ LANGUAGE plpgsql STABLE;
