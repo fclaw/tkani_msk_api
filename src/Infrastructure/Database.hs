@@ -3915,12 +3915,20 @@ fetchConsignmentPdfItems orderId pool =
               ELSE fpc.article 
              END,
             'total_price', 
-             CASE 
-              WHEN pc.id IS NULL 
-              THEN ROUND(f.price_per_meter * 
-                         (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * 
-                         ofb.length_m)
-              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) 
+             CASE
+              WHEN pc.id IS NULL
+              THEN ROUND(f.price_per_meter * ofb.length_m * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END))
+              ELSE ROUND(pc.price_rub * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END))
              END
            )) :: jsonb[] AS items 
          FROM orders AS o
@@ -3932,6 +3940,8 @@ fetchConsignmentPdfItems orderId pool =
          ON ofb.pre_cut_id = pc.id
          LEFT JOIN fabrics AS fpc
          ON pc.fabric_id = fpc.id
+         LEFT JOIN monthly_special_promos AS msp
+         ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
          GROUP BY o.id
 
          UNION ALL
@@ -3973,10 +3983,18 @@ fetchConsignmentPdfItems orderId pool =
             'total_price', 
              CASE 
               WHEN pc.id IS NULL 
-              THEN ROUND(f.price_per_meter * 
-                         (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * 
-                         si.length_m)
-              ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) 
+              THEN ROUND(f.price_per_meter * si.length_m * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END))
+              ELSE ROUND(pc.price_rub * (1 - 
+                CASE 
+                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(f.discount, 0)
+                END))
              END
            )) ::jsonb[] AS items 
         FROM orders AS o
@@ -3988,6 +4006,8 @@ fetchConsignmentPdfItems orderId pool =
         ON si.pre_cut_id = pc.id
         LEFT JOIN fabrics AS fpc
         ON pc.fabric_id = fpc.id
+        LEFT JOIN monthly_special_promos AS msp 
+        ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
         GROUP BY o.id
        )
        SELECT
