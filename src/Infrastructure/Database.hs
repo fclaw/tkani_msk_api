@@ -3489,9 +3489,9 @@ fetchOrderDetailsForYaml orderId pool =
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
-                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
-                 ELSE COALESCE(f.discount, 0)
+                      fpc.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(fpc.discount, 0)
                 END
               ))
              END,
@@ -3561,9 +3561,9 @@ fetchOrderDetailsForYaml orderId pool =
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
-                 THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
-                 ELSE COALESCE(f.discount, 0)
+                      fpc.lifecycle IN ('clearance', 'on_sale')
+                 THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                 ELSE COALESCE(fpc.discount, 0)
                 END
               ))
              END,
