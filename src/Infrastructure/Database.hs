@@ -3022,9 +3022,23 @@ fetchShelfItemsForShipmentStatement =
          'total_price', 
           CASE 
            WHEN pc.id IS NULL THEN
-            ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * si.length_m)
+            ROUND(f.price_per_meter * si.length_m * (1 - 
+              CASE 
+               WHEN msp.lucky_day IS NOT NULL AND 
+                    f.lifecycle IN ('clearance', 'on_sale')
+               THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+               ELSE COALESCE(f.discount, 0)
+              END
+            ))
            ELSE
-            ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+            ROUND(pc.price_rub * (1 - 
+              CASE 
+               WHEN msp.lucky_day IS NOT NULL AND 
+                    f.lifecycle IN ('clearance', 'on_sale')
+               THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+               ELSE COALESCE(f.discount, 0)
+              END
+            ))
           END,
          'fabric_type',
           CASE 
@@ -3036,7 +3050,14 @@ fetchShelfItemsForShipmentStatement =
           'price_per_metre',
            CASE 
             WHEN pc.id IS NULL THEN
-             ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+             ROUND(f.price_per_meter * (1 - 
+              CASE 
+               WHEN msp.lucky_day IS NOT NULL AND 
+                    f.lifecycle IN ('clearance', 'on_sale')
+               THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+               ELSE COALESCE(f.discount, 0)
+              END
+             ))
             ELSE
              NULL
            END,
@@ -3057,6 +3078,8 @@ fetchShelfItemsForShipmentStatement =
       ON pc.fabric_id = f.id
       LEFT JOIN fabrics AS fpc
       ON pc.fabric_id = fpc.id
+      LEFT JOIN monthly_special_promos AS msp 
+      ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
       WHERE si.status = 'ON_SHELF'
       GROUP BY shelf_id
     ) AS ci
