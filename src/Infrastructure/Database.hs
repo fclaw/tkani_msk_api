@@ -1836,8 +1836,22 @@ getSdekOrderDetailsForPricing orderId pool =
               'price',
                 CASE
                  WHEN ofb.pre_cut_id IS NULL
-                 THEN ROUND(ofb.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
-                 ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+                 THEN ROUND(ofb.length_m * f.price_per_meter * (1 - 
+                  CASE 
+                    WHEN msp.lucky_day IS NOT NULL AND 
+                         f.lifecycle IN ('clearance', 'on_sale')
+                    THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                    ELSE COALESCE(f.discount, 0)
+                  END
+                 ))
+                 ELSE ROUND(pc.price_rub * (1 - 
+                  CASE 
+                    WHEN msp.lucky_day IS NOT NULL AND 
+                         fpc.lifecycle IN ('clearance', 'on_sale')
+                    THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                    ELSE COALESCE(fpc.discount, 0)
+                  END
+                 ))
                 END          
               )) :: jsonb[] AS items
           FROM orders AS o
@@ -1847,8 +1861,12 @@ getSdekOrderDetailsForPricing orderId pool =
           ON f.id = ofb.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
           INNER JOIN sdek_orders AS so
           ON so.id = o.sdek_order_id
+          LEFT JOIN monthly_special_promos AS msp 
+          ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
           WHERE o.id = $1 :: text
           GROUP BY so.delivery_point, so.tariff, o.length, o.width, o.height, o.actual_weight_grams
           
@@ -1870,9 +1888,23 @@ getSdekOrderDetailsForPricing orderId pool =
               'price',
                CASE
                  WHEN si.pre_cut_id IS NULL
-                 THEN ROUND(si.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
-                 ELSE ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
-                END 
+                 THEN ROUND(si.length_m * f.price_per_meter * (1 - 
+                  CASE 
+                    WHEN msp.lucky_day IS NOT NULL AND 
+                         f.lifecycle IN ('clearance', 'on_sale')
+                    THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
+                    ELSE COALESCE(f.discount, 0)
+                  END
+                 ))
+                 ELSE ROUND(pc.price_rub * (1 - 
+                  CASE 
+                    WHEN msp.lucky_day IS NOT NULL AND 
+                         fpc.lifecycle IN ('clearance', 'on_sale')
+                    THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+                    ELSE COALESCE(fpc.discount, 0)
+                  END
+                 ))
+                END
               )) :: jsonb[] AS items
           FROM orders AS o
           INNER JOIN shelf_items AS si
@@ -1881,8 +1913,12 @@ getSdekOrderDetailsForPricing orderId pool =
           ON f.id = si.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON si.pre_cut_id = pc.id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
           INNER JOIN sdek_orders AS so
           ON so.id = o.sdek_order_id
+          LEFT JOIN monthly_special_promos AS msp 
+          ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
           WHERE o.id = $1 :: text
           GROUP BY so.delivery_point, so.tariff, o.length, o.width, o.height, o.actual_weight_grams
           ) AS r
@@ -1902,12 +1938,12 @@ getPatchedOrderDetails orderId pool =
            CASE
             WHEN ofb.length_m IS NOT NULL
             THEN f.name
-            ELSE pcf.name 
+            ELSE fpc.name 
            END AS name,
            CASE
             WHEN ofb.length_m IS NOT NULL
             THEN f.article
-            ELSE pcf.article
+            ELSE fpc.article
             END AS article,
            CASE
             WHEN ofb.length_m IS NOT NULL
@@ -1927,9 +1963,9 @@ getPatchedOrderDetails orderId pool =
             ELSE ROUND(pc.price_rub * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    pcf.lifecycle IN ('clearance', 'on_sale')
-               THEN LEAST(COALESCE(pcf.discount, 0) + msp.extra_discount, 0.90)
-               ELSE COALESCE(pcf.discount, 0)
+                    fpc.lifecycle IN ('clearance', 'on_sale')
+               THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+               ELSE COALESCE(fpc.discount, 0)
               END
             ))
            END AS total_price
@@ -1938,8 +1974,8 @@ getPatchedOrderDetails orderId pool =
           ON f.id = ofb.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON ofb.pre_cut_id = pc.id
-          LEFT JOIN fabrics AS pcf
-          ON pc.fabric_id = pcf.id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
           INNER JOIN orders AS o
           ON o.id = ofb.order_id
           LEFT JOIN monthly_special_promos AS msp 
@@ -1952,12 +1988,12 @@ getPatchedOrderDetails orderId pool =
            CASE
             WHEN si.length_m IS NOT NULL
             THEN f.name
-            ELSE pcf.name
+            ELSE fpc.name
            END AS name,
            CASE
             WHEN si.length_m IS NOT NULL
             THEN f.article
-            ELSE pcf.article
+            ELSE fpc.article
            END AS article,
            CASE
             WHEN si.length_m IS NOT NULL
@@ -1977,9 +2013,9 @@ getPatchedOrderDetails orderId pool =
             ELSE ROUND(pc.price_rub * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    pcf.lifecycle IN ('clearance', 'on_sale')
-               THEN LEAST(COALESCE(pcf.discount, 0) + msp.extra_discount, 0.90)
-               ELSE COALESCE(pcf.discount, 0)
+                    fpc.lifecycle IN ('clearance', 'on_sale')
+               THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
+               ELSE COALESCE(fpc.discount, 0)
               END
             ))
            END AS total_price
@@ -1988,8 +2024,8 @@ getPatchedOrderDetails orderId pool =
           ON f.id = si.fabric_id
           LEFT JOIN pre_cuts AS pc
           ON si.pre_cut_id = pc.id
-          LEFT JOIN fabrics AS pcf
-          ON pc.fabric_id = pcf.id
+          LEFT JOIN fabrics AS fpc
+          ON pc.fabric_id = fpc.id
           LEFT JOIN monthly_special_promos AS msp 
           ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date 
           )
@@ -2855,7 +2891,8 @@ fetchShelfItems userId pool =
                      ELSE pc.price_rub END) *
                 (1 - (
                   CASE 
-                   WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                   WHEN msp.lucky_day IS NOT NULL AND 
+                        f.lifecycle IN ('clearance', 'on_sale')
                    THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                    ELSE COALESCE(f.discount, 0)
                   END
