@@ -3389,14 +3389,16 @@ fetchOrderDetailsForYaml orderId pool =
               WHEN pc.id IS NULL THEN 
               ROUND(f.price_per_meter * ofb.length_m * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
               ))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -3459,14 +3461,16 @@ fetchOrderDetailsForYaml orderId pool =
               WHEN pc.id IS NULL THEN 
               ROUND(f.price_per_meter * si.length_m * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
               ))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -3487,7 +3491,7 @@ fetchOrderDetailsForYaml orderId pool =
         LEFT JOIN fabrics AS fpc
         ON pc.fabric_id = fpc.id
         LEFT JOIN monthly_special_promos AS msp
-        ON msp.lucky_day = (si.created_at AT TIME ZONE 'Europe/Moscow')::date
+        ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
         WHERE o.id = $1 :: text
         GROUP BY o.id, o.customer_full_name, o.customer_phone, o.delivery_provider_id, o.delivery_point_id, o.length, o.width, o.height
      |]
@@ -3947,13 +3951,15 @@ fetchConsignmentPdfItems orderId pool =
               WHEN pc.id IS NULL
               THEN ROUND(f.price_per_meter * ofb.length_m * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
@@ -4013,13 +4019,15 @@ fetchConsignmentPdfItems orderId pool =
               WHEN pc.id IS NULL 
               THEN ROUND(f.price_per_meter * si.length_m * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
-                 WHEN msp.lucky_day IS NOT NULL AND f.lifecycle IN ('clearance', 'on_sale')
+                 WHEN msp.lucky_day IS NOT NULL AND 
+                      f.lifecycle IN ('clearance', 'on_sale')
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
@@ -4035,7 +4043,7 @@ fetchConsignmentPdfItems orderId pool =
         LEFT JOIN fabrics AS fpc
         ON pc.fabric_id = fpc.id
         LEFT JOIN monthly_special_promos AS msp 
-        ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
+        ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
         GROUP BY o.id
        )
        SELECT
