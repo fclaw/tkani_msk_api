@@ -3417,7 +3417,7 @@ fetchOrderDetailsForYaml orderId pool =
         LEFT JOIN fabrics AS fpc
         ON pc.fabric_id = fpc.id
         LEFT JOIN monthly_special_promos AS msp
-        ON msp.lucky_day = (ofb.created_at AT TIME ZONE 'Europe/Moscow')::date
+        ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
         WHERE o.id = $1 :: text
         GROUP BY o.id, o.customer_full_name, o.customer_phone, o.delivery_provider_id, o.delivery_point_id, o.length, o.width, o.height
 
