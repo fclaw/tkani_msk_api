@@ -111,7 +111,7 @@ planNextPromotion today = do
 
   -- 2. Discount Logic: Random value between 10% and 20%
   -- Using Int for whole percentages makes marketing messages look better
-  rawPercent <- randomRIO @Int (5, 15)
+  rawPercent <- randomRIO @Int (5, 10)
   let finalDiscount = fromIntegral rawPercent / 100.0
 
   return $ PromoPlan finalDate finalDiscount
