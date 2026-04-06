@@ -56,7 +56,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "item_id" Int64 -- either fabric_id or roll_id
        :> ReqBody '[JSON] ToggleExtraDiscountRequest
-       :> Post '[JSON] (ApiResponse ())   
+       :> Post '[JSON] (ApiResponse ToggleExtraDiscountResponse)   
    , _uploadMediaForFabric
        :: route
        :- "warehouse"

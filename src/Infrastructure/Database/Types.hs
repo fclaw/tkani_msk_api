@@ -490,3 +490,15 @@ data ConsignmentPdfItem =
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpdf" } ''ConsignmentPdfItem)
+
+data ExtraDiscountDetails = 
+      ExtraDiscountDetails
+      { eddId            :: Int64
+      , eddIsEnabled     :: Bool
+      , eddExtraDiscount :: Int32
+      , eddLuckyDay      :: Day
+      , eddMessageId     :: Maybe Int64
+      , eddFabrics       :: [Text]
+      } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "edd" } ''ExtraDiscountDetails)

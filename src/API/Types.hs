@@ -782,3 +782,8 @@ data ToggleExtraDiscountRequest =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } ''ToggleExtraDiscountRequest)
+
+data ToggleExtraDiscountResponse = ToggleExtraDiscountResponse { tedrIsToggled :: Bool }
+  deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } ''ToggleExtraDiscountResponse)

@@ -9,6 +9,8 @@ module Workers.ExtraDiscountPromotionScheduler
 
 import Katip
 import Data.Time
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Int (Int64, Int32)
 import Control.Monad (when, void)
 import System.Random (randomRIO)
@@ -23,7 +25,7 @@ import TH.Location (currentModule)
 import App (AppM, _appDBPool, currentTime, ChatKey (MAIN), render)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (deleteMessage, sendOrEditTelegramMessage, MessageIdResponse (..))
-import Infrastructure.Database (fetchExtraDiscountDetails, updateExtraDiscountPromotions, setMessageIdExtraDiscountPromotions, insertStartPromotion)
+import Infrastructure.Database (ExtraDiscountDetails (..), fetchExtraDiscountDetails, updateExtraDiscountPromotions, setMessageIdExtraDiscountPromotions, insertStartPromotion)
 
 -- | Extracts the Local Moscow Hour and the exact Date (Day)
 getMoscowStats :: AppM (Int, Day)
@@ -61,32 +63,34 @@ runExtraDiscountPromotionScheduler = do
       Left err -> 
         $(logTM) ErrorS $ ls $ 
         "Failed to fetch promotion details: " <> err
-      Right (Just details@(ident, promDay, isEnabled, extraDiscount, messageId)) -> do
+      Right (Just details@ExtraDiscountDetails {..}) -> do
         $(logTM) InfoS $ ls $ "Promotion details: " <> tshow details
         -- Here you would add logic to check if the promotion should be activated or deactivated based on the current date and time.
         -- For example:
         -- when (shouldActivate details day) $ activatePromotion details
         -- when (shouldDeactivate details day) $ deactivatePromotion details 
-        when(day == promDay && not isEnabled) $ do
-          $(logTM) InfoS $ ls $ "Activating promotion for day: " <> tshow promDay
-          activatePromotion ident promDay extraDiscount 
-        when(diffDays day promDay == 1 && isEnabled) $ do
-          $(logTM) InfoS $ ls $ "Deactivating promotion for day: " <> tshow promDay
-          deactivatePromotion ident promDay messageId
-      Right Nothing -> do 
-        $(logTM) InfoS 
-          "No active promotions found in the database. \
-          \ Fall back to default behavior (if any)."
-        let promDay = read @Day "2026-04-05"
-        let extraDiscount = 0.20
-        let extraDiscountInt = round (extraDiscount * 100) :: Int32
-        eIdent <- insertStartPromotion promDay extraDiscount pool
-        when(day == promDay) $ for_ eIdent $ \ident -> activatePromotion ident promDay extraDiscountInt -- default 20% discount
+        when(day == eddLuckyDay && not eddIsEnabled) $ do
+          if length eddFabrics > 0
+          then do
+            $(logTM) InfoS $ ls $ "Activating promotion for day: " <> tshow eddLuckyDay 
+            activatePromotion eddId eddLuckyDay eddExtraDiscount eddFabrics
+          else do 
+            $(logTM) InfoS $ ls $ "No fabrics available for promotion: " <> tshow eddId
+            deactivatePromotion eddId eddLuckyDay Nothing
+        when(diffDays day eddLuckyDay == 1 && eddIsEnabled) $ do
+          $(logTM) InfoS $ ls $ "Deactivating promotion for day: " <> tshow eddLuckyDay
+          deactivatePromotion eddId eddLuckyDay eddMessageId
+      Right Nothing -> $(logTM) WarningS "No active promotions found in the database."
 
-
-activatePromotion :: Int64 -> Day -> Int32 -> AppM ()
-activatePromotion ident promDay extraDiscount = do
-  let templateData = HM.fromList [("extraDiscount", tshow extraDiscount)]
+activatePromotion :: Int64 -> Day -> Int32 -> [Text] -> AppM ()
+activatePromotion ident promDay extraDiscount fabrics = do
+  let fabricsText = 
+         "\n📌 **Ткани дня со скидкой:**\n" 
+         <> (T.unlines $ map (\name -> "• " <> name) (take 10 fabrics))
+         <> (if length fabrics > 10 
+             then "  _...и другие лоты в каталоге_" 
+             else mempty)
+  let templateData = HM.fromList [("extraDiscount", tshow extraDiscount), ("items", fabricsText)]
   msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
   eTelRes <- sendOrEditTelegramMessage mempty msg MAIN Nothing Nothing Nothing
   for_ eTelRes $ \MessageIdResponse {..} -> do

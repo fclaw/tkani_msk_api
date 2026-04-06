@@ -4241,18 +4241,45 @@ fetchCatchupYandexOrders pool =
        AND o.status = 'paid'
       |]
 
-fetchExtraDiscountDetails :: Hasql.Pool -> AppM (Either Text (Maybe (Int64, Day, Bool, Int32, Maybe Int64)))
+fetchExtraDiscountDetails :: Hasql.Pool -> AppM (Either Text (Maybe ExtraDiscountDetails))
 fetchExtraDiscountDetails pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
       Hasql.statement () $
+       rmap (fmap (extractADT . convertFromJson @ExtraDiscountDetails))
       [Hasql.maybeStatement|
        SELECT
-        id :: int8,
-        lucky_day :: date,
-        is_enabled :: bool,
-        ROUND(extra_discount * 100) :: int4,
-        message_id :: int8?
+         jsonb_build_object(
+           'id', id,
+           'lucky_day', lucky_day,
+           'is_enabled', is_enabled,
+           'extra_discount', ROUND(extra_discount * 100),
+           'message_id', message_id,
+           'fabrics', 
+            (SELECT 
+            COALESCE(jsonb_agg(DISTINCT item_names.name), '[]'::jsonb)
+            FROM (
+             SELECT 
+              CASE 
+               WHEN pc.id IS NULL 
+               THEN f.name 
+               ELSE fpc.name
+              END as name
+             FROM fabrics AS f
+             LEFT JOIN pre_cuts AS pc
+             ON f.id = pc.fabric_id
+             LEFT JOIN fabrics AS fpc 
+             ON pc.fabric_id = fpc.id
+             WHERE (pc.id IS NULL AND
+                    f.is_extra_discount_eligible IS TRUE AND
+                    f.lifecycle IN ('clearance', 'on_sale') AND 
+                    f.in_stock IS TRUE)
+             OR (pc.id IS NOT NULL AND
+                 fpc.is_extra_discount_eligible IS TRUE AND
+                 fpc.lifecycle IN ('clearance', 'on_sale') AND 
+                 fpc.in_stock IS TRUE)
+            ) AS item_names)
+         ) :: jsonb
        FROM monthly_special_promos
        ORDER BY lucky_day DESC
        LIMIT 1
@@ -4301,12 +4328,13 @@ insertStartPromotion day extraDiscount pool =
         RETURNING id :: int8
       |]
 
-toggleExtraDiscount :: Int64 -> Bool -> Hasql.Pool -> AppM (Either Text ())
+toggleExtraDiscount :: Int64 -> Bool -> Hasql.Pool -> AppM (Either Text Bool)
 toggleExtraDiscount itemId isEnabled pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $
       Hasql.statement (itemId, isEnabled) $
-       [Hasql.resultlessStatement|
+       rmap (> 0)
+       [Hasql.rowsAffectedStatement|
         UPDATE fabrics AS f
         SET is_extra_discount_eligible = $2 :: bool
         WHERE id IN (
@@ -4317,4 +4345,5 @@ toggleExtraDiscount itemId isEnabled pool =
          SELECT pc.fabric_id
          FROM pre_cuts AS pc
          WHERE pc.id = $1 :: int8)
+         AND f.lifecycle IN ('clearance', 'on_sale')
        |]
