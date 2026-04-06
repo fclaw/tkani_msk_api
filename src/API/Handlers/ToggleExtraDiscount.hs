@@ -13,5 +13,5 @@ import API.Types (ApiResponse, mkError, ToggleExtraDiscountRequest (..), ToggleE
 import Infrastructure.Database (toggleExtraDiscount)
 
 
-handler :: Int64 -> ToggleExtraDiscountRequest -> AppM (ApiResponse ToggleExtraDiscountResponse)
-handler itemId req = fmap (bimap mkError ToggleExtraDiscountResponse) $ fmap _appDBPool ask >>= (toggleExtraDiscount itemId (tedrIsEnabled req))
+handler :: ToggleExtraDiscountRequest -> AppM (ApiResponse ToggleExtraDiscountResponse)
+handler req = fmap (bimap mkError ToggleExtraDiscountResponse) $ fmap _appDBPool ask >>= (toggleExtraDiscount (tedrId req) (tedrIsEnabled req))

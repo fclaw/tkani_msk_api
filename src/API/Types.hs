@@ -778,7 +778,8 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ysfr" } 
 
 data ToggleExtraDiscountRequest =
      ToggleExtraDiscountRequest
-     { tedrIsEnabled :: Bool
+     { tedrId        :: Int64
+     , tedrIsEnabled :: Bool
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } ''ToggleExtraDiscountRequest)
