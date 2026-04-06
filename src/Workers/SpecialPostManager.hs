@@ -48,14 +48,12 @@ runSpecialPostManager = do
   cfg <- ask
   let postsCfgs = _postsCfgs cfg -- list of type (FabricLifecycle, (lifetime, item threshold))
   let posts = fst $ unzip postsCfgs
-  forever $ do
-    for_ posts $ \lifeCycle -> do
-      -- fall back on default values 7 days and 10 items
-      let (lifeTime, itemThreshold) = 
-            fromMaybe (7, 10) $
-              lookup lifeCycle postsCfgs
-      managePost lifeCycle lifeTime itemThreshold
-    liftIO $ threadDelay (10 * 60 * 1000000) -- Wait 30 minutes
+  for_ posts $ \lifeCycle -> do
+    -- fall back on default values 7 days and 10 items
+    let (lifeTime, itemThreshold) = 
+          fromMaybe (7, 10) $
+            lookup lifeCycle postsCfgs
+    managePost lifeCycle lifeTime itemThreshold
   
 
 -- | Returns the appropriate button text for a given lifecycle state.
@@ -102,7 +100,10 @@ truncateFabricNames allFabricNames
         footer = "...и еще " <> T.pack (show remainingCount) <> " позиций."
         numberedItems = zipWith makeName [1..] truncatedList
     in T.unlines numberedItems <> "\n" <> footer
-  where makeName n SpecialPostDetailsItems {..} = T.pack (show n) <> ". " <> name <> " -" <> tshow discount <> "% "  <> "🔥"
+  where makeName n SpecialPostDetailsItems {..} = 
+          let discountText | discount > 0 = " -" <> tshow discount <> "% "  <> "🔥"
+                           | otherwise = mempty
+          in T.pack (show n) <> ". " <> name <> discountText
 
 
 managePost :: FabricLifecycle -> Int -> Int -> AppM ()

@@ -511,9 +511,10 @@ main = do
                      >>= showErrorInWorker 
                            OrderDeliveryScheduler)
               , (SpecialPostManager,
-                 appMToHandler (runSpecialPostManager)
-                   >>= showErrorInWorker
-                        SpecialPostManager)
+                 runForever 10 $
+                   appMToHandler (runSpecialPostManager)
+                     >>= showErrorInWorker
+                          SpecialPostManager)
               , (OrderCancellationHandler,
                  appMToHandler (
                    runOrderCancellationHandler 
