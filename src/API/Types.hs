@@ -774,3 +774,11 @@ data YandexShipmentFinalizeReq =
       } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "ysfr" } ''YandexShipmentFinalizeReq)
+
+
+data ToggleExtraDiscountRequest =
+     ToggleExtraDiscountRequest
+     { tedrIsEnabled :: Bool
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } ''ToggleExtraDiscountRequest)

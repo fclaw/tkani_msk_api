@@ -50,6 +50,7 @@ module Infrastructure.Database
   , patchRoll
   , patchPrecut
   , deleteFabric
+  , toggleExtraDiscount
   , fetchOrdersForSdekCourierPickup
   , createCourierPickupPromise
    -- yaml order
@@ -301,7 +302,8 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))) :: int4,
+        'price', ROUND(f.price_per_meter * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))) :: int4,
         'stock_available', 
           (f.available_length_m - 
            COALESCE(cl.length, 0.0)) :: float8,
@@ -330,7 +332,8 @@ getFabricPreviewStatement =
     SELECT
       jsonb_build_object(
         'name', f.name :: text,
-        'price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+        'price', ROUND(pc.price_rub * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
         'stock_available', pc.length_m,
         'status',
           CASE 
@@ -380,9 +383,11 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ci.length_m),
+        'total_price', ROUND(f.price_per_meter * ci.length_m * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
         'fabric_type', ci.item_type,
-        'price_per_metre', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+        'price_per_metre', ROUND(f.price_per_meter * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
         'length_m', ci.length_m,
         'telegram_url', ci.telegram_url,
         'thumbnail_url', f.thumbnail_url
@@ -400,7 +405,8 @@ getOrderItemsStatement =
       jsonb_build_object(
         'name', f.name,
         'article', f.article,
-        'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+        'total_price', ROUND(pc.price_rub * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
         'fabric_type', ci.item_type,
         'price_per_metre', null,
         'length_m', null,
@@ -1001,7 +1007,8 @@ searchFabricCardStatement =
             'name', f.name,
             'article', f.article,
             'type', 'roll',
-            'price_per_meter', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+            'price_per_meter', ROUND(f.price_per_meter * (1 - 
+              calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
             'total_price', NULL,
             'length_m', NULL,
             'available_length', 
@@ -1035,7 +1042,8 @@ searchFabricCardStatement =
             'article', f.article,
             'type', 'pre_cut',
             'price_per_meter', NULL,
-            'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+            'total_price', ROUND(pc.price_rub * (1 - 
+              calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
             'length_m', pc.length_m,
             'is_sold_out', FALSE,
             'warehouse_message_id', f.warehouse_message_id,
@@ -1376,7 +1384,8 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', ci.length_m,
-        'price', ROUND(ci.length_m * f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+        'price', ROUND(ci.length_m * f.price_per_meter * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible)))
        ) :: jsonb
      FROM carts as c 
      INNER JOIN cart_items as ci
@@ -1393,7 +1402,8 @@ fetchCartItemsStatement =
         'name', f.name,
         'type', ci.item_type,
         'length_m', pc.length_m,
-        'price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)))
+        'price', ROUND(pc.price_rub * (1 - 
+          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible)))
        ) :: jsonb
      FROM cart_items as ci
 	   INNER JOIN carts as c
@@ -1839,7 +1849,8 @@ getSdekOrderDetailsForPricing orderId pool =
                  THEN ROUND(ofb.length_m * f.price_per_meter * (1 - 
                   CASE 
                     WHEN msp.lucky_day IS NOT NULL AND 
-                         f.lifecycle IN ('clearance', 'on_sale')
+                         f.lifecycle IN ('clearance', 'on_sale') AND
+                         f.is_extra_discount_eligible IS TRUE
                     THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                     ELSE COALESCE(f.discount, 0)
                   END
@@ -1847,7 +1858,8 @@ getSdekOrderDetailsForPricing orderId pool =
                  ELSE ROUND(pc.price_rub * (1 - 
                   CASE 
                     WHEN msp.lucky_day IS NOT NULL AND 
-                         fpc.lifecycle IN ('clearance', 'on_sale')
+                         fpc.lifecycle IN ('clearance', 'on_sale') AND
+                         fpc.is_extra_discount_eligible IS TRUE
                     THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                     ELSE COALESCE(fpc.discount, 0)
                   END
@@ -1891,7 +1903,8 @@ getSdekOrderDetailsForPricing orderId pool =
                  THEN ROUND(si.length_m * f.price_per_meter * (1 - 
                   CASE 
                     WHEN msp.lucky_day IS NOT NULL AND 
-                         f.lifecycle IN ('clearance', 'on_sale')
+                         f.lifecycle IN ('clearance', 'on_sale') AND
+                         f.is_extra_discount_eligible IS TRUE
                     THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                     ELSE COALESCE(f.discount, 0)
                   END
@@ -1899,7 +1912,8 @@ getSdekOrderDetailsForPricing orderId pool =
                  ELSE ROUND(pc.price_rub * (1 - 
                   CASE 
                     WHEN msp.lucky_day IS NOT NULL AND 
-                         fpc.lifecycle IN ('clearance', 'on_sale')
+                         fpc.lifecycle IN ('clearance', 'on_sale') AND
+                         fpc.is_extra_discount_eligible IS TRUE
                     THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                     ELSE COALESCE(fpc.discount, 0)
                   END
@@ -1955,7 +1969,8 @@ getPatchedOrderDetails orderId pool =
             THEN ROUND(f.price_per_meter * ofb.length_m * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    f.lifecycle IN ('clearance', 'on_sale')
+                    f.lifecycle IN ('clearance', 'on_sale') AND
+                    f.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(f.discount, 0)
               END
@@ -1963,7 +1978,8 @@ getPatchedOrderDetails orderId pool =
             ELSE ROUND(pc.price_rub * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    fpc.lifecycle IN ('clearance', 'on_sale')
+                    fpc.lifecycle IN ('clearance', 'on_sale') AND
+                    fpc.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(fpc.discount, 0)
               END
@@ -2005,7 +2021,8 @@ getPatchedOrderDetails orderId pool =
             THEN ROUND(f.price_per_meter * si.length_m * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    f.lifecycle IN ('clearance', 'on_sale')
+                    f.lifecycle IN ('clearance', 'on_sale') AND
+                    f.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(f.discount, 0)
               END
@@ -2013,7 +2030,8 @@ getPatchedOrderDetails orderId pool =
             ELSE ROUND(pc.price_rub * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    fpc.lifecycle IN ('clearance', 'on_sale')
+                    fpc.lifecycle IN ('clearance', 'on_sale') AND
+                    fpc.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(fpc.discount, 0)
               END
@@ -2487,7 +2505,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'name', f.name,
                     'article', f.article,
                     'type', 'roll',
-                    'price_per_meter', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+                    'price_per_meter', ROUND(f.price_per_meter * (1 - 
+                      calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
                     'total_price', NULL,
                     'length_m', NULL,
                     'available_length', 
@@ -2500,7 +2519,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                     'description', f.description,
                     'media_type', to_jsonb(f.media_type),
                     'width', f.width,
-                    'discount', calculate_total_discount(f.discount, f.lifecycle :: text),
+                    'discount', calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible),
                     'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
                     'hash', f.hash
                   ) AS item_json
@@ -2566,7 +2585,8 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'article', f.article,
                         'type', 'pre_cut',
                         'price_per_meter', NULL,
-                        'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+                        'total_price', ROUND(pc.price_rub * (1 - 
+                          calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
                         'length_m', pc.length_m,
                         'available_length', null,
                         'is_sold_out', FALSE,
@@ -2576,7 +2596,7 @@ fetchCatalogSummaryItem lifeCycle chatId threshold pool =
                         'description', f.description,
                         'media_type', to_jsonb(f.media_type),
                         'width', f.width,
-                        'discount', calculate_total_discount(f.discount, f.lifecycle :: text),
+                        'discount', calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible),
                         'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
                         'hash', f.hash
                     ) :: jsonb AS item_json
@@ -2633,7 +2653,8 @@ fetchDostavistaPackages ordersId pool =
               ROUND(f.price_per_meter * ofb.length_m * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -2641,7 +2662,8 @@ fetchDostavistaPackages ordersId pool =
              ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END
@@ -2671,7 +2693,8 @@ fetchDostavistaPackages ordersId pool =
               ROUND(f.price_per_meter * si.length_m * (1 - 
                CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -2679,7 +2702,8 @@ fetchDostavistaPackages ordersId pool =
              ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END
@@ -2892,7 +2916,8 @@ fetchShelfItems userId pool =
                 (1 - (
                   CASE 
                    WHEN msp.lucky_day IS NOT NULL AND 
-                        f.lifecycle IN ('clearance', 'on_sale')
+                        f.lifecycle IN ('clearance', 'on_sale') AND
+                        f.is_extra_discount_eligible IS TRUE
                    THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                    ELSE COALESCE(f.discount, 0)
                   END
@@ -2930,9 +2955,11 @@ getPutOnDShelfDetailsStatement =
         jsonb_build_object(
           'name', f.name,
           'article', f.article,
-          'total_price', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text)) * ci.length_m),
+          'total_price', ROUND(f.price_per_meter *  ci.length_m * (1 - 
+            calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
           'fabric_type', ci.item_type,
-          'price_per_metre', ROUND(f.price_per_meter * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+          'price_per_metre', ROUND(f.price_per_meter * (1 - 
+            calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
           'length_m', ci.length_m,
           'telegram_url', ci.telegram_url,
           'thumbnail_url', f.thumbnail_url
@@ -2951,7 +2978,8 @@ getPutOnDShelfDetailsStatement =
         jsonb_build_object(
           'name', f.name,
           'article', f.article,
-          'total_price', ROUND(pc.price_rub * (1 - calculate_total_discount(f.discount, f.lifecycle :: text))),
+          'total_price', ROUND(pc.price_rub * (1 - 
+            calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible))),
           'fabric_type', ci.item_type,
           'price_per_metre', null,
           'length_m', null,
@@ -3130,7 +3158,8 @@ fetchShelfItemsForShipmentStatement =
             ROUND(f.price_per_meter * si.length_m * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    f.lifecycle IN ('clearance', 'on_sale')
+                    f.lifecycle IN ('clearance', 'on_sale') AND
+                    f.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(f.discount, 0)
               END
@@ -3139,7 +3168,8 @@ fetchShelfItemsForShipmentStatement =
             ROUND(pc.price_rub * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    f.lifecycle IN ('clearance', 'on_sale')
+                    f.lifecycle IN ('clearance', 'on_sale') AND
+                    f.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(f.discount, 0)
               END
@@ -3158,7 +3188,8 @@ fetchShelfItemsForShipmentStatement =
              ROUND(f.price_per_meter * (1 - 
               CASE 
                WHEN msp.lucky_day IS NOT NULL AND 
-                    f.lifecycle IN ('clearance', 'on_sale')
+                    f.lifecycle IN ('clearance', 'on_sale') AND
+                    f.is_extra_discount_eligible IS TRUE
                THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                ELSE COALESCE(f.discount, 0)
               END
@@ -3518,7 +3549,8 @@ fetchOrderDetailsForYaml orderId pool =
               ROUND(f.price_per_meter * ofb.length_m * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -3526,7 +3558,8 @@ fetchOrderDetailsForYaml orderId pool =
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END
@@ -3590,7 +3623,8 @@ fetchOrderDetailsForYaml orderId pool =
               ROUND(f.price_per_meter * si.length_m * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END
@@ -3598,7 +3632,8 @@ fetchOrderDetailsForYaml orderId pool =
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END
@@ -4080,14 +4115,16 @@ fetchConsignmentPdfItems orderId pool =
               THEN ROUND(f.price_per_meter * ofb.length_m * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END))
@@ -4148,14 +4185,16 @@ fetchConsignmentPdfItems orderId pool =
               THEN ROUND(f.price_per_meter * si.length_m * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      f.lifecycle IN ('clearance', 'on_sale')
+                      f.lifecycle IN ('clearance', 'on_sale') AND
+                      f.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(f.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(f.discount, 0)
                 END))
               ELSE ROUND(pc.price_rub * (1 - 
                 CASE 
                  WHEN msp.lucky_day IS NOT NULL AND 
-                      fpc.lifecycle IN ('clearance', 'on_sale')
+                      fpc.lifecycle IN ('clearance', 'on_sale') AND 
+                      fpc.is_extra_discount_eligible IS TRUE
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END))
@@ -4261,3 +4300,21 @@ insertStartPromotion day extraDiscount pool =
         VALUES ($1 :: date, $2 :: float8, TRUE)
         RETURNING id :: int8
       |]
+
+toggleExtraDiscount :: Int64 -> Bool -> Hasql.Pool -> AppM (Either Text ())
+toggleExtraDiscount itemId isEnabled pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (itemId, isEnabled) $
+       [Hasql.resultlessStatement|
+        UPDATE fabrics AS f
+        SET is_extra_discount_eligible = $2 :: bool
+        WHERE id IN (
+         SELECT id
+         FROM fabrics AS f
+         WHERE f.id = $1 :: int8
+         UNION ALL
+         SELECT pc.fabric_id
+         FROM pre_cuts AS pc
+         WHERE pc.id = $1 :: int8)
+       |]

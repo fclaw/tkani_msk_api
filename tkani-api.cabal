@@ -90,6 +90,7 @@ library
       API.Handlers.Shelf.RequestShelfStatus
       API.Handlers.Shelf.SaveShelfSubmissionInfo
       API.Handlers.TallyUpExpenses
+      API.Handlers.ToggleExtraDiscount
       API.Handlers.TrackOrder
       API.Handlers.UploadMediaForFabric
       API.Handlers.ViewCart

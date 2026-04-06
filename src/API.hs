@@ -48,6 +48,15 @@ data Routes route = Routes
        :> Capture "fabric_id" Int64
        :> Capture "fabric_type" FabricType
        :> Delete '[JSON] (ApiResponse ())
+   , _toggleExtraDiscount
+       :: route
+       :- "warehouse"
+       :> "fabric"
+       :> "extra-discount"
+       :> RateLimitPerUser (Second 1) 'Nothing
+       :> Capture "item_id" Int64 -- either fabric_id or roll_id
+       :> ReqBody '[JSON] ToggleExtraDiscountRequest
+       :> Post '[JSON] (ApiResponse ())   
    , _uploadMediaForFabric
        :: route
        :- "warehouse"
