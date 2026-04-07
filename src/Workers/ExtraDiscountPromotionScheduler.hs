@@ -25,7 +25,7 @@ import TH.Location (currentModule)
 import App (AppM, _appDBPool, currentTime, ChatKey (MAIN), render)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (deleteMessage, sendOrEditTelegramMessage, MessageIdResponse (..))
-import Infrastructure.Database (ExtraDiscountDetails (..), fetchExtraDiscountDetails, updateExtraDiscountPromotions, setMessageIdExtraDiscountPromotions, insertStartPromotion)
+import Infrastructure.Database (ExtraDiscountDetails (..), adjustPromotionDay, fetchExtraDiscountDetails, updateExtraDiscountPromotions, setMessageIdExtraDiscountPromotions, insertStartPromotion)
 
 -- | Extracts the Local Moscow Hour and the exact Date (Day)
 getMoscowStats :: AppM (Int, Day)
@@ -76,7 +76,7 @@ runExtraDiscountPromotionScheduler = do
             activatePromotion eddId eddLuckyDay eddExtraDiscount eddFabrics
           else do 
             $(logTM) InfoS $ ls $ "No fabrics available for promotion: " <> tshow eddId
-            deactivatePromotion eddId eddLuckyDay Nothing
+            void $ adjustPromotionDay eddId eddLuckyDay pool
         when(diffDays day eddLuckyDay == 1 && eddIsEnabled) $ do
           $(logTM) InfoS $ ls $ "Deactivating promotion for day: " <> tshow eddLuckyDay
           deactivatePromotion eddId eddLuckyDay eddMessageId

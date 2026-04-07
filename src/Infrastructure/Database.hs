@@ -136,6 +136,7 @@ module Infrastructure.Database
   , updateExtraDiscountPromotions
   , setMessageIdExtraDiscountPromotions
   , insertStartPromotion
+  , adjustPromotionDay
   ) where
 
 
@@ -4348,3 +4349,15 @@ toggleExtraDiscount itemId isEnabled pool =
          WHERE pc.id = $1 :: int8)
          AND f.lifecycle IN ('clearance', 'on_sale')
        |]
+
+adjustPromotionDay :: Int64 -> Day -> Hasql.Pool -> AppM (Either Text ())
+adjustPromotionDay promoId newDay pool =
+  let sql = 
+        [Hasql.resultlessStatement|
+         UPDATE monthly_special_promos
+         SET lucky_day = $2 :: date + interval '1 day'
+         WHERE id = $1 :: int8
+       |]
+  in fmap (first (pack . show)) $
+       runTransactionM pool Hasql.Write $
+         Hasql.statement (promoId, newDay) sql
