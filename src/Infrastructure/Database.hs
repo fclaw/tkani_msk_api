@@ -4311,7 +4311,8 @@ setMessageIdExtraDiscountPromotions promoId messageId pool =
       Hasql.statement (promoId, messageId) $
        [Hasql.resultlessStatement|
         UPDATE monthly_special_promos
-        SET message_id = $2 :: int8
+        SET message_id = $2 :: int8,
+            is_enabled = TRUE
         WHERE id = $1 :: int8
        |]
 
