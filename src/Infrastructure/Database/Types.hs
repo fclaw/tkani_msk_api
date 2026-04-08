@@ -502,3 +502,13 @@ data ExtraDiscountDetails =
       } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "edd" } ''ExtraDiscountDetails)
+
+data FabricLifeCycleInfo =
+     FabricLifeCycleInfo
+     { fcliId         :: Int64
+     , fcliSince      :: Day
+     , fcliFabricType :: FabricType
+     , fcliLifecycle  :: FabricLifecycle
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fcli" } ''FabricLifeCycleInfo)

@@ -47,6 +47,7 @@ library:
     - Workers.ConsignmentNoteWatcher
     - Workers.YandexCatchupJanitor
     - Workers.ExtraDiscountPromotionScheduler
+    - Workers.FabricLifecycleManager
     - Infrastructure.Services.Overpass
     - Application.Cart
     - Lib.Servant.RateLimit

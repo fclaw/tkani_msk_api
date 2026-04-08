@@ -22,7 +22,7 @@ import Control.Monad.Reader.Class (ask)
 
 import Text (tshow)
 import TH.Location (currentModule)
-import App (AppM, _appDBPool, currentTime, ChatKey (MAIN), render)
+import App (AppM, _appDBPool, _thresholdMetres, currentTime, ChatKey (MAIN), render)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (deleteMessage, sendOrEditTelegramMessage, MessageIdResponse (..))
 import Infrastructure.Database (ExtraDiscountDetails (..), adjustPromotionDay, fetchExtraDiscountDetails, updateExtraDiscountPromotions, setMessageIdExtraDiscountPromotions, insertStartPromotion)
@@ -58,7 +58,8 @@ runExtraDiscountPromotionScheduler = do
       \ activate/deactivate."
     cfg <- ask
     let pool = _appDBPool cfg
-    eDbRes <- fetchExtraDiscountDetails pool
+    let minAvailableLength = _thresholdMetres cfg
+    eDbRes <- fetchExtraDiscountDetails minAvailableLength pool
     case eDbRes of
       Left err -> 
         $(logTM) ErrorS $ ls $ 

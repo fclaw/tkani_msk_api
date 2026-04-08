@@ -137,6 +137,9 @@ module Infrastructure.Database
   , setMessageIdExtraDiscountPromotions
   , insertStartPromotion
   , adjustPromotionDay
+    -- life cycle manager
+  , fetchFabricLifeCycleInfo
+  , updateFabricLifecycle
   ) where
 
 
@@ -4242,11 +4245,11 @@ fetchCatchupYandexOrders pool =
        AND o.status = 'paid'
       |]
 
-fetchExtraDiscountDetails :: Hasql.Pool -> AppM (Either Text (Maybe ExtraDiscountDetails))
-fetchExtraDiscountDetails pool =
+fetchExtraDiscountDetails :: Double -> Hasql.Pool -> AppM (Either Text (Maybe ExtraDiscountDetails))
+fetchExtraDiscountDetails minAvailableLength pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
-      Hasql.statement () $
+      Hasql.statement (minAvailableLength) $
        rmap (fmap (extractADT . convertFromJson @ExtraDiscountDetails))
       [Hasql.maybeStatement|
        SELECT
@@ -4274,11 +4277,13 @@ fetchExtraDiscountDetails pool =
              WHERE (pc.id IS NULL AND
                     f.is_extra_discount_eligible IS TRUE AND
                     f.lifecycle IN ('clearance', 'on_sale') AND 
-                    f.in_stock IS TRUE)
+                    f.available_length_m > $1 :: float8
+                   )
              OR (pc.id IS NOT NULL AND
+                 pc.in_stock IS TRUE AND
                  fpc.is_extra_discount_eligible IS TRUE AND
-                 fpc.lifecycle IN ('clearance', 'on_sale') AND 
-                 fpc.in_stock IS TRUE)
+                 fpc.lifecycle IN ('clearance', 'on_sale')
+                )
             ) AS item_names)
          ) :: jsonb
        FROM monthly_special_promos
@@ -4361,3 +4366,75 @@ adjustPromotionDay promoId newDay pool =
   in fmap (first (pack . show)) $
        runTransactionM pool Hasql.Write $
          Hasql.statement (promoId, newDay) sql
+
+
+fetchFabricLifeCycleInfo :: Double -> Hasql.Pool -> AppM (Either Text [FabricLifeCycleInfo])
+fetchFabricLifeCycleInfo threshold pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (threshold) $
+      rmap (map (extractADT . convertFromJson @FabricLifeCycleInfo) . V.toList)
+      [Hasql.vectorStatement|
+        SELECT
+        jsonb_build_object(
+          'id', 
+          CASE 
+            WHEN pc.id IS NULL 
+            THEN f.id
+            ELSE fpc.id 
+          END,
+          'fabric_type',
+          CASE 
+            WHEN pc.id IS NULL 
+            THEN 'roll'
+            ELSE 'pre_cut' 
+          END,
+          'since',
+          CASE
+            WHEN pc.id IS NULL 
+            THEN f.lifecycle_changed_at ::date
+            ELSE fpc.lifecycle_changed_at :: date
+          END,
+          'lifecycle',
+          CASE
+            WHEN pc.id IS NULL
+            THEN f.lifecycle
+            ELSE fpc.lifecycle
+          END
+        ) :: jsonb
+        FROM fabrics AS f
+        LEFT JOIN pre_cuts AS pc
+        ON f.id = pc.fabric_id
+        LEFT JOIN fabrics AS fpc
+        ON pc.fabric_id = fpc.id
+        WHERE (pc.id IS NULL AND f.available_length_m > $1 :: float8)
+        OR (pc.id IS NOT NULL AND pc.in_stock IS TRUE)
+      |]
+
+updateFabricLifecycle :: Int64 -> FabricType -> FabricLifecycle -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+updateFabricLifecycle itemId fabricType lifecycle discount pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (
+       itemId,
+       encodeToText fabricType, 
+       encodeToText lifecycle, 
+       discount) $
+       [Hasql.resultlessStatement|
+        WITH target_fabrics AS (
+         SELECT 
+          id
+         FROM fabrics
+         WHERE (id = $1 :: int8 AND $2 :: text = 'roll')
+         OR (id IN (
+            SELECT fabric_id 
+            FROM pre_cuts 
+            WHERE id = $1 :: int8) AND $2 :: text = 'pre_cut')
+        )
+        UPDATE fabrics AS f
+        SET discount = ($4 :: int4 / 100.0),
+            lifecycle_changed_at = NOW(),
+            lifecycle = CAST($3 :: text AS fabric_lifecycle)
+        FROM target_fabrics AS tf
+        WHERE f.id = tf.id
+       |]

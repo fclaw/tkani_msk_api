@@ -51,6 +51,7 @@ library
       Workers.ConsignmentNoteWatcher
       Workers.YandexCatchupJanitor
       Workers.ExtraDiscountPromotionScheduler
+      Workers.FabricLifecycleManager
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit
@@ -165,7 +166,6 @@ library
       Utils.Sql
       Utils.Telegram.Markdown
       Utils.Time
-      Workers.FabricLifecycleManager
       Workers.ShelfOrderRegister.Sdek
       Workers.ShelfOrderRegister.Yandex
       Workers.SimpleOrderOrchestrator.Sdek
