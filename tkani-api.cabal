@@ -52,6 +52,7 @@ library
       Workers.YandexCatchupJanitor
       Workers.ExtraDiscountPromotionScheduler
       Workers.FabricLifecycleManager
+      Workers.InventoryStagnationJanitor
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

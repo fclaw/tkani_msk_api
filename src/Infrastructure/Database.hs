@@ -140,6 +140,9 @@ module Infrastructure.Database
     -- life cycle manager
   , fetchFabricLifeCycleInfo
   , updateFabricLifecycle
+     -- stalling fabrcis
+  , fetchStallingFabrics
+  , setDiscountOnStallingFabrics
   ) where
 
 
@@ -4439,3 +4442,64 @@ updateFabricLifecycle itemId fabricType lifecycle discount pool =
         FROM target_fabrics AS tf
         WHERE f.id = tf.id
        |]
+
+fetchStallingFabrics :: Double -> Hasql.Pool -> AppM (Either Text [(Int64, Text, Text)])
+fetchStallingFabrics metreThreshold pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (metreThreshold) $
+      rmap V.toList
+      [Hasql.vectorStatement|
+        SELECT 
+         DISTINCT 
+          f.id :: int8, 
+          f.article :: text, 
+          f.name :: text
+        FROM fabrics AS f
+        LEFT JOIN pre_cuts AS pc 
+        ON pc.fabric_id = f.id
+        WHERE 
+        ((pc.id IS NULL AND f.available_length_m > $1 :: float8) 
+          OR (pc.id IS NOT NULL AND pc.in_stock IS TRUE))
+        
+        AND f.lifecycle = 'regular'                   
+        AND f.discount = 0                            
+        AND f.created_at < (NOW() - INTERVAL '2 days')
+    
+        AND NOT EXISTS (
+          SELECT 1 FROM order_fabric_bindings ofb
+          INNER JOIN orders o ON ofb.order_id = o.id
+          WHERE ofb.fabric_id = f.id 
+            AND ofb.pre_cut_id IS NULL
+            AND o.status = 'paid'
+            AND o.created_at > (NOW() - INTERVAL '2 days')
+        )
+      
+        AND NOT EXISTS (
+          SELECT 1 FROM order_fabric_bindings ofb
+          INNER JOIN orders o ON ofb.order_id = o.id
+          INNER JOIN pre_cuts sub_pc ON ofb.pre_cut_id = sub_pc.id
+          WHERE sub_pc.fabric_id = f.id
+            AND o.status = 'paid'
+            AND o.created_at > (NOW() - INTERVAL '2 days')
+        )
+      
+        AND NOT EXISTS (
+          SELECT 1 FROM shelf_items si
+          WHERE si.fabric_id = f.id
+            AND si.added_at > (NOW() - INTERVAL '2 days')
+        )
+      |]
+
+setDiscountOnStallingFabrics :: [Int64] -> Hasql.Pool -> AppM (Either Text ())
+setDiscountOnStallingFabrics fabrcicIds pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (fabrcicIds) $
+      lmap V.fromList
+      [Hasql.resultlessStatement|
+        UPDATE fabrics
+        SET discout = 0.1,
+        updated_at = NOW()
+        WHERE id = ANY($1 :: int8[])
+      |]

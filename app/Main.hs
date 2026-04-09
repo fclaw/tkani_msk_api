@@ -104,6 +104,7 @@ import Workers.ConsignmentNoteWatcher (runConsignmentNoteWatcher)
 import Workers.YandexCatchupJanitor (runYandexCatchupJanitor)
 import Workers.ExtraDiscountPromotionScheduler (runExtraDiscountPromotionScheduler)
 import Workers.FabricLifecycleManager (runFabricLifecycleManager)
+import Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor)
 -- workers END
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
@@ -150,6 +151,7 @@ data Workers =
       | YandexCatchupJanitor
       | ExtraDiscountPromotionScheduler
       | FabricLifecycleManager
+      | InventoryStagnationJanitor
 
 
 
@@ -190,9 +192,7 @@ instance Show Workers where
   show YandexCatchupJanitor               = "Yandex Catchup Janitor"
   show ExtraDiscountPromotionScheduler    = "Extra Discount Promotion Scheduler"
   show FabricLifecycleManager             = "Fabric Lifecycle Manager"
-
-
-
+  show InventoryStagnationJanitor         = "Inventory Stagnation Janitor"
 
 --
 
@@ -620,6 +620,11 @@ main = do
                   appMToHandler runFabricLifecycleManager
                     >>= showErrorInWorker
                           FabricLifecycleManager)
+              , (InventoryStagnationJanitor,
+                 runForever 720 $ -- twice a day
+                  appMToHandler runInventoryStagnationJanitor
+                    >>= showErrorInWorker
+                          InventoryStagnationJanitor)
               ]
 
         let courierPickupTasks 
