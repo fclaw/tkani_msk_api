@@ -4499,7 +4499,7 @@ setDiscountOnStallingFabrics fabrcicIds pool =
       lmap V.fromList
       [Hasql.resultlessStatement|
         UPDATE fabrics
-        SET discout = 0.1,
+        SET discount = 0.1,
         updated_at = NOW()
         WHERE id = ANY($1 :: int8[])
       |]
