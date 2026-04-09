@@ -19,7 +19,7 @@ WITH all_revenue_streams AS (
         ROUND(
           (CASE WHEN pc.id IS NULL THEN (f.price_per_meter * ofb.length_m) ELSE pc.price_rub END) * 100 *
           (1 - CASE 
-                 WHEN msp.id IS NOT NULL AND 
+                 WHEN msp.lucky_day IS NOT NULL AND 
                       COALESCE(f.lifecycle, fpc.lifecycle) IN ('clearance', 'on_sale') AND
                       COALESCE(f.is_extra_discount_eligible, fpc.is_extra_discount_eligible) IS TRUE
                  THEN LEAST(COALESCE(f.discount, fpc.discount, 0) + msp.extra_discount, 0.90)
@@ -51,7 +51,7 @@ WITH all_revenue_streams AS (
         ROUND(
           (CASE WHEN si.pre_cut_id IS NULL THEN f.price_per_meter * si.length_m ELSE pc.price_rub END) * 100 *
           (1 - CASE 
-                 WHEN msp.id IS NOT NULL AND 
+                 WHEN msp.lucky_day IS NOT NULL AND 
                       COALESCE(f.lifecycle, fpc.lifecycle) IN ('clearance', 'on_sale') AND 
                       COALESCE(f.is_extra_discount_eligible, fpc.is_extra_discount_eligible) IS TRUE
                  THEN LEAST(COALESCE(f.discount, fpc.discount, 0) + msp.extra_discount, 0.90)
