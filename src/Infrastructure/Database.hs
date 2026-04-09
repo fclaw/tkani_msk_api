@@ -2158,34 +2158,35 @@ refreshAndFetchDailyStats day pool =
             GROUP BY expense_day
           ),
           combined_daily_stats AS (
-            SELECT
+              SELECT
+                COALESCE(dss.sale_date, dea.expense_day) :: date AS report_date,
+                COALESCE(dss.total_items_handled, 0) :: int4 AS total_activity,
+                COALESCE(dss.total_revenue, 0.0)      :: float8 AS total_revenue,
+                COALESCE(dss.pre_cuts_sold, 0)       :: int4 AS pre_cuts_sold_count,
+                COALESCE(dss.rolls_handled, 0)       :: int4 AS rolls_sold_count,
+                COALESCE(dss.total_meters, 0.0)      :: float8 AS total_meters_sold,
 
-            COALESCE(dss.sale_date, dea.expense_day) :: date AS report_date,
+                COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
 
-            COALESCE(dss.total_orders, 0) :: int4 AS total_orders,
-            COALESCE(dss.total_revenue, 0.0) :: float8 AS total_revenue,
-            COALESCE(dss.pre_cuts_sold_count, 0) :: int4 AS pre_cuts_sold_count,
-            COALESCE(dss.rolls_sold_count, 0) :: int4 AS rolls_sold_count,
-            COALESCE(dss.total_meters_sold, 0.0) :: float8? AS total_meters_sold,
-
-            COALESCE(dea.expenses_array, array[]::jsonb[]) :: jsonb[] AS expenses
-
-            FROM daily_sales_stats AS dss
-            FULL OUTER JOIN daily_expenses_agg AS dea 
-            ON dss.sale_date = dea.expense_day
-            WHERE dss.sale_date IS NOT NULL 
-            OR dea.expense_day IS NOT NULL)
+              FROM daily_sales_stats AS dss
+              FULL OUTER JOIN daily_expenses_agg AS dea 
+                ON dss.sale_date = dea.expense_day
+              WHERE dss.sale_date IS NOT NULL 
+                OR dea.expense_day IS NOT NULL
+          )
           SELECT
-            report_date :: date,
-            total_orders :: int4,
-            total_revenue :: float8,
-            pre_cuts_sold_count :: int4,
-            rolls_sold_count :: int4,
-            total_meters_sold :: float8?,
-            expenses :: jsonb[]
+          report_date        :: date,
+          total_activity     :: int4,
+          total_revenue      :: float8,
+          pre_cuts_sold_count :: int4,
+          rolls_sold_count   :: int4,
+          total_meters_sold  :: float8?,
+          expenses           :: jsonb[]
           FROM combined_daily_stats
           WHERE report_date >= $1 :: date
-          ORDER BY report_date DESC LIMIT 30|]
+          ORDER BY report_date DESC 
+          LIMIT 30
+        |]
 
 
 fetchOrderDeliveryItem :: Day -> Hasql.Pool -> AppM (Either Text (Maybe Int32, [OrderDeliveryItem]))
