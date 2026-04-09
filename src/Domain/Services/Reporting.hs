@@ -43,7 +43,7 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 -- 1. ADT for a single row of the CSV report
 data DailyReportRow = DailyReportRow
   { rptSaleDate        :: Text
-  , rptTotalOrders     :: Int32
+  , rptTotalFabrics    :: Int32
   , rptTotalRevenue    :: Double
   , rptPreCutsSold     :: Int32
   , rptRollsSold       :: Int32
@@ -56,7 +56,7 @@ data DailyReportRow = DailyReportRow
 instance DefaultOrdered DailyReportRow where
   headerOrder _ = V.fromList
     [ "sale_date"
-    , "total_orders"
+    , "total_fabrics"
     , "total_revenue"
     , "pre_cuts_sold"
     , "rolls_sold"
@@ -68,7 +68,7 @@ instance DefaultOrdered DailyReportRow where
 instance ToNamedRecord DailyReportRow where
   toNamedRecord r = namedRecord
     [ "sale_date"         .= rptSaleDate r
-    , "total_orders"      .= rptTotalOrders r
+    , "total_fabrics"     .= rptTotalFabrics r
     , "total_revenue"     .= rptTotalRevenue r
     , "pre_cuts_sold"     .= rptPreCutsSold r
     , "rolls_sold"        .= rptRollsSold r
@@ -114,7 +114,7 @@ toReportRow (date, orders, revenue, precuts, rolls, meters, eExpenses) =
         formatExpense exp = desPayer exp <> ": " <> (T.pack $ show $ desAmount exp) <> " RUB"
     in DailyReportRow
        { rptSaleDate = T.pack $ formatTime defaultTimeLocale "%Y-%m-%d" date
-       , rptTotalOrders = orders
+       , rptTotalFabrics = orders
        , rptTotalRevenue = revenue
        , rptPreCutsSold = precuts
        , rptRollsSold = rolls

@@ -12,7 +12,7 @@ WITH all_revenue_streams AS (
     SELECT 
         CAST(o.created_at AT TIME ZONE 'Europe/Moscow' AS date) AS action_date,
         ofb.fabric_id,
-        f.name AS fabric_name,
+        COALESCE(f.name, fpc.name) AS fabric_name,
         ofb.length_m,
         (ofb.pre_cut_id IS NOT NULL) AS is_pre_cut,
         -- Расчет цены в копейках с учетом всех скидок
@@ -34,9 +34,9 @@ WITH all_revenue_streams AS (
     LEFT JOIN pre_cuts AS pc  ON ofb.pre_cut_id = pc.id
     LEFT JOIN fabrics AS fpc  ON pc.fabric_id = fpc.id
     LEFT JOIN monthly_special_promos AS msp 
-      ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date AND msp.is_enabled = TRUE
-    WHERE o.status NOT IN ('registered', 'cancelled')
-      AND o.is_removed_from_delivery_provider = FALSE
+    ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
+    WHERE o.status = 'paid'
+    AND o.is_removed_from_delivery_provider = FALSE
 
     UNION ALL
 
@@ -65,8 +65,7 @@ WITH all_revenue_streams AS (
     LEFT JOIN pre_cuts AS pc ON si.pre_cut_id = pc.id
     LEFT JOIN fabrics AS fpc ON pc.fabric_id = fpc.id
     LEFT JOIN monthly_special_promos AS msp 
-      ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date AND msp.is_enabled = TRUE
-    WHERE si.status = 'ON_SHELF'
+    ON msp.lucky_day = (si.added_at AT TIME ZONE 'Europe/Moscow')::date
 )
 SELECT
     action_date AS sale_date,
