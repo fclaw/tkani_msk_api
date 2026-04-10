@@ -13,7 +13,7 @@ module Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor) where
 
 
 import Katip
-import Control.Monad (void)
+import Control.Monad (void, when)
 import qualified Data.Text as T
 import Control.Monad.Reader.Class (ask)
 
@@ -38,24 +38,25 @@ runInventoryStagnationJanitor = do
       $(logTM) ErrorS $ 
         "Failed to fetch stalling \
         \ fabrics: " <> ls err
-    Right stallingFabrics -> do
-      -- set 10% discount
-      let ids = [id | (id, _, _) <- stallingFabrics]
-      eDbRes <- setDiscountOnStallingFabrics ids pool
-      case eDbRes of
-        Left err -> 
-          $(logTM) ErrorS $ 
-            "Failed to set discount on stalling \
-            \ fabrics: " <> ls err
-        Right _ -> do
-          let details = [(art, name) | (_, art, name) <- stallingFabrics ]
-          let formatLine (art, name) = "• `" <> art <> "` — " <> name
-          let itemList = T.unlines $ map formatLine details
-          let templateData = 
-                HM.fromList
-                [ ("discount", tshow 10)
-                , ("itemList", itemList)
-                ]
-          msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
-          void $ sendOrEditTelegramMessage mempty msg MAIN Nothing Nothing Nothing
+    Right stallingFabrics ->
+      when(length stallingFabrics > 0) $ do
+        -- set 10% discount
+        let ids = [id | (id, _, _) <- stallingFabrics]
+        eDbRes <- setDiscountOnStallingFabrics ids pool
+        case eDbRes of
+          Left err -> 
+            $(logTM) ErrorS $ 
+              "Failed to set discount on stalling \
+              \ fabrics: " <> ls err
+          Right _ -> do
+            let details = [(art, name) | (_, art, name) <- stallingFabrics ]
+            let formatLine (art, name) = "• `" <> art <> "` — " <> name
+            let itemList = T.unlines $ map formatLine details
+            let templateData = 
+                    HM.fromList
+                    [ ("discount", tshow 10)
+                    , ("itemList", itemList)
+                    ]
+            msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
+            void $ sendOrEditTelegramMessage mempty msg MAIN Nothing Nothing Nothing
 
