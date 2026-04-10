@@ -16,7 +16,7 @@ import qualified Data.Text as T
 import Data.Char (toLower)
 import GHC.Generics (Generic)
 import Data.Text (pack)
-
+import Data.Map.Strict (Map)
 import Web.HttpApiData (FromHttpApiData(..), ToHttpApiData(..))
 import Data.Aeson.TH
 import Data.Int (Int64, Int32)
@@ -96,6 +96,11 @@ data FabricProperties =
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fp" } ''FabricProperties)
 
 
+-- | Use a newtype to make logic clean and avoid 'orphan instances'
+newtype FabricComposition = FabricComposition 
+  { unComposition :: Map Text Int 
+  } deriving (Show, Eq, Generic, ToJSON, FromJSON) -- Derived instances handle everything
+
 -- | 2. The Ingest Payload (Matches your Python Dict keys exactly)
 data RawIngestRequest = 
      RawIngestRequest
@@ -109,6 +114,7 @@ data RawIngestRequest =
     , rawFabricProperties :: FabricProperties
     , rawLifeCycle        :: Maybe FabricLifecycle
     , rawDiscount         :: Maybe Double
+    , rawComposition      :: FabricComposition
     } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "raw" } ''RawIngestRequest)

@@ -24,7 +24,7 @@ import Domain.Warehouse.Enums (FabricLifecycle)
 import Text (recordLabelModifier, encodeToText, camelToSnake)
 import Infrastructure.Services.Types (PaymentProvider)
 import Domain.Warehouse.Types (FabricType, Fabric (..))
-import API.Types (RawIngestRequest (..), MediaType, Providers)
+import API.Types (RawIngestRequest (..), MediaType, Providers, FabricComposition)
 import Infrastructure.Services.Yandex.Types.Enums (Tariff)
 
 
@@ -487,6 +487,7 @@ data ConsignmentPdfItem =
        --   Source: Bot context, calculated based on length/pre-cut choice.
      , cpdfTotalPrice    :: Int        -- Total price for this line item
      , cpdfLengthM       :: Double  -- Length, only for rolls
+     , cpdfComposition   :: Text
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cpdf" } ''ConsignmentPdfItem)

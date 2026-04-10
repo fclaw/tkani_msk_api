@@ -4136,6 +4136,12 @@ fetchConsignmentPdfItems orderId pool =
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END))
+             END,
+            'composition',
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN format_fabric_composition(f.composition)
+              ELSE format_fabric_composition(fpc.composition)
              END
            )) :: jsonb[] AS items 
          FROM orders AS o
@@ -4206,6 +4212,12 @@ fetchConsignmentPdfItems orderId pool =
                  THEN LEAST(COALESCE(fpc.discount, 0) + msp.extra_discount, 0.90)
                  ELSE COALESCE(fpc.discount, 0)
                 END))
+             END,
+            'composition',
+             CASE 
+              WHEN pc.id IS NULL 
+              THEN format_fabric_composition(f.composition)
+              ELSE format_fabric_composition(fpc.composition)
              END
            )) ::jsonb[] AS items 
         FROM orders AS o

@@ -9,18 +9,20 @@
         .order-info { text-align: right; font-size: 14px; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #f8f8f8; text-align: left; padding: 12px 8px; border-bottom: 1px solid #ccc; font-size: 12px; text-transform: uppercase; color: #666; }
-        td { padding: 12px 8px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 14px; }
+        th { background-color: #f8f8f8; text-align: left; padding: 12px 8px; border-bottom: 1px solid #ccc; font-size: 11px; text-transform: uppercase; color: #666; }
+        td { padding: 12px 8px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 13px; }
         
-        .sku { font-family: monospace; font-weight: bold; color: #555; width: 15%; }
-        .name { width: 55%; }
-        .quantity { width: 15%; text-align: right; }
+        /* ADJUSTED COLUMN WIDTHS */
+        .sku { font-family: monospace; font-weight: bold; color: #555; width: 12%; }
+        .name { width: 35%; }
+        .comp { width: 25%; font-style: italic; color: #444; font-size: 12px; } /* COMPOSITION COLUMN */
+        .quantity { width: 13%; text-align: right; }
         .price { width: 15%; text-align: right; font-weight: bold; }
         
         .summary-wrapper { margin-top: 40px; display: flex; justify-content: flex-end; }
-        .summary-table { width: 300px; border-top: 2px solid #000; }
+        .summary-table { width: 250px; border-top: 2px solid #000; }
         .summary-row { display: flex; justify-content: space-between; padding: 10px 0; font-size: 16px; }
-        .grand-total { font-size: 20px; font-weight: bold; border-top: 1px solid #eee; }
+        .grand-total { font-size: 18px; font-weight: bold; }
 
         .footer { margin-top: 60px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
     </style>
@@ -39,8 +41,9 @@
             <tr>
                 <th>Артикул</th>
                 <th>Наименование товара</th>
-                <th>Кол-во</th>
-                <th>Сумма</th>
+                <th>Состав</th> <!-- NEW HEADER -->
+                <th style="text-align: right;">Кол-во</th>
+                <th style="text-align: right;">Сумма</th>
             </tr>
         </thead>
         <tbody>
@@ -48,6 +51,7 @@
             <tr>
                 <td class="sku">{{ item.article }}</td>
                 <td class="name">{{ item.name }}</td>
+                <td class="comp">{{ item.composition }}</td>
                 <td class="quantity">{{ item.length_m }} м</td>
                 <td class="price">{{ item.total_price }} ₽</td>
             </tr>

@@ -2,12 +2,11 @@
 
 module Infrastructure.Database.Fabric (ingestFabricDB) where
 
+import Data.Aeson (Value, toJSON)
 import qualified Hasql.Transaction as Hasql
 import qualified Hasql.Transaction.Sessions as Hasql
 import qualified Hasql.Statement as Hasql
 import qualified Hasql.TH as Hasql
-import Domain.Warehouse.Types (Fabric(..), FabricType(..))
-import  API.Types (RawIngestRequest (..), fpDensity, fpWeightPerMetre)
 import Data.Int (Int32, Int64)
 import Data.Text (Text)
 import Data.Maybe (fromMaybe, isJust)
@@ -16,6 +15,8 @@ import Data.Time (Day)
 import Data.Hashable (hash)
 
 import Text (encodeToText)
+import Domain.Warehouse.Types (Fabric(..), FabricType(..))
+import  API.Types (RawIngestRequest (..), fpDensity, fpWeightPerMetre)
 
 
 -- | Main Entry Point
@@ -52,7 +53,8 @@ ingestFabricDB fabric req = do
       fType fabric == Roll,
       encodeToText (fpDensity (rawFabricProperties req)),
       fpWeightPerMetre (rawFabricProperties req),
-      fabricHash
+      fabricHash,
+      toJSON (rawComposition req)
     ) upsertFabricQuery
 
   -- 3. If it is a Pre-Cut, insert the specific piece child row
@@ -89,7 +91,8 @@ type RawFabric =
      , Bool
      , Text
      , Double
-     , Int64)
+     , Int64
+     , Value)
 
 upsertFabricQuery :: Hasql.Statement RawFabric (Int64, Text)
 upsertFabricQuery = 
@@ -110,7 +113,8 @@ upsertFabricQuery =
       is_searchable,
       density,
       weight_per_metre,
-      hash
+      hash,
+      composition
     ) 
     VALUES (
       COALESCE($1 :: text?, next_fabric_article()),
@@ -128,7 +132,8 @@ upsertFabricQuery =
       $12 :: bool,
       CAST($13 :: text AS fabric_density),
       $14 :: float8,
-      $15 :: int8
+      $15 :: int8,
+      $16 :: jsonb
     )
     ON CONFLICT (article) DO UPDATE
     SET 
@@ -153,7 +158,8 @@ upsertFabricQuery =
         is_sold = FALSE,
         density = EXCLUDED.density,
         weight_per_metre = EXCLUDED.weight_per_metre,
-        hash = EXCLUDED.hash
+        hash = EXCLUDED.hash,
+        composition = EXCLUDED.composition
     RETURNING id :: int8, article :: text
   |]
 
