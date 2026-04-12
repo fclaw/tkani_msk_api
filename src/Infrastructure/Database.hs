@@ -4257,7 +4257,8 @@ fetchCatchupYandexOrders pool =
        FROM orders AS o
        INNER JOIN yandex_orders AS yo
        ON o.yandex_order_id = yo.id
-       WHERE yo.is_shipment_paid = TRUE
+       WHERE yo.order_id IS NULL
+       AND yo.is_shipment_paid = TRUE
        AND o.status = 'paid'
       |]
 
