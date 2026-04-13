@@ -32,7 +32,7 @@ BEGIN
             fabrics AS f
         WHERE
             f.is_searchable AND
-            f.available_length_m >= CAST($4 :: DOUBLE PRECISION AS NUMERIC) AND
+            f.available_length_m > CAST($4 :: DOUBLE PRECISION AS NUMERIC) AND
             (
                 f.search_vector @@ to_tsquery('russian', $1 :: TEXT)
                 OR f.article ILIKE ($1 :: TEXT || '%')
