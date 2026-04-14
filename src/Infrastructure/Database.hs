@@ -4456,7 +4456,7 @@ updateFabricLifecycle itemId fabricType lifecycle discount pool =
         WHERE f.id = tf.id
        |]
 
-fetchStallingFabrics :: Double -> Hasql.Pool -> AppM (Either Text [(Int64, Text, Text)])
+fetchStallingFabrics :: Double -> Hasql.Pool -> AppM (Either Text [(Int64, Text, Text, Int64)])
 fetchStallingFabrics metreThreshold pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
@@ -4467,7 +4467,8 @@ fetchStallingFabrics metreThreshold pool =
          DISTINCT 
           f.id :: int8, 
           f.article :: text, 
-          f.name :: text
+          f.name :: text,
+          f.hash :: int8
         FROM fabrics AS f
         LEFT JOIN pre_cuts AS pc 
         ON pc.fabric_id = f.id

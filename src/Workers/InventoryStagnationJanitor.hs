@@ -41,7 +41,7 @@ runInventoryStagnationJanitor = do
     Right stallingFabrics ->
       when(length stallingFabrics > 0) $ do
         -- set 10% discount
-        let ids = [id | (id, _, _) <- stallingFabrics]
+        let ids = [id | (id, _, _, _) <- stallingFabrics]
         eDbRes <- setDiscountOnStallingFabrics ids pool
         case eDbRes of
           Left err -> 
@@ -49,14 +49,16 @@ runInventoryStagnationJanitor = do
               "Failed to set discount on stalling \
               \ fabrics: " <> ls err
           Right _ -> do
-            let details = [(art, name) | (_, art, name) <- stallingFabrics ]
-            let formatLine (art, name) = "• `" <> art <> "` — " <> name
+            let details = [(art, name, hash) | (_, art, name, hash) <- stallingFabrics ]
+            let formatLine (art, name, hash) = 
+                  let url = "https://t.me/tkaniMskConciergeBot?start=regular_" <> tshow hash
+                  in "• [" <> escapeMarkdownV2 art <> "](" <> url <> ") — " <> escapeMarkdownV2 name
             let itemList = T.unlines $ map formatLine details
             let templateData = 
                     HM.fromList
                     [ ("discount", tshow 10)
                     , ("itemList", itemList)
                     ]
-            msg <- fmap escapeMarkdownV2 $ render $currentModule templateData
+            msg <- render $currentModule templateData
             void $ sendOrEditTelegramMessage mempty msg MAIN Nothing Nothing Nothing
 
