@@ -34,7 +34,6 @@ import App (AppM, _conciergeBotUrl, ChatKey (MAIN), _appDBPool, _bots)
 import Concurrency (runJobWithCleanup)
 import Domain.Warehouse.Enums (FabricLifecycle (..))
 import Utils.Telegram.Markdown (escapeMarkdownV2)
-import Workers.SpecialPostManager (buttonTextForLifecycle)
 import Infrastructure.Database (saveTemporaryNotificationMessage)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, MessageIdResponse (..))
 
@@ -54,11 +53,11 @@ data FabricLifecycleEvent = FabricLifecycleEvent
 buttonText :: FabricLifecycle -> Text
 buttonText lifecycle =
   case lifecycle of
-    OnSale     -> "➡️ Перейти к распродаже"
-    Clearance  -> "➡️ Перейти к ликвидации"
-    NewArrival -> "➡️ Посмотреть новинки"
-    Advertised -> "➡️ Узнать подробнее"
-    _          -> "➡️ Перейти в каталог" -- Fallback
+    OnSale     -> "🔥 Забрать со скидкой"
+    Clearance  -> "💥 Успеть купить остатки"
+    NewArrival -> "🆕 Посмотреть новый лот"
+    Advertised -> "💎 Перейти к лоту"
+    _          -> "🧶 Подробнее в боте"
 
 -- | Generates the notification text for a newly added fabric.
 notificationText :: FabricLifecycle -> Text -> Text
@@ -105,12 +104,11 @@ processSingleJob (Right event) = do
 
   let botUrl = _conciergeBotUrl cfg
   let deepLinkUrl = botUrl <> "?start=" <> encodeToText targetLifecycle <> "_" <> tshow (hash event)
-  let buttonText = buttonTextForLifecycle targetLifecycle
   let keyboard = 
        object
        [ "inline_keyboard" .=
         [[ object 
-          [ "text" .= buttonText
+          [ "text" .= buttonText targetLifecycle
           , "url"  .= deepLinkUrl
           ]
         ]]
