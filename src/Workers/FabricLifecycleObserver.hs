@@ -103,7 +103,12 @@ processSingleJob (Right event) = do
   cfg <- ask
 
   let botUrl = _conciergeBotUrl cfg
-  let deepLinkUrl = botUrl <> "?start=" <> encodeToText targetLifecycle <> "_" <> tshow (hash event)
+  let deepLinkUrl = 
+        botUrl                       <>
+        "?start="                    <> 
+        encodeToText targetLifecycle <> 
+        "_"                          <> 
+        tshow (hash event)
   let keyboard = 
        object
        [ "inline_keyboard" .=
