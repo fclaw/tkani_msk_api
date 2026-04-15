@@ -35,8 +35,8 @@ WITH all_revenue_streams AS (
     LEFT JOIN fabrics AS fpc  ON pc.fabric_id = fpc.id
     LEFT JOIN monthly_special_promos AS msp 
     ON msp.lucky_day = (o.created_at AT TIME ZONE 'Europe/Moscow')::date
-    WHERE o.status = 'paid'
-    AND o.is_removed_from_delivery_provider = FALSE
+    WHERE (o.status != 'registered' OR o.status != 'cancelled')
+    AND ((o.sdek_order_id IS NOT NULL AND is_removed_from_delivery_provider = FALSE) OR (o.yandex_order_id IS NOT NULL))
 
     UNION ALL
 
