@@ -143,6 +143,7 @@ module Infrastructure.Database
      -- stalling fabrcis
   , fetchStallingFabrics
   , setDiscountOnStallingFabrics
+  , cancelConfirmedOrder
   ) where
 
 
@@ -1110,11 +1111,65 @@ fetchPaymentIdStatement =
     SELECT provider_payment_id :: text
     FROM payments 
     WHERE order_id = $1 :: text
+    OR shelf_order_id = $1 :: text
   |]
 
 fetchPaymentId :: Text -> Hasql.Pool -> AppM (Either Text (Maybe Text))
-fetchPaymentId order pool = fmap (first (pack . show)) $ runTransactionM pool Hasql.Read $ order `Hasql.statement` fetchPaymentIdStatement
+fetchPaymentId order pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Read $ 
+      order `Hasql.statement` fetchPaymentIdStatement
 
+cancelConfirmedOrder :: Text -> Hasql.Pool -> AppM (Either Text Int64)
+cancelConfirmedOrder orderId pool = 
+  fmap (first (pack . show)) $ 
+    runTransactionM pool Hasql.Write $ do
+      (isRegularOrder, amount) <-
+        Hasql.statement orderId $
+         [Hasql.singletonStatement|
+          UPDATE payments 
+          SET status = 'cancelled'
+          WHERE order_id = $1 :: text
+          OR shelf_order_id = $1 :: text
+          RETURNING (order_id = $1 :: text) :: bool, amount :: int8
+        |]
+      
+      if isRegularOrder 
+      then
+        Hasql.statement orderId $
+         [Hasql.resultlessStatement|
+          UPDATE orders
+          SET status = 'cancelled'
+          WHERE id = $1 :: text
+         |]
+      else
+        Hasql.statement orderId $
+         [Hasql.resultlessStatement|
+          WITH items_to_remove AS (
+            SELECT 
+             COALESCE(soi.fabric_id, soi.pre_cut_id) AS target_id,
+             soi.fabric_id IS NOT NULL AS is_roll
+            FROM shelf_orders AS so
+            INNER JOIN shelf_order_items AS soi
+            ON so.id = soi.shelf_order_id
+            WHERE so.order_id = $1 :: text
+          ), cancel_order AS (
+            UPDATE shelf_orders
+            SET status = 'cancelled'
+            WHERE order_id = $1 :: text
+          )
+          DELETE FROM shelf_items 
+          WHERE id IN (
+           SELECT si.id 
+           FROM shelf_items si
+           JOIN items_to_remove r ON (
+           (r.is_roll = TRUE AND 
+            si.fabric_id = r.target_id)
+           OR (r.is_roll = FALSE AND 
+               si.pre_cut_id = r.target_id))
+          )
+         |]
+      return amount
 
 isItemInCartStatement :: Hasql.Statement (Int64, FabricType, Int64) CartCheckStatus
 isItemInCartStatement =
