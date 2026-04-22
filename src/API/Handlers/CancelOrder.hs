@@ -49,5 +49,6 @@ handler cancel = do
                 tshow amount <> 
                 " RUB has been returned to the customer"
           void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 cancelMsg) ORDER Nothing Nothing Nothing
+        when (isLeft eDbRes) $  $(logTM) ErrorS $ ls $ "cancelConfirmedOrder has finished with error: " <> show eRes
       when (isLeft eRes) $  $(logTM) ErrorS $ ls $ "(Tinkoff) Cancel order has finished with error: " <> show eRes
         
