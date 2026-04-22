@@ -1131,7 +1131,7 @@ cancelConfirmedOrder orderId pool =
           SET status = 'cancelled'
           WHERE order_id = $1 :: text
           OR shelf_order_id = $1 :: text
-          RETURNING (order_id = $1 :: text) :: bool, amount :: int8
+          RETURNING (order_id IS NOT NULL) :: bool, amount :: int8
         |]
       
       if isRegularOrder 
