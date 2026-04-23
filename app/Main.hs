@@ -477,7 +477,7 @@ main = do
             tasks = 
               [ (WebServer, server)
               , (SdekOrderStatusPoller, 
-                 runForever 5 $
+                 runForever 60 $
                    appMToHandler runSdekOrderStatusPoller
                      >>= showErrorInWorker 
                            SdekOrderStatusPoller)
@@ -574,7 +574,7 @@ main = do
                      >>= showErrorInWorker
                            ShelfOrderRegister)
               , (YandexOrderStatusPoller,
-                 runForever 5 $
+                 runForever 60 $
                    appMToHandler
                    runYandexOrderStatusPoller
                     >>= showErrorInWorker
