@@ -3,11 +3,13 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 
 module Workers.YandexOrderStatusPoller (runYandexOrderStatusPoller) where
 
 
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import Data.Foldable (for_)
 import Control.Monad (void, when)
 import Data.Either (isLeft, fromLeft)
@@ -21,6 +23,8 @@ import Network.HTTP.Client       (HttpException(..), HttpExceptionContent(..), r
 import Network.HTTP.Types.Status (statusCode)
 import Control.Concurrent        (threadDelay)
 import Control.Lens              ((^.))
+import Control.Exception         (Exception)
+import GHC.Generics              (Generic)
 
 
 import Text (tshow)
@@ -175,24 +179,33 @@ isNewer proposed current =
         Completed           -> 7
         Cancelled           -> 7
 
+-- | and still receive 403 or 429.
+data YandexRetryExhausted = YandexRetryExhausted Text
+  deriving (Show, Generic, Exception)
 
--- | A wrapper that retries a specific operation if it hits a 429 error.
-withYaRetry :: Int -> AppM () -> AppM ()
+
+-- | A wrapper that retries a specific operation if it hits 429 or 403 errors.
+-- Now generalized to return any type 'a'
+withYaRetry :: Int -> AppM a -> AppM a
 withYaRetry attempt action = do
   result <- try action
   case result of
     Right val -> pure val -- Success!
     
-    -- Catch HTTP status code errors
-    Left (HttpExceptionRequest _ (StatusCodeException resp _)) 
-      | resp ^. Wreq.responseStatus . Wreq.statusCode == 429 -> 
-          if attempt > 5 -- Stop after 5 retries to prevent infinite loops
-          then error "Max retries reached for Yandex API"
-          else do
-            -- Wait longer with each attempt (1s, 2s, 4s, 8s...)
-            let delay = (2 ^ attempt) * 1000000 
-            liftIO $ threadDelay delay
-            withYaRetry (attempt + 1) action
-
-    -- Throw other exceptions upward
+    Left err@(HttpExceptionRequest _ (StatusCodeException resp body)) -> 
+      let code = resp ^. Wreq.responseStatus . Wreq.statusCode
+      in if code `elem` [403, 429]
+         then 
+           if attempt >= 5 
+           then throwIO $ YandexRetryExhausted (pack $ "Max retries on code " <> show code)
+           else do
+             -- Logic: 
+             -- For 429: 2, 4, 8, 16s...
+             -- For 403: 7, 9, 13, 21s... (Extra 5s safety for security blocks)
+             let base = if code == 403 then 5 else 0
+             let delay = (base + 2 ^ attempt) * 1000000 
+            
+             liftIO $ threadDelay delay
+             withYaRetry (attempt + 1) action
+         else throwIO err
     Left err -> throwIO err
