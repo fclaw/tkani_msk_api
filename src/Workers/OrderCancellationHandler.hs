@@ -20,6 +20,7 @@ import Servant.Server (ServerError)
 import Data.Aeson (FromJSON, eitherDecode)
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader.Class (ask)
 import Control.Concurrent.Async (async)
 import qualified Data.ByteString.Lazy as BL
 import qualified Database.PostgreSQL.Simple as PG
@@ -30,10 +31,11 @@ import Concurrency (runJobWithCleanup)
 import TH.Location (currentModule)
 import Text (tshow, encodeToText)
 import API.Types (Providers (SDEK))
-import App (AppM, ChatKey (ORDER), extractFromEither)
+import App (AppM, ChatKey (ORDER), extractFromEither, _appDBPool)
 import Infrastructure.Services.Sdek (cancelOrder)
 import Infrastructure.Services.Sdek.Types (corErrors)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import Infrastructure.Database (markOrderAsInvalid)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 
 
@@ -81,5 +83,8 @@ processSingleJob (Right CancellationEventPayload {..})
                   \ Manual intervention is required. errors: " <>
                   tshow (corErrors resp)
           void $ sendOrEditTelegramMessage mempty errMsg ORDER Nothing Nothing Nothing
-        else $(logTM) InfoS $ "Successfully sent cancellation request to SDEK for order UUID: " <> ls (tshow sdek_uuid)
+        else do
+          pool <- fmap _appDBPool ask
+          void $ markOrderAsInvalid order_id sdek_uuid pool
+          $(logTM) InfoS $ "Successfully sent cancellation request to SDEK for order UUID: " <> ls (tshow sdek_uuid)
   | otherwise = $(logTM) InfoS $ "provider not supported or missing provider-specific ID, skipping cancellation for order: " <> ls order_id
