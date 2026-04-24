@@ -34,7 +34,7 @@ import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import GHC.IO.Exception (userError)
 import Control.Monad.Error.Class (throwError)
-import System.Environment (getArgs)
+import System.Environment (getArgs, getEnv)
 import Data.Text (pack)
 import Data.Traversable (for)
 import Control.Concurrent.STM (TVar, atomically, newTVarIO, newTChanIO, modifyTVar')
@@ -106,6 +106,7 @@ import Workers.ExtraDiscountPromotionScheduler (runExtraDiscountPromotionSchedul
 import Workers.FabricLifecycleManager (runFabricLifecycleManager)
 import Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor)
 -- workers END
+import qualified Infrastructure.Services.Tinkoff.Manager as Tinkoff (setupManager)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
@@ -327,7 +328,12 @@ main = do
       let tinkoffSecret      = configTinkoffSecret
       let tinkoffUrl         = configTinkoffUrl
 
-      -- 6. Create the shared AppState
+      -- 6. Setup Tinkoff Open API manager
+      tinkoffCert <- getEnv "TBANK_CERT_PATH" -- Should return "/run/secrets/tbank_cert" in Docker
+      tinkoffKey  <- getEnv "TBANK_KEY_PATH"
+      openApiManager <- Tinkoff.setupManager (T.unpack configTinkoffOpenApiUrl) tinkoffCert tinkoffKey
+
+      -- 7. Create the shared AppState
       let appConfig = Config
             { _appDBPool = pool
             , _appLogEnv = logEnv
@@ -359,6 +365,7 @@ main = do
                    (PREPAID_ORDER, (configConciergeBotToken, configPrepaidOrderChatId))
                    ]
             , _configHttpManager = tlsManager
+            , _tinkoffOpenApiManager = openApiManager
             , configTemplateMap = tplMap
             , _metroCityCodes = HS.fromList (map code cities)
             , _thresholdMetres = configThresholdMetres

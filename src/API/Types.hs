@@ -794,3 +794,12 @@ data ToggleExtraDiscountResponse = ToggleExtraDiscountResponse { tedrIsToggled :
   deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } ''ToggleExtraDiscountResponse)
+
+
+data TopUpLogisticsProviderReq = 
+     TopUpLogisticsProviderReq
+     { tuplAgent  :: Providers
+     , tuplAmount :: Double
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tupl" } ''TopUpLogisticsProviderReq)

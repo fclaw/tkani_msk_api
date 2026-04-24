@@ -2,3 +2,4 @@
 .env
 local_start.sh
 public
+secrets

@@ -309,6 +309,13 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> ReqBody '[JSON] YandexShipmentFinalizeReq
        :> Post '[JSON] (ApiResponse ())
+      -- top up the balance
+    , _topUpLogisticsProvider
+      :: route
+      :- "payments"
+      :> "top-up"
+      :> ReqBody '[JSON] TopUpLogisticsProviderReq
+      :> Post '[JSON] (ApiResponse ())
 
   } deriving (Generic)
 

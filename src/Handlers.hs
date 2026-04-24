@@ -54,6 +54,7 @@ import qualified API.Handlers.Yandex.DetectLocation as Yandex.DetectLocation
 import qualified API.Handlers.Yandex.ListPickupPoints as Yandex.ListPickupPoints
 import qualified API.Handlers.Yandex.FinalizeShipment as Yandex.FinalizeShipment
 
+import qualified API.Handlers.TopUpLogisticsProvider as TopUpLogisticsProvider
 
 
 
@@ -105,4 +106,6 @@ apiHandlers = Routes
   , _detectLocation            = Yandex.DetectLocation.handler
   , _listYandexPickupPoints    = Yandex.ListPickupPoints.handler -- Placeholder, replace with actual handler when implemented
   , _finalizeShipment          = Yandex.FinalizeShipment.handler
+
+  , _topUpLogisticsProvider    = TopUpLogisticsProvider.handler
   }

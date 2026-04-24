@@ -87,6 +87,7 @@ data Config = Config
   , configPrepaidOrderChatId     :: Int64
   , configPdfCrowdUser           :: Text
   , configPdfCrowdApiKey         :: Text
+  , configTinkoffOpenApiUrl      :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -229,6 +230,8 @@ loadConfig = do
 
   let configPdfCrowdUser = (Map.!) env "PDF_CROWD_USER"
   let configPdfCrowdApiKey = (Map.!) env "PDF_CROWD_API_KEY"
+ 
+  let configTinkoffOpenApiUrl = (Map.!) env "TINKOFF_OPENAPI_URL"
 
   -- 5. Return the final Config record
   pure $ Config {..}

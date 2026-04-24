@@ -328,6 +328,7 @@ data Config = Config
   , _yandexConfig           :: YandexConfig
   , _bots                   :: Bots
   , _configHttpManager      :: Manager
+  , _tinkoffOpenApiManager  :: Manager
   , configTemplateMap       :: TemplateMap
   , _metroCityCodes         :: HS.HashSet Int
   , _thresholdMetres        :: Double -- Threshold: If stock falls below this, hide the fabric.

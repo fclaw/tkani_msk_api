@@ -60,6 +60,7 @@ library
       Infrastructure.Services.Yandex.Config
       Infrastructure.Services.Sdek.Types.Config
       Infrastructure.Services.Dostavista.Types.Config
+      Infrastructure.Services.Tinkoff.Manager
   other-modules:
       API.Handlers.AddToCart
       API.Handlers.CancelOrder
@@ -93,6 +94,7 @@ library
       API.Handlers.Shelf.SaveShelfSubmissionInfo
       API.Handlers.TallyUpExpenses
       API.Handlers.ToggleExtraDiscount
+      API.Handlers.TopUpLogisticsProvider
       API.Handlers.TrackOrder
       API.Handlers.UploadMediaForFabric
       API.Handlers.ViewCart
@@ -185,6 +187,8 @@ library
     , cassava
     , containers
     , crypton
+    , crypton-connection
+    , data-default-class
     , directory
     , exceptions
     , file-embed
@@ -223,6 +227,7 @@ library
     , time
     , time-units
     , time-units-types
+    , tls
     , transformers
     , transformers-base
     , tuple-sop

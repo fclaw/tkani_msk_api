@@ -69,11 +69,19 @@ services:
       # -I2: If idle for 2 seconds, run Major GC (Clean up aggressively)
       # -Fd2: Return memory to OS more eagerly
       GHCRTS: "-N2 -I2"
+
+      # Secrets are mounted automatically to /run/secrets/
+      TBANK_CERT_PATH: /run/secrets/tbank_cert
+      TBANK_KEY_PATH: /run/secrets/tbank_key
+
     env_file: .env
     volumes:
       - ./.env:/app/.env  # Mounts the file (so loadEnv works)
       - ./cacert.pem:/etc/ssl/certs/mounted-bundle.crt:ro
       - tmp_data:/data # Mount the shared volume
+    secrets:
+      - tbank_cert
+      - tbank_key
     depends_on:
       db:
         # --- THIS IS THE MAGIC ---
@@ -109,3 +117,9 @@ volumes:
   postgres-data:
     name: tkani-postgres-data
   tmp_data: # Define the shared volume
+
+secrets:
+  tbank_cert:
+    file: /home/fclaw007/tkani-api/secrets/cert.pem
+  tbank_key:
+    file: /home/fclaw007/tkani-api/secrets/key.key
