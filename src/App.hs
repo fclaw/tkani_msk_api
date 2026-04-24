@@ -364,6 +364,7 @@ data TinkoffCredentials =
      { tinkoffTerminalKey :: Text
      , tinkoffSecret      :: Text
      , tinkoffUrl         :: Text
+     , tinkoffOpenApiUrl  :: Text
      }
 
 makeLenses ''Config

@@ -150,6 +150,7 @@ library
       Infrastructure.Services.Tinkoff.Types.GetState
       Infrastructure.Services.Tinkoff.Types.Init
       Infrastructure.Services.Tinkoff.Types.QR
+      Infrastructure.Services.Tinkoff.Types.RubleTransfer
       Infrastructure.Services.Types
       Infrastructure.Services.Yandex
       Infrastructure.Services.Yandex.CachedPickupPoints

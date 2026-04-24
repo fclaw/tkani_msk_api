@@ -11,6 +11,7 @@ import Infrastructure.Services.Yandex.Geo
 import Data.Aeson.Types (camelTo2)
 import Data.Aeson (FromJSON (..), genericParseJSON, defaultOptions, fieldLabelModifier)
 
+import Infrastructure.Services.Tinkoff.Types.RubleTransfer (Receiver)
 
 
 
@@ -58,6 +59,8 @@ data YandexConfig =
      , pickupWindow         :: PickupWindow
      , shipmentCreation     :: Int
      , shipmentCancellation :: Int
+     , receiver             :: Receiver
+     , purpose              :: Text
      } deriving (Show, Eq, Generic)
 
 instance FromJSON YandexConfig where

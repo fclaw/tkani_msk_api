@@ -327,6 +327,7 @@ main = do
       let tinkoffTerminalKey = configTinkoffTerminalKey
       let tinkoffSecret      = configTinkoffSecret
       let tinkoffUrl         = configTinkoffUrl
+      let tinkoffOpenApiUrl  = configTinkoffOpenApiUrl
 
       -- 6. Setup Tinkoff Open API manager
       tinkoffCert <- getEnv "TBANK_CERT_PATH" -- Should return "/run/secrets/tbank_cert" in Docker
@@ -347,7 +348,7 @@ main = do
                    configSdekClientSecret
                  , tariffs = sort (tariffs sdekConfig)
                  }
-            , _yandexConfig = 
+            , _yandexConfig =
                yandexConfig
                { apiUrl = fromMaybe (apiUrl yandexConfig) configYandexApiUrl
                , apiKey = fromMaybe (apiKey yandexConfig) configYandexApiKey

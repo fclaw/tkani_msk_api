@@ -36,3 +36,11 @@ pickup_window:
 
 shipment_creation: 9
 shipment_cancellation: 17
+
+receiver:
+  name: "ООО «Яндекс.Доставка»"
+  inn: "7716760301" 
+  bik: "044525700"
+  accountNumber: "40702810800000067899"
+
+purpose: "Комплекс Услуг по организации доставок отправлений, лицевой счет номер ЛСЛ-5815630478-1, НДС 22%"

@@ -16,6 +16,8 @@ import Data.Aeson (withScientific, FromJSON (..))
 import Data.Time.Calendar.OrdinalDate (Day)
 import Data.Aeson.Types (camelTo2, defaultOptions, genericParseJSON, parseJSON, fieldLabelModifier)
 
+import Infrastructure.Services.Tinkoff.Types.RubleTransfer (Receiver)
+
 
 -- | Represents the 'pickup_window' object in YAML
 data SdekPickupWindow = SdekPickupWindow
@@ -117,6 +119,8 @@ data SdekConfig =
      , commissionRate      :: Double
      , senderLocation      :: SdekSenderLocation
      , holidays            :: [Holiday]
+     , receiver            :: Receiver
+     , purpose             :: Text
      } deriving (Show, Generic)
 
 instance FromJSON SdekConfig where

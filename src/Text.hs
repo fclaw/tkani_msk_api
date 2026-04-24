@@ -6,6 +6,7 @@ module Text
        , recordLabelModifier
        , encodeToText
        , pascalCase
+       , firstToLower
        , recordLabelModifierG
        , tshow
        , textToInt
@@ -40,6 +41,10 @@ camelToSnake (x:xs) = toLower x : go xs
 pascalCase :: String -> String
 pascalCase (c:cs) = toUpper c : cs
 pascalCase mempty = mempty
+
+firstToLower :: String -> String
+firstToLower [] = []
+firstToLower (first:rest) = toLower first : rest
 
 
 recordLabelModifierG :: (String -> String) -> String -> String -> String
