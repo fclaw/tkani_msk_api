@@ -88,6 +88,9 @@ data Config = Config
   , configPdfCrowdUser           :: Text
   , configPdfCrowdApiKey         :: Text
   , configTinkoffOpenApiUrl      :: Text
+  , configBankAccount            :: Text
+  , configMoneyTransferChatId    :: Int64
+  , configMoneyTransferToken     :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -232,6 +235,12 @@ loadConfig = do
   let configPdfCrowdApiKey = (Map.!) env "PDF_CROWD_API_KEY"
  
   let configTinkoffOpenApiUrl = (Map.!) env "TINKOFF_OPENAPI_URL"
+
+  let configBankAccount = (Map.!) env "BANK_ACCOUNT"
+
+  let configMoneyTransferChatId = fromIntegral $ extractNumber "MONEY_TRANSFER_CHAT_ID" $ textToInt $ (Map.!) env "MONEY_TRANSFER_CHAT_ID"
+
+  let configMoneyTransferToken = (Map.!) env "MONEY_TRANSFER_TOKEN"
 
   -- 5. Return the final Config record
   pure $ Config {..}

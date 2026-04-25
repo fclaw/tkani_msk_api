@@ -311,6 +311,7 @@ data ChatKey =
       | PICKUP
       | SPECIAL_POST
       | PREPAID_ORDER
+      | MONEY_TRANSFER
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int64)
@@ -351,6 +352,7 @@ data Config = Config
   , _consolidationTime      :: Int32
   , _pdfCrowdUser           :: Text
   , _pdfCrowdApiKey         :: Text
+  , _bankAccount            :: Text
   }
 
 -- A helper type for parsing the YAML
@@ -361,10 +363,11 @@ instance FromJSON MetroCity where
 
 data TinkoffCredentials =
      TinkoffCredentials 
-     { tinkoffTerminalKey :: Text
-     , tinkoffSecret      :: Text
-     , tinkoffUrl         :: Text
-     , tinkoffOpenApiUrl  :: Text
+     { tinkoffTerminalKey        :: Text
+     , tinkoffSecret             :: Text
+     , tinkoffUrl                :: Text
+     , tinkoffOpenApiUrl         :: Text
+     , tinkoffMoneyTransferToken :: Text
      }
 
 makeLenses ''Config

@@ -49,7 +49,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG firstToL
 -- =============================================================================
 
 data RubleTransferRequest = RubleTransferRequest
-  { rtId              :: Text          -- ^ Unique identifier (<= 64 chars)
+  { rtId              :: Text          -- ^ Unique identifier (<= 64 chars), RECOMMENDED: UUID v4
   , rtFrom            :: Payer         -- ^ Your checking account
   , rtTo              :: Receiver      -- ^ Recipient (Ya/Sdek)
   , rtPurpose         :: Text          -- ^ Payment narrative

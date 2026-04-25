@@ -324,14 +324,15 @@ main = do
       -- 5. Acquire the pool using the generated config.
       pool <- Pool.acquire poolConfig
 
-      let tinkoffTerminalKey = configTinkoffTerminalKey
-      let tinkoffSecret      = configTinkoffSecret
-      let tinkoffUrl         = configTinkoffUrl
-      let tinkoffOpenApiUrl  = configTinkoffOpenApiUrl
+      let tinkoffTerminalKey        = configTinkoffTerminalKey
+      let tinkoffSecret             = configTinkoffSecret
+      let tinkoffUrl                = configTinkoffUrl
+      let tinkoffOpenApiUrl         = configTinkoffOpenApiUrl
+      let tinkoffMoneyTransferToken = configMoneyTransferToken
 
       -- 6. Setup Tinkoff Open API manager
-      tinkoffCert <- getEnv "TBANK_CERT_PATH" -- Should return "/run/secrets/tbank_cert" in Docker
-      tinkoffKey  <- getEnv "TBANK_KEY_PATH"
+      tinkoffCert    <- getEnv "TBANK_CERT_PATH" -- Should return "/run/secrets/tbank_cert" in Docker
+      tinkoffKey     <- getEnv "TBANK_KEY_PATH"
       openApiManager <- Tinkoff.setupManager (T.unpack configTinkoffOpenApiUrl) tinkoffCert tinkoffKey
 
       -- 7. Create the shared AppState
@@ -363,7 +364,8 @@ main = do
                    (SHELF, (configConciergeBotToken, configShelfChatId)),
                    (PICKUP, (configConciergeBotToken, configPickupChatId)),
                    (SPECIAL_POST, (configConciergeBotToken, configSpecialPostChatId)),
-                   (PREPAID_ORDER, (configConciergeBotToken, configPrepaidOrderChatId))
+                   (PREPAID_ORDER, (configConciergeBotToken, configPrepaidOrderChatId)),
+                   (MONEY_TRANSFER, (configConciergeBotToken, configMoneyTransferChatId))
                    ]
             , _configHttpManager = tlsManager
             , _tinkoffOpenApiManager = openApiManager
@@ -397,6 +399,7 @@ main = do
             , _consolidationTime = configPickupConsolidationTm
             , _pdfCrowdUser = configPdfCrowdUser
             , _pdfCrowdApiKey = configPdfCrowdApiKey
+            , _bankAccount = configBankAccount
             }
 
       tinkoffPaymentChan  <- newTChanIO

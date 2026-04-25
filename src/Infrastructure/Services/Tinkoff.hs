@@ -19,10 +19,10 @@ import Data.Traversable (for)
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
 
-import App (AppM, _tinkoffCred, _configHttpManager, _tinkoffOpenApiManager, tinkoffOpenApiUrl, tinkoffUrl, Scheme (HTTPS))
+import App (AppM, _tinkoffCred, _configHttpManager, _tinkoffOpenApiManager, tinkoffMoneyTransferToken, tinkoffOpenApiUrl, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedInitToken, InitToken(..))
-import Infrastructure.Utils.Http (postReq, HttpError)
+import Infrastructure.Utils.Http (postReq, HttpError, mkDefToken)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
 import Infrastructure.Services.Tinkoff.Types.QR
 import Infrastructure.Services.Tinkoff.Types.Cancel
@@ -188,13 +188,12 @@ cancelTinkoffPayment cancelReq = do
   let httpManager = _configHttpManager cfg
   postReq @CancelResponse httpManager (show HTTPS <> unpack url <> "/v2/Cancel") cancelReq [] Nothing
 
-
-
 -- https://developer.tbank.ru/docs/api/payments-core-pay
 initiateTinkoffRubleTransfer :: RubleTransferRequest -> AppM (Either HttpError RubleTransferResponse)
 initiateTinkoffRubleTransfer req = do
   cfg <- ask
   let url = tinkoffOpenApiUrl $ _tinkoffCred cfg
+  let token = tinkoffMoneyTransferToken $ _tinkoffCred cfg
   let httpManager = _tinkoffOpenApiManager cfg
   let path = "/api/v1/payment/ruble-transfer/pay"
-  postReq @RubleTransferResponse httpManager (show HTTPS <> unpack url <> path) req [] Nothing
+  postReq @RubleTransferResponse httpManager (show HTTPS <> unpack url <> path) req [] (Just (mkDefToken token))

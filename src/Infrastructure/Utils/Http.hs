@@ -49,7 +49,6 @@ import           Network.HTTP.Client             (HttpException (..),
                                                   HttpExceptionContent (..),
                                                   responseStatus, Manager, managerResponseTimeout, responseTimeoutMicro) -- ADDED Manager
 import qualified Network.HTTP.Client          as HTTP
-import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Header (HeaderName)
 import           Network.HTTP.Types.Status       (statusCode)
 import           Control.Exception               (SomeException, fromException, try, Exception)
@@ -181,13 +180,7 @@ initialDelay = 1000000
 _getReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> QueryParams -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
 _getReq' mgr url queryParams headers maybeToken = do
   -- FIX: Use global manager
-  let baseOpts = 
-        defaults 
-        & manager .~ Right mgr
-        & manager .~ Left (
-           tlsManagerSettings 
-           { managerResponseTimeout = 
-             responseTimeoutMicro (60 * 1000000) })
+  let baseOpts = defaults & manager .~ Right mgr
   let optsWithToken = addToken maybeToken (baseOpts & params .~ queryParams)
   let opts = addHeaders optsWithToken headers
   liftIO $ try (getWith opts url)
@@ -199,10 +192,6 @@ _postReq' mgr url body headers maybeToken = do
         & manager .~ Right mgr 
         & header "Content-Type" .~ 
           [BS8.pack "application/json; charset=utf-8"]
-        & manager .~ Left (
-            tlsManagerSettings 
-            { managerResponseTimeout = 
-              responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
 
   let optsWithToken = addToken maybeToken baseOpts
   let opts = addHeaders optsWithToken headers
@@ -216,10 +205,6 @@ _patchReq' mgr url body headers maybeToken = do
         & manager .~ Right mgr 
         & header "Content-Type" .~ 
           [BS8.pack "application/json; charset=utf-8"]
-        & manager .~ Left (
-            tlsManagerSettings 
-            { managerResponseTimeout = 
-              responseTimeoutMicro (60 * 1000000) }) -- 60 seconds
 
   let optsWithToken = addToken maybeToken baseOpts
   let opts = addHeaders optsWithToken headers
@@ -229,25 +214,13 @@ _patchReq' mgr url body headers maybeToken = do
 _postFormReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> FormParams -> m (Either SomeException (Response LBS.ByteString))
 _postFormReq' mgr url payload = do
   -- FIX: Use global manager
-  let opts = 
-        defaults 
-        & manager .~ Right mgr
-        & manager .~ Left (
-           tlsManagerSettings 
-           { managerResponseTimeout = 
-             responseTimeoutMicro (60 * 1000000) })
+  let opts = defaults & manager .~ Right mgr
   liftIO $ try (postWith opts url payload)
 
 _deleteReq' :: (KatipContext m, MonadIO m, Catch.MonadCatch m) => Manager -> String -> Headers -> Maybe Token -> m (Either SomeException (Response LBS.ByteString))
 _deleteReq' mgr url headers maybeToken = do
   -- FIX: Use global manager
-  let baseOpts = 
-        defaults 
-        & manager .~ Right mgr
-        & manager .~ Left (
-           tlsManagerSettings 
-           { managerResponseTimeout = 
-             responseTimeoutMicro (60 * 1000000) })
+  let baseOpts = defaults & manager .~ Right mgr
   let optsWithToken = addToken maybeToken baseOpts
   let opts = addHeaders optsWithToken headers
   liftIO $ try (deleteWith opts url)
