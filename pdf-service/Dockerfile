@@ -12,6 +12,4 @@ RUN playwright install-deps chromium
 
 COPY main.py .
 
-EXPOSE 8000
-
 CMD ["python", "main.py"]
