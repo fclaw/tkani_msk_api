@@ -108,6 +108,18 @@ services:
     networks:
       - tkani-net # Joins the network
 
+  pdf-service:
+    build: ./pdf-service
+    restart: always
+    volumes:
+      - tmp_data:/data # Mount the shared volume
+    ports:
+      # We only need to expose the port to the internal docker network
+      - 5002:5002
+    networks:
+      - tkani-net # Joins the network
+
+
 
 networks:
   tkani-net:

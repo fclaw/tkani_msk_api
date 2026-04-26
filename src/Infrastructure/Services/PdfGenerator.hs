@@ -66,14 +66,10 @@ generateConsignmentPdf orderId items = do
       -- 3. Render Template to HTML (Text)
       let htmlContent = easyRender context template
               
-      let url = "https://api.pdfcrowd.com/convert/24.04/"
-
-      cfg <- ask
-      let pdfCrowdUser   = T.encodeUtf8 $ _pdfCrowdUser cfg
-      let pdfCrowdApiKey = T.encodeUtf8 $ _pdfCrowdApiKey cfg
+      let url = "http://pdf-service:5002/convert"
 
       -- Prepare the Auth options
-      let opts = defaults & auth ?~ basicAuth pdfCrowdUser pdfCrowdApiKey
+      let opts = defaults
     
       let payload = 
             [ -- 1. THE SOURCE DATA
@@ -92,12 +88,13 @@ generateConsignmentPdf orderId items = do
             , partText "orientation"            "portrait"
             ]
 
+      -- 4. Execute the request
       liftIO (try $ postWith opts url payload) >>= \case
         Left (err :: HttpException) -> 
-            pure $ Left $ "API connection failed: " <> T.pack (show err)
+          pure $ Left $ "Local PDF service failed: " <> T.pack (show err)
         
         Right resp ->
-            let code = resp ^. responseStatus . statusCode
-            in if code == 200
-               then pure $ Right (B.toStrict $ resp ^. responseBody)
-               else pure $ Left $ "Pdfcrowd Error: Status " <> T.pack (show code)
+          let code = resp ^. responseStatus . statusCode
+          in if code == 200
+             then pure $ Right (B.toStrict $ resp ^. responseBody)
+              else pure $ Left $ "PDF Service Error: Status " <> T.pack (show code)
