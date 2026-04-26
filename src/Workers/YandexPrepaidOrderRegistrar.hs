@@ -143,6 +143,8 @@ registerOrder orderId amount days = do
                   Nothing -> send $ 
                     "✅ nmoney of " <> 
                     tshow _amount <> 
-                    " transfer initiated"
+                    " transfer initiated to Yandex \
+                    \ settlement account for order " <>
+                    orderId
                   Just err -> send $ "‼️ \n" <> decodeUtf8 (BL.toStrict (encodePretty err))
 
