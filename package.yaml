@@ -13,6 +13,7 @@ library:
     - Handlers
     - App
     - Config
+    - Auth
     - Infrastructure.Logging.Telegram
     - Domain.Services.Warehouse
     - Infrastructure.Templating
@@ -122,6 +123,7 @@ library:
     - crypton-connection
     - tls
     - data-default-class
+    - password
 
 executables:
   tkani-api-exe:
@@ -159,6 +161,7 @@ executables:
       - http-types
       - aeson-pretty
       - bytestring
+      - password
 
       # --- ADD THESE LINES ---
       - katip             # For initLogEnv, closeScribes

@@ -91,6 +91,8 @@ data Config = Config
   , configBankAccount            :: Text
   , configMoneyTransferChatId    :: Int64
   , configMoneyTransferToken     :: Text
+  , configAdminUser              :: Text
+  , configAdminPassHash          :: Text
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -241,6 +243,9 @@ loadConfig = do
   let configMoneyTransferChatId = fromIntegral $ extractNumber "MONEY_TRANSFER_CHAT_ID" $ textToInt $ (Map.!) env "MONEY_TRANSFER_CHAT_ID"
 
   let configMoneyTransferToken = (Map.!) env "MONEY_TRANSFER_TOKEN"
+
+  let configAdminUser = (Map.!) env "ADMIN_USER"
+  let configAdminPassHash = (Map.!) env "ADMIN_PASS_HASH"
 
   -- 5. Return the final Config record
   pure $ Config {..}

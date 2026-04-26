@@ -17,6 +17,7 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy as BL
 
 import Text (tshow)
+import Auth (AdminUser)
 import App (AppM, _sdekConfig, _yandexConfig, forkAppM, _bankAccount, ChatKey (MONEY_TRANSFER))
 import qualified Infrastructure.Services.Yandex.Config as Ya
 import qualified Infrastructure.Services.Sdek.Types.Config as Sdek
@@ -26,8 +27,8 @@ import Infrastructure.Services.Tinkoff.Types.RubleTransfer
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 
-handler :: TopUpLogisticsProviderReq -> AppM (ApiResponse ())
-handler req = do
+handler :: AdminUser -> TopUpLogisticsProviderReq -> AppM (ApiResponse ())
+handler _ req = do
   cfg <- ask
   transferReqId <- fmap (T.pack . toString) $ liftIO nextRandom
   let defTransferReq =
@@ -61,13 +62,10 @@ handler req = do
         Right RubleTransferResponse { rtrError } ->
           case rtrError of
             Nothing -> send $ 
-              "✅ nmoney of " <> 
+              "✅ money of " <> 
               tshow (tuplAmount req) <> 
-              " transfer initiated"
-            Just err -> send $
-              "‼️ \n" <> 
-              decodeUtf8 (
-                BL.toStrict (
-                  encodePretty err))
+              " transfer initiated for " <>
+              tshow (tuplAgent req)
+            Just err -> send $ "‼️ \n" <> decodeUtf8 (BL.toStrict (encodePretty err))
               
 send msg = void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 msg) MONEY_TRANSFER Nothing Nothing Nothing

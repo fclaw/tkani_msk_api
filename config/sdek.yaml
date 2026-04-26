@@ -4,7 +4,7 @@
 
 # Base URL for the SDEK API (can be test or prod)
 #  prod: "api.cdek.ru"
-url: "api.cdek.ru"
+url: "api.edu.cdek.ru"
 
 # Your API credentials for authentication
 credentials:

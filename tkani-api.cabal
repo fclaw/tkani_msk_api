@@ -17,6 +17,7 @@ library
       Handlers
       App
       Config
+      Auth
       Infrastructure.Logging.Telegram
       Domain.Services.Warehouse
       Infrastructure.Templating
@@ -213,6 +214,7 @@ library
     , monad-time
     , mtl
     , network
+    , password
     , postgresql-simple
     , process
     , profunctors
@@ -266,6 +268,7 @@ executable tkani-api-exe
     , katip
     , lifted-async
     , mtl
+    , password
     , servant
     , servant-server
     , stm

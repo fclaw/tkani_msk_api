@@ -44,12 +44,16 @@ module App
     extractFromMaybe,
     extractFromEither,
     -- forkAppM
-    forkAppM
+    forkAppM,
+    -- basic auth lense
+    adminUser,
+    adminPassHash
   ) where
 
 
 
 import Katip
+import Data.Password.Bcrypt (PasswordHash, Bcrypt)
 import Control.Applicative (pure)
 import Data.Monoid (mempty)
 import Data.Int (Int64, Int32)
@@ -353,6 +357,9 @@ data Config = Config
   , _pdfCrowdUser           :: Text
   , _pdfCrowdApiKey         :: Text
   , _bankAccount            :: Text
+    -- basic auth credentials for the /admin endpoint
+  , _adminUser              :: Text
+  , _adminPassHash          :: PasswordHash Bcrypt
   }
 
 -- A helper type for parsing the YAML

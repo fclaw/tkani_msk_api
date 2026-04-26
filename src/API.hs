@@ -8,11 +8,12 @@ module API where
 import GHC.Generics (Generic)
 import Servant.API.Generic
 import Data.Text (Text)
-import Servant (Get, Post, Put, Patch, Delete, PlainText, Capture, JSON, (:>), ReqBody, QueryParam)
+import Servant (Get, Post, Put, Patch, Delete, PlainText, Capture, JSON, (:>), ReqBody, QueryParam, BasicAuth)
 import Data.Proxy (Proxy (..))
 import Data.Int (Int64)
 import Data.Time.TypeLevel (TimePeriod(Minute, Second))
 
+import Auth (AdminUser)
 import API.Types
 import Lib.Servant.RateLimit (RateLimitPerUser)
 import API.WithField (WithField)
@@ -314,6 +315,8 @@ data Routes route = Routes
       :: route
       :- "payments"
       :> "top-up"
+      :> RateLimitPerUser (Second 1) 'Nothing
+      :> BasicAuth "tkani-secure" AdminUser
       :> ReqBody '[JSON] TopUpLogisticsProviderReq
       :> Post '[JSON] (ApiResponse ())
 

@@ -16,6 +16,7 @@ import Network.Wai.Handler.Warp (run)
 import Servant (Handler)
 import Data.List(sort)
 import Servant.Server
+import Data.Password.Bcrypt (PasswordHash, Bcrypt)
 import Servant.Server.Generic
 import Data.Maybe (fromMaybe)
 import Servant.API.Generic (toServant)
@@ -62,6 +63,7 @@ import qualified Data.ByteString.Lazy as BL
 import Control.Concurrent (threadDelay)
 
 
+import Auth (verifyAdmin, AdminUser, HashedAdminPassword (..))
 import qualified Lib.Servant.RateLimit as RL
 import Handlers (apiHandlers) -- Import our top-level record of handlers
 import qualified Config as GlobalCfg (loadConfig, Config(..), maskSecrets)
@@ -400,6 +402,8 @@ main = do
             , _pdfCrowdUser = configPdfCrowdUser
             , _pdfCrowdApiKey = configPdfCrowdApiKey
             , _bankAccount = configBankAccount
+            , _adminUser = configAdminUser
+            , _adminPassHash = getBcryptHash $ read @HashedAdminPassword $ T.unpack configAdminPassHash
             }
 
       tinkoffPaymentChan  <- newTChanIO
@@ -470,16 +474,16 @@ main = do
         -- Define our concurrent tasks as a list of IO actions.
         -- Task 1: The Web Server
         rateLimitState <- newTVarIO @RL.State (RL.State M.empty configRateLimitAllowedUsers)
-        let context = rateLimitState :. EmptyContext
+        let context = verifyAdmin appConfig :. rateLimitState :. EmptyContext
         let server =
               run configApiPort $ 
                 methodsCors $  
                   serveWithContext 
-                  tkaniApiProxy 
+                  tkaniApiProxy
                   context $
                     hoistServerWithContext
                       tkaniApiProxy
-                      (Proxy @'[RL.RateLimitState])
+                      (Proxy @'[BasicAuthCheck AdminUser, RL.RateLimitState])
                       (appToHandler appConfig initialState) 
                       (toServant apiHandlers)
 
