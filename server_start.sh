@@ -21,6 +21,8 @@ docker compose run --rm migrator
 
 echo "🤖 Starting API..."
 docker compose up -d collage-service api
+echo "🤖 Starting PDF Service..."
+docker compose up -d pdf-service
 
 echo "🧹 Cleanup..."
 docker image prune -f
