@@ -47,7 +47,8 @@ module App
     forkAppM,
     -- basic auth lense
     adminUser,
-    adminPassHash
+    adminPassHash,
+    pdfServiceUrl
   ) where
 
 
@@ -360,6 +361,7 @@ data Config = Config
     -- basic auth credentials for the /admin endpoint
   , _adminUser              :: Text
   , _adminPassHash          :: PasswordHash Bcrypt
+  , _pdfServiceUrl          :: Text
   }
 
 -- A helper type for parsing the YAML

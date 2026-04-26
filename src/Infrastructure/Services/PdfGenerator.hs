@@ -25,7 +25,7 @@ import           Control.Lens                ((&), (?~), (^.))
 import           Control.Monad.Reader.Class  (ask)
 import           Data.Time                   (getCurrentTime, utctDay, showGregorian)
 
-import           App                         (AppM, _pdfCrowdUser, _pdfCrowdApiKey)
+import           App                         (AppM, pdfServiceUrl)
 import           Infrastructure.Database     (ConsignmentPdfItem (..))
 
 
@@ -65,8 +65,10 @@ generateConsignmentPdf orderId items = do
 
       -- 3. Render Template to HTML (Text)
       let htmlContent = easyRender context template
-              
-      let url = "http://pdf-service:5002/convert"
+
+      cfg <- ask
+  
+      let url = T.unpack (cfg ^. pdfServiceUrl) <> "/convert"
 
       -- Prepare the Auth options
       let opts = defaults

@@ -404,6 +404,7 @@ main = do
             , _bankAccount = configBankAccount
             , _adminUser = configAdminUser
             , _adminPassHash = getBcryptHash $ read @HashedAdminPassword $ T.unpack configAdminPassHash
+            , _pdfServiceUrl = configPdfServiceUrl
             }
 
       tinkoffPaymentChan  <- newTChanIO

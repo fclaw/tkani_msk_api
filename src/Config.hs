@@ -87,6 +87,7 @@ data Config = Config
   , configPrepaidOrderChatId     :: Int64
   , configPdfCrowdUser           :: Text
   , configPdfCrowdApiKey         :: Text
+  , configPdfServiceUrl          :: Text
   , configTinkoffOpenApiUrl      :: Text
   , configBankAccount            :: Text
   , configMoneyTransferChatId    :: Int64
@@ -172,6 +173,7 @@ loadConfig = do
   let configGalleryLink = (Map.!) env "GALLERY_LINK"
   let configIsCollageServiceOn = textToBool $ (Map.!) env "IS_COLLAGE_SERVICE_ON"
   let configCollageStubPath = (Map.!) env "COLLAGE_STUB_PATH"
+  let configPdfServiceUrl = (Map.!) env "PDF_SERVICE_URL"
 
   -- telegram error messages 
   let configMessageCannotBeDeleted = (Map.!) env "MESSAGE_CANNOT_BE_DELETED"
