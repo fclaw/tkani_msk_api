@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 
 module Workers.YandexPrepaidOrderRegistrar (runYandexPrepaidOrderRegistrar, registerOrder) where
 
@@ -20,22 +21,30 @@ import GHC.Generics (Generic)
 import Data.Aeson (FromJSON, eitherDecode)
 import Data.Bifunctor (first)
 import Data.Foldable (for_)
+import qualified Data.Text as T
+import Data.UUID.V4 (nextRandom)
+import Data.UUID (toString)
 import Servant.Server (ServerError)
+import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Lazy as BL
 import qualified Database.PostgreSQL.Simple as PG
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (forever, void)
 import Control.Concurrent.Async (async)
 import Control.Monad.Reader.Class (ask)
+import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Database.PostgreSQL.Simple.Notification as PG
 
 
 import Text (tshow)
-import App (AppM, ChatKey (PREPAID_ORDER), _appDBPool)
+import App (AppM, ChatKey (PREPAID_ORDER, MONEY_TRANSFER), _appDBPool, _bankAccount, _yandexConfig)
 import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Workers.PriceCalculator (finalizeYandexOrder)
 import Infrastructure.Services.Yandex (createOrder)
+import qualified Infrastructure.Services.Yandex.Config as Ya
+import Infrastructure.Services.Tinkoff (initiateTinkoffRubleTransfer)
+import Infrastructure.Services.Tinkoff.Types.RubleTransfer
 import Infrastructure.Services.Yandex.Types (YandexCreateOrderReq (..), PriceCalculatorResp (..))
 import Infrastructure.Database (getYandexOrderDetailsForPricing, extractValue, YandexOrderDetailsForPricing (..))
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
@@ -110,4 +119,30 @@ registerOrder orderId amount days = do
             let cal = PriceCalculatorResp (fromIntegral days) "0"
             finalizeYandexOrder orderId pickupId resp cal yodpCustomer
 
+            -- transfer money from our bank account to the Yandex settlement account
+            transferReqId <- fmap (T.pack . toString) $ liftIO nextRandom
+            let yandexCfg = _yandexConfig cfg
+            let _amount = fromRational (fromIntegral amount) / 100.0
+            let defTransferReq =
+                  RubleTransferRequest 
+                  { rtId      = transferReqId
+                  , rtFrom    = Payer $ _bankAccount cfg
+                  , rtTo      = Ya.receiver yandexCfg
+                  , rtPurpose = Ya.purpose yandexCfg
+                  , rtAmount  = _amount
+                  }
+
+            moneyTransferResp <- initiateTinkoffRubleTransfer defTransferReq
+            
+            let send msg = void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 msg) MONEY_TRANSFER Nothing Nothing Nothing
+
+            case moneyTransferResp of
+              Left err -> send $ tshow err
+              Right RubleTransferResponse { rtrError } ->
+                case rtrError of
+                  Nothing -> send $ 
+                    "✅ nmoney of " <> 
+                    tshow _amount <> 
+                    " transfer initiated"
+                  Just err -> send $ "‼️ \n" <> decodeUtf8 (BL.toStrict (encodePretty err))
 
