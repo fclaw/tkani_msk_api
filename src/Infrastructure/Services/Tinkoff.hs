@@ -1,7 +1,8 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Infrastructure.Services.Tinkoff 
        ( initiateTinkoffPayment
@@ -16,13 +17,19 @@ import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (second)
 import Katip
 import Data.Traversable (for)
+import Control.Lens ((^.))
+import qualified Data.ByteString.Lazy as BL
+import Data.Aeson (decode)
+import Network.Wreq (responseBody, statusCode, responseStatus)
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
+import Control.Exception (SomeException)
+import qualified Data.Text.Encoding as TE
 
 import App (AppM, _tinkoffCred, _configHttpManager, _tinkoffOpenApiManager, tinkoffMoneyTransferToken, tinkoffOpenApiUrl, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedInitToken, InitToken(..))
-import Infrastructure.Utils.Http (postReq, HttpError, mkDefToken)
+import Infrastructure.Utils.Http (postReq, _postReq', HttpError (..), mkDefToken)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
 import Infrastructure.Services.Tinkoff.Types.QR
 import Infrastructure.Services.Tinkoff.Types.Cancel
@@ -196,4 +203,23 @@ initiateTinkoffRubleTransfer req = do
   let token = tinkoffMoneyTransferToken $ _tinkoffCred cfg
   let httpManager = _tinkoffOpenApiManager cfg
   let path = "/api/v1/payment/ruble-transfer/pay"
-  postReq @RubleTransferResponse httpManager (show HTTPS <> unpack url <> path) req [] (Just (mkDefToken token))
+  resp <- _postReq' httpManager (show HTTPS <> unpack url <> path) req [] (Just (mkDefToken token))
+
+  case resp of
+    -- 1. SUCCESS: T-Bank returns 201 or 200 Created and an EMPTY BODY
+    Right r | r ^. responseStatus . statusCode == 201 ||
+              r ^. responseStatus . statusCode == 200 -> 
+      pure $ Right $ RubleTransferResponse Nothing
+            
+    -- 2. LOGICAL API ERROR: Usually 400, 403, 422 with a JSON body
+    Right r -> do
+      let body = r ^. responseBody
+      case decode body of
+        Just err -> pure $ Right $ RubleTransferResponse (Just err)
+        Nothing  -> pure $ Left $
+                       JsonDecodeError 
+                        "Failed to decode Tinkoff error response"
+                        (TE.decodeUtf8 (BL.toStrict body))
+
+    -- 3. TRANSPORT ERROR: (DNS, TLS failure, etc)
+    Left (err :: SomeException) -> pure $ Left $ NetworkError err
