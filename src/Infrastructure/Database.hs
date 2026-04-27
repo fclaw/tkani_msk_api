@@ -2974,7 +2974,7 @@ fetchShelfItems userId pool =
             'price',
               ROUND(
                (CASE WHEN si.pre_cut_id IS NULL 
-                     THEN f.price_per_meter * si.length_m 
+                     THEN f.price_per_meter 
                      ELSE pc.price_rub END) *
                 (1 - (
                   CASE 
@@ -2988,7 +2988,7 @@ fetchShelfItems userId pool =
               )
            ) AS item_json
           FROM shelf_items AS si
-          INNER JOIN fabrics AS f 
+          INNER JOIN fabrics AS f
           ON si.fabric_id = f.id
           LEFT JOIN pre_cuts AS pc 
           ON pc.fabric_id = f.id
