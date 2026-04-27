@@ -317,6 +317,7 @@ data ChatKey =
       | SPECIAL_POST
       | PREPAID_ORDER
       | MONEY_TRANSFER
+      | SERVER_SHUTDOWN
         deriving (Show, Ord, Eq)
 
 type Bots = M.Map ChatKey (Text, Int64)

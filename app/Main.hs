@@ -1,12 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE OverloadedStrings   #-}
 
 module Main (main) where
 
@@ -30,7 +31,7 @@ import qualified Hasql.Pool.Config as Config
 import Hasql.Connection.Setting (connection)
 import Hasql.Connection.Setting.Connection (string)
 import Control.Monad (void, when, forever, join)
-import Control.Exception (finally, bracket, SomeException)
+import Control.Exception (finally, bracket, SomeException, throwIO, throwTo)
 import Network.Wai.Middleware.Cors (simpleCors) -- Import the middleware
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import GHC.IO.Exception (userError)
@@ -50,7 +51,7 @@ import Data.Text (Text)
 import Data.List (find)
 import Network.HTTP.Client (newManager, Manager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
-import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..))
+import Control.Concurrent.Async.Lifted (async, waitAnyCatch, cancel, Async (..), waitCatch, AsyncCancelled (..))
 import qualified Data.HashSet as HS
 import qualified Data.Map.Strict as M
 import Data.Foldable (for_)
@@ -61,6 +62,7 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Lazy as BL
 import Control.Concurrent (threadDelay)
+import System.Timeout (timeout)
 
 
 import Auth (verifyAdmin, AdminUser, HashedAdminPassword (..))
@@ -111,10 +113,12 @@ import Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor)
 import qualified Infrastructure.Services.Tinkoff.Manager as Tinkoff (setupManager)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
 import Application.Cart (runCartsCleaner)
+import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Sdek.Types.Config (SdekConfig(..), SdekCredentials (..))
 import Infrastructure.Services.Yandex.Config (YandexConfig, apiUrl, apiKey)
 import Infrastructure.Services.Dostavista.Types.Config (DostavistaConfig (..))
 import qualified Infrastructure.Services.Dostavista.Types.Config as Dostativsta
+import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 
 
 
@@ -367,7 +371,8 @@ main = do
                    (PICKUP, (configConciergeBotToken, configPickupChatId)),
                    (SPECIAL_POST, (configConciergeBotToken, configSpecialPostChatId)),
                    (PREPAID_ORDER, (configConciergeBotToken, configPrepaidOrderChatId)),
-                   (MONEY_TRANSFER, (configConciergeBotToken, configMoneyTransferChatId))
+                   (MONEY_TRANSFER, (configConciergeBotToken, configMoneyTransferChatId)),
+                   (SERVER_SHUTDOWN, (configConciergeBotToken, configServerShutdownChatId))
                    ]
             , _configHttpManager = tlsManager
             , _tinkoffOpenApiManager = openApiManager
@@ -721,7 +726,29 @@ main = do
 
         -- Supervise the tasks. 'waitAny' will block and re-throw any exception.
         (taskName, _) <- waitAnyNamed asyncs
-        putStrLn $ "Worker '" <> taskName <> "' finished unexpectedly. Shutting down."
-
+        
         -- Gracefully cancel all other workers on exit.
-        mapM_ (cancel . snd) asyncs >> putStrLn "Shutdown complete."
+        -- 1. Trigger cancellations (You already have this)
+        --    SIGNAL everyone to die (NON-BLOCKING)
+        for_ asyncs $ \(name, a) ->
+          when (name /= taskName) $ do
+            putStrLn $ "📣 Sending stop signal to: " <> name
+            -- 'throwTo' sends the exception and moves on immediately
+            liftIO $ throwTo (asyncThreadId a) AsyncCancelled
+
+        -- 2. Wait with a GLOBAL timeout for all of them
+        putStrLn "⏳ Waiting for workers to clean up (max 5s)..."
+        res <- liftIO $ timeout 5000000 $ mapM_ (void . waitCatch . snd) asyncs
+              
+        case res of
+          Nothing -> putStrLn "⚠️ Some workers failed to exit in time. Forcing shutdown."
+          Just _  -> putStrLn "✅ All workers terminated gracefully."
+
+        appMToHandler $ do
+           $(logTM) AlertS $ logStr $ "Worker '" <> T.pack taskName <> "' finished. Initiating shutdown sequence."
+           let msg = "Worker '" <> T.pack taskName <> "' finished unexpectedly. System has been shut down."
+           void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 msg) SERVER_SHUTDOWN Nothing Nothing Nothing
+           -- Perform any additional cleanup if necessary (e.g., close DB connections, flush logs)
+           liftIO $ threadDelay 1000000 -- Give some time for logs to flush 
+
+        throwIO $ userError $ "Worker '" <> taskName <> "' finished unexpectedly. System has been shut down."

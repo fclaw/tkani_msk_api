@@ -58,6 +58,8 @@ library:
     - Infrastructure.Services.Sdek.Types.Config
     - Infrastructure.Services.Dostavista.Types.Config
     - Infrastructure.Services.Tinkoff.Manager
+    - Utils.Telegram.Markdown
+    - Infrastructure.Services.Telegram
   dependencies:
     # This list should already be complete
     - aeson

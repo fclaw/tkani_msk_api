@@ -62,6 +62,8 @@ library
       Infrastructure.Services.Sdek.Types.Config
       Infrastructure.Services.Dostavista.Types.Config
       Infrastructure.Services.Tinkoff.Manager
+      Utils.Telegram.Markdown
+      Infrastructure.Services.Telegram
   other-modules:
       API.Handlers.AddToCart
       API.Handlers.CancelOrder
@@ -142,7 +144,6 @@ library
       Infrastructure.Services.Sdek.Types.Geocode
       Infrastructure.Services.Sdek.Types.OrderInTransit
       Infrastructure.Services.Sdek.Types.State
-      Infrastructure.Services.Telegram
       Infrastructure.Services.Tinkoff
       Infrastructure.Services.Tinkoff.Security
       Infrastructure.Services.Tinkoff.Types.Cancel
@@ -169,7 +170,6 @@ library
       TH.RecordToTuple
       Utils.CollageMaker
       Utils.Sql
-      Utils.Telegram.Markdown
       Utils.Time
       Workers.ShelfOrderRegister.Sdek
       Workers.ShelfOrderRegister.Yandex

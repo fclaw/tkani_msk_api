@@ -94,6 +94,7 @@ data Config = Config
   , configMoneyTransferToken     :: Text
   , configAdminUser              :: Text
   , configAdminPassHash          :: Text
+  , configServerShutdownChatId   :: Int64
   } deriving (Generic, ToJSON)
 
 type EnvMap = Map.Map Text Text
@@ -248,6 +249,8 @@ loadConfig = do
 
   let configAdminUser = (Map.!) env "ADMIN_USER"
   let configAdminPassHash = (Map.!) env "ADMIN_PASS_HASH"
+
+  let configServerShutdownChatId = fromIntegral $ extractNumber "SERVER_SHUTDOWN_CHAT_ID" $ textToInt $ (Map.!) env "SERVER_SHUTDOWN_CHAT_ID"
 
   -- 5. Return the final Config record
   pure $ Config {..}
