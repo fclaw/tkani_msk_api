@@ -228,7 +228,7 @@ initiateTinkoffRubleTransfer req = do
 
 
 -- https://developer.tbank.ru/docs/api/payments-core-get-status
-checkTinkoffRubleTransferStatus :: RubleTransferStatusRequest -> AppM (Either HttpError (Either TBankError TransferStatus))
+checkTinkoffRubleTransferStatus :: RubleTransferStatusRequest -> AppM (Either HttpError (Either TBankError RubleTransferStatusResponse))
 checkTinkoffRubleTransferStatus req = do
   cfg <- ask
   let url = tinkoffOpenApiUrl $ _tinkoffCred cfg

@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Workers.MoneyTransferStatusPoller (runMoneyTransferStatusPoller) where
 
@@ -17,7 +18,8 @@ import Utils.Telegram.Markdown (escapeMarkdownV2)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Infrastructure.Services.Tinkoff (checkTinkoffRubleTransferStatus)
 import Infrastructure.Database (fetchRubleTransferStatuses, updateRubleTransferStatus)
-import Infrastructure.Services.Tinkoff.Types.RubleTransfer (TransferStatus (..), RubleTransferStatusRequest (..))
+import Infrastructure.Services.Tinkoff.Types.RubleTransfer 
+       (TransferStatus (..), RubleTransferStatusRequest (..), RubleTransferStatusResponse (..))
 
 
 send msg = void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 msg) MONEY_TRANSFER Nothing Nothing Nothing
@@ -36,10 +38,10 @@ runMoneyTransferStatusPoller = do
         let req = RubleTransferStatusRequest transferId
         eStatus <- checkTinkoffRubleTransferStatus req
         case eStatus of
-          Right (Right newStatus) -> do
-            when(newStatus /= IN_PROGRESS) $ do
+          Right (Right RubleTransferStatusResponse{..}) -> do
+            when(rtsrStatus /= IN_PROGRESS) $ do
               $(logTM) InfoS $ "Updating transfer status for ID: " <> ls (tshow ident)
-              void $ updateRubleTransferStatus ident (encodeToText newStatus) (_appDBPool cfg)
+              void $ updateRubleTransferStatus ident (encodeToText rtsrStatus) (_appDBPool cfg)
               send $ "Transfer of " <> tshow amount <> " RUB has been completed"
           Right (Left err) -> logErr $ "Error occurred while checking transfer status for ID: " <> tshow ident <> ", error: " <> tshow err
           Left err -> logErr $ "Error occurred while checking transfer status for ID: " <> tshow ident <> ", error: " <> tshow err

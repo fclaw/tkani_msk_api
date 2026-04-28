@@ -110,3 +110,9 @@ data TransferStatus = IN_PROGRESS | EXECUTED | FAILED | CANCELLED
   deriving (Show, Eq)
 
 $(deriveJSON defaultOptions { constructorTagModifier = recordLabelModifierG id mempty } ''TransferStatus)
+
+data RubleTransferStatusResponse = RubleTransferStatusResponse
+  { rtsrStatus :: TransferStatus
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG firstToLower "rtsr" } ''RubleTransferStatusResponse)
