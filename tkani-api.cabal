@@ -54,6 +54,7 @@ library
       Workers.ExtraDiscountPromotionScheduler
       Workers.FabricLifecycleManager
       Workers.InventoryStagnationJanitor
+      Workers.MoneyTransferStatusPoller
       Infrastructure.Services.Overpass
       Application.Cart
       Lib.Servant.RateLimit

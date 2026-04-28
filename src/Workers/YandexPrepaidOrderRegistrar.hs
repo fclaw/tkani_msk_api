@@ -36,7 +36,8 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Database.PostgreSQL.Simple.Notification as PG
 
 
-import Text (tshow)
+import Text (tshow, encodeToText)
+import API.Types (Providers (YANDEX))
 import App (AppM, ChatKey (PREPAID_ORDER, MONEY_TRANSFER), _appDBPool, _bankAccount, _yandexConfig)
 import Concurrency (runJobWithCleanup)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
@@ -46,7 +47,7 @@ import qualified Infrastructure.Services.Yandex.Config as Ya
 import Infrastructure.Services.Tinkoff (initiateTinkoffRubleTransfer)
 import Infrastructure.Services.Tinkoff.Types.RubleTransfer
 import Infrastructure.Services.Yandex.Types (YandexCreateOrderReq (..), PriceCalculatorResp (..))
-import Infrastructure.Database (getYandexOrderDetailsForPricing, extractValue, YandexOrderDetailsForPricing (..))
+import Infrastructure.Database (getYandexOrderDetailsForPricing, extractValue, createRubleTransferRecord, YandexOrderDetailsForPricing (..))
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage)
 import Infrastructure.Services.Yandex.Error (getError, getHttpException)
 import Infrastructure.Services.Yandex.Order (PhysicalDimensions (..), psPlatformId, drnPlatformStation, Place (..))
@@ -140,11 +141,13 @@ registerOrder orderId amount days = do
               Left err -> send $ tshow err
               Right RubleTransferResponse { rtrError } ->
                 case rtrError of
-                  Nothing -> send $ 
-                    "✅ nmoney of " <> 
-                    tshow _amount <> 
-                    " transfer initiated to Yandex \
-                    \ settlement account for order " <>
-                    orderId
+                  Nothing -> do 
+                    send $ 
+                      "✅ nmoney of " <> 
+                      tshow _amount <> 
+                      " transfer initiated to Yandex \
+                      \ settlement account for order " <>
+                      orderId
+                    void $ createRubleTransferRecord transferReqId (encodeToText YANDEX) _amount pool
                   Just err -> send $ "‼️ \n" <> decodeUtf8 (BL.toStrict (encodePretty err))
 

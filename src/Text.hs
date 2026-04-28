@@ -5,6 +5,7 @@ module Text
        ( camelToSnake
        , recordLabelModifier
        , encodeToText
+       , decodeFromText
        , pascalCase
        , firstToLower
        , recordLabelModifierG
@@ -18,7 +19,7 @@ module Text
 import Data.Char (toLower, toUpper, isUpper)
 import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
-import Data.Aeson (ToJSON, encode)
+import Data.Aeson (ToJSON, encode, FromJSON, eitherDecode)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
@@ -58,6 +59,13 @@ recordLabelModifier = recordLabelModifierG camelToSnake
 -- | Converts any ToJSON instance directly to Strict Text
 encodeToText :: ToJSON a => a -> Text
 encodeToText val = T.replace "\"" "" $ LT.toStrict (TE.decodeUtf8 (encode val))
+
+decodeFromText :: FromJSON a => Text -> Either String a
+decodeFromText t = 
+  eitherDecode 
+    (TE.encodeUtf8 
+      (LT.fromStrict 
+        ("\"" <> t <> "\"")))
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show

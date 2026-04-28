@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase          #-}
 
 module Infrastructure.Services.Tinkoff 
        ( initiateTinkoffPayment
@@ -10,6 +11,7 @@ module Infrastructure.Services.Tinkoff
        , getTinkoffQRCode
        , cancelTinkoffPayment
        , initiateTinkoffRubleTransfer
+       , checkTinkoffRubleTransferStatus
        ) where
 
 import Data.Text (Text, unpack, pack)
@@ -29,7 +31,7 @@ import qualified Data.Text.Encoding as TE
 import App (AppM, _tinkoffCred, _configHttpManager, _tinkoffOpenApiManager, tinkoffMoneyTransferToken, tinkoffOpenApiUrl, tinkoffUrl, Scheme (HTTPS))
 import Infrastructure.Services.Tinkoff.Types.Init
 import Infrastructure.Services.Tinkoff.Security (generatedInitToken, InitToken(..))
-import Infrastructure.Utils.Http (postReq, _postReq', HttpError (..), mkDefToken)
+import Infrastructure.Utils.Http (postReq, _postReq', HttpError (..), mkDefToken, _getReq')
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (..), GetStateRequest, GetStateResponse (..))
 import Infrastructure.Services.Tinkoff.Types.QR
 import Infrastructure.Services.Tinkoff.Types.Cancel
@@ -216,6 +218,42 @@ initiateTinkoffRubleTransfer req = do
       let body = r ^. responseBody
       case decode body of
         Just err -> pure $ Right $ RubleTransferResponse (Just err)
+        Nothing  -> pure $ Left $
+                       JsonDecodeError 
+                        "Failed to decode Tinkoff error response"
+                        (TE.decodeUtf8 (BL.toStrict body))
+
+    -- 3. TRANSPORT ERROR: (DNS, TLS failure, etc)
+    Left (err :: SomeException) -> pure $ Left $ NetworkError err
+
+
+-- https://developer.tbank.ru/docs/api/payments-core-get-status
+checkTinkoffRubleTransferStatus :: RubleTransferStatusRequest -> AppM (Either HttpError (Either TBankError TransferStatus))
+checkTinkoffRubleTransferStatus req = do
+  cfg <- ask
+  let url = tinkoffOpenApiUrl $ _tinkoffCred cfg
+  let token = tinkoffMoneyTransferToken $ _tinkoffCred cfg
+  let httpManager = _tinkoffOpenApiManager cfg
+  let path = "/api/v1/payment/" <> unpack (statusRequestToParam req)
+  resp <- _getReq' httpManager (show HTTPS <> unpack url <> path) [] [] (Just (mkDefToken token))
+
+  case resp of
+    -- 1. SUCCESS: T-Bank returns 201 or 200 Created and an EMPTY BODY
+    Right r | r ^. responseStatus . statusCode == 201 ||
+              r ^. responseStatus . statusCode == 200 -> do
+      let body = r ^. responseBody
+      case decode body of
+        Just status -> pure $ Right $ Right status
+        Nothing     -> pure $ Left $ 
+                         JsonDecodeError 
+                           "Failed to decode Tinkoff status response" 
+                           (TE.decodeUtf8 (BL.toStrict body))
+            
+    -- 2. LOGICAL API ERROR: Usually 400, 403, 422 with a JSON body
+    Right r -> do
+      let body = r ^. responseBody
+      case decode body of
+        Just err -> pure $ Right $ Left err
         Nothing  -> pure $ Left $
                        JsonDecodeError 
                         "Failed to decode Tinkoff error response"

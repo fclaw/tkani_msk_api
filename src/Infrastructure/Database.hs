@@ -144,6 +144,10 @@ module Infrastructure.Database
   , fetchStallingFabrics
   , setDiscountOnStallingFabrics
   , cancelConfirmedOrder
+    -- money transfer
+  , createRubleTransferRecord
+  , fetchRubleTransferStatuses
+  , updateRubleTransferStatus
   ) where
 
 
@@ -194,6 +198,7 @@ import qualified Domain.Warehouse.Types as DWT
 import Infrastructure.Services.Tinkoff.Types.GetState (GetStateRequest)
 import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
+import Infrastructure.Services.Tinkoff.Types.RubleTransfer (TransferStatus(IN_PROGRESS))
 import Infrastructure.Database.Utils as Utils
 import Infrastructure.Services.Yandex.Types.Enums (PickupStatus (Scheduled, Completed))
 import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus)
@@ -4572,3 +4577,50 @@ setDiscountOnStallingFabrics fabrcicIds pool =
         updated_at = NOW()
         WHERE id = ANY($1 :: int8[])
       |]
+
+createRubleTransferRecord :: Text -> Text -> Double -> Hasql.Pool -> AppM (Either Text ())
+createRubleTransferRecord transferId agent amount pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (transferId, agent, amount, encodeToText IN_PROGRESS) $
+        [Hasql.resultlessStatement|
+          INSERT INTO 
+          tinkoff_ruble_transfers
+          ( transfer_id
+          , agent
+          , amount
+          , status
+          )
+          VALUES
+          ( $1 :: text
+          , $2 :: text
+          , $3 :: float8
+          , $4 :: text
+          )
+        |]
+
+fetchRubleTransferStatuses :: Hasql.Pool -> AppM (Either Text (V.Vector (Int64, Text, Double)))
+fetchRubleTransferStatuses pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (encodeToText IN_PROGRESS) $
+      [Hasql.vectorStatement|
+        SELECT 
+         id :: int8, 
+         transfer_id :: text,
+         amount :: float8
+        FROM tinkoff_ruble_transfers
+        WHERE status = $1 :: text
+      |]
+
+updateRubleTransferStatus :: Int64 -> Text -> Hasql.Pool -> AppM (Either Text ())
+updateRubleTransferStatus transferId newStatus pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement (transferId, newStatus) $
+        [Hasql.resultlessStatement|
+          UPDATE tinkoff_ruble_transfers
+          SET status = $2 :: text,
+              updated_at = NOW()
+          WHERE id = $1 :: int8
+        |]

@@ -95,3 +95,18 @@ data RubleTransferResponse = RubleTransferResponse { rtrError :: Maybe TBankErro
 
 -- Prefix: "rtr" (RubleTransferResponse)
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG firstToLower "rtr" } ''RubleTransferResponse)
+
+data RubleTransferStatusRequest = RubleTransferStatusRequest
+  { rtsrId :: Text -- ^ The same ID you used in the original transfer request
+  } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifierG firstToLower "rtsr" } ''RubleTransferStatusRequest)
+
+statusRequestToParam :: RubleTransferStatusRequest -> Text
+statusRequestToParam req = rtsrId req
+
+-- Requirements: [IN_PROGRESS, EXECUTED, FAILED, CANCELLED]
+data TransferStatus = IN_PROGRESS | EXECUTED | FAILED | CANCELLED
+  deriving (Show, Eq)
+
+$(deriveJSON defaultOptions { constructorTagModifier = recordLabelModifierG id mempty } ''TransferStatus)

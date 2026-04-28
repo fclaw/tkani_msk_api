@@ -109,6 +109,7 @@ import Workers.YandexCatchupJanitor (runYandexCatchupJanitor)
 import Workers.ExtraDiscountPromotionScheduler (runExtraDiscountPromotionScheduler)
 import Workers.FabricLifecycleManager (runFabricLifecycleManager)
 import Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor)
+import Workers.MoneyTransferStatusPoller  (runMoneyTransferStatusPoller)
 -- workers END
 import qualified Infrastructure.Services.Tinkoff.Manager as Tinkoff (setupManager)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
@@ -159,6 +160,7 @@ data Workers =
       | ExtraDiscountPromotionScheduler
       | FabricLifecycleManager
       | InventoryStagnationJanitor
+      | MoneyTransferStatusPoller
 
 
 
@@ -200,6 +202,7 @@ instance Show Workers where
   show ExtraDiscountPromotionScheduler    = "Extra Discount Promotion Scheduler"
   show FabricLifecycleManager             = "Fabric Lifecycle Manager"
   show InventoryStagnationJanitor         = "Inventory Stagnation Janitor"
+  show MoneyTransferStatusPoller          = "Money Transfer Status Poller"
 
 --
 
@@ -646,6 +649,11 @@ main = do
                   appMToHandler runInventoryStagnationJanitor
                     >>= showErrorInWorker
                           InventoryStagnationJanitor)
+              , (MoneyTransferStatusPoller,
+                 runForever 60 $ 
+                  appMToHandler runMoneyTransferStatusPoller
+                    >>= showErrorInWorker
+                          MoneyTransferStatusPoller)
               ]
 
         let courierPickupTasks 
