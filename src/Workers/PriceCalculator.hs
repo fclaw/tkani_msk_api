@@ -511,9 +511,10 @@ sendPriceAndTrackingNumber orderId yandexOrderId pickupId PriceCalculatorResp {.
       bots <- fmap _bots ask
       let (bot,_) = (M.!) bots MAIN
       let url = "https://api.telegram.org/bot" <> T.unpack bot <> "/sendMessage"
+      let intPrice = calculateFinalConsumerPrice $ toKopecks pcrPricingTotal
       let templateData = 
             HM.fromList 
-            [ ("deliveryCost", pcrPricingTotal)
+            [ ("deliveryCost", tshow intPrice)
             , ("deliveryDays", tshow pcrDeliveryDays)
             , ("orderId",      orderId)
             , ("address",      address)
