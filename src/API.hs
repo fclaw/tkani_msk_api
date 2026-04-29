@@ -113,7 +113,7 @@ data Routes route = Routes
        :> RateLimitPerUser (Second 1) 'Nothing
        :> Capture "type" FabricType
        :> Capture "id" Int64
-       :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItem))
+       :> Get '[JSON] (ApiResponse (Maybe CatalogSummaryItemWithDiscount))
    , _cancelOrder
        :: route
        :- "order"

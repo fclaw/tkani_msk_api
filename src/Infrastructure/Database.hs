@@ -955,7 +955,7 @@ updatePaymentStatus orderId paymentStatus pool =
       return $ fromMaybe undefined $ maybeOrderMessageId <|> maybeShelfOrderMessageId
 
 
-searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Maybe CatalogSummaryItem)
+searchFabricCardStatement :: Hasql.Statement (DWT.FabricType, Int64, Double) (Maybe CatalogSummaryItemWithDiscount)
 searchFabricCardStatement = 
   dimap (app1 encodeToText) (fmap (fromRight undefined . convertFromJson))
   [Hasql.maybeStatement|
@@ -1034,7 +1034,8 @@ searchFabricCardStatement =
             'description', f.description,
             'media_type', to_jsonb(f.media_type),
             'width', f.width,
-            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
+            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
+            'discount', calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible)
               ) :: jsonb AS item_json
         FROM fabrics AS f
         LEFT JOIN total_claimed_length as cl
@@ -1065,7 +1066,8 @@ searchFabricCardStatement =
             'description', f.description,
             'media_type', to_jsonb(f.media_type),
             'width', f.width,
-            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[])
+            'media_list', COALESCE(ml.pictures, '{}' :: jsonb[]),
+            'discount', calculate_total_discount(f.discount, f.lifecycle :: text, f.is_extra_discount_eligible)
           ) :: jsonb AS item_json
         FROM pre_cuts AS pc
         LEFT JOIN cart_items AS ci
@@ -1103,7 +1105,7 @@ searchFabricCardStatement =
     SELECT item_json :: jsonb FROM item
   |]
 
-searchFabricCard :: DWT.FabricType -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text (Maybe CatalogSummaryItem))
+searchFabricCard :: DWT.FabricType -> Int64 -> Double -> Hasql.Pool -> AppM (Either Text (Maybe CatalogSummaryItemWithDiscount))
 searchFabricCard fabricType fabricId threshold pool =
   fmap (first (pack . show)) $ 
     runTransactionM pool Hasql.Read $ 

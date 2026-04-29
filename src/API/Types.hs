@@ -412,6 +412,7 @@ data CatalogSummaryItem = CatalogSummaryItem
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "csi" } ''CatalogSummaryItem)
 
+type CatalogSummaryItemWithDiscount = WithField "discount" (Maybe Double) CatalogSummaryItem
 
 type CatalogSummaryItemExt = WithField "hash" (Maybe Int64) (WithField "discount" (Maybe Double) (CatalogSummaryItem))
 

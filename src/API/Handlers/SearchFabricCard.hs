@@ -10,14 +10,14 @@ import Control.Monad.Reader.Class (ask)
 import Data.Bifunctor (first)
 
 import App (AppM, _appDBPool, _thresholdMetres)
-import API.Types (ApiResponse, CatalogSummaryItem, mkError)
+import API.Types (ApiResponse, CatalogSummaryItemWithDiscount, mkError)
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Database (searchFabricCard)
 
 
 -- The handler function itself is the same as before.
 -- It runs in our AppM monad.
-handler :: FabricType -> Int64 -> AppM (ApiResponse (Maybe CatalogSummaryItem))
+handler :: FabricType -> Int64 -> AppM (ApiResponse (Maybe CatalogSummaryItemWithDiscount))
 handler fabricType fabricId = do
   $(logTM) InfoS $ ls $ "fabric card for type: " <> show fabricType <> ", id: " <> show fabricId
   cfg <- ask
