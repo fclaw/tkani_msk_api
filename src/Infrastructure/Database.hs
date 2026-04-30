@@ -115,6 +115,7 @@ module Infrastructure.Database
   , linkOrdersToPickup
   , savePickupDetails
   , fetchYandexPickupStatus
+  , cancelYandexPickup
   , completeYandexPickup
   , resetOrderDimensionsAndWeight
   , fetchEmptyPickupForTomorrow
@@ -200,7 +201,7 @@ import Infrastructure.Services.Tinkoff.Types.GetState (Status (PENDING))
 import Domain.Warehouse.Types (FabricType)
 import Infrastructure.Services.Tinkoff.Types.RubleTransfer (TransferStatus(IN_PROGRESS))
 import Infrastructure.Database.Utils as Utils
-import Infrastructure.Services.Yandex.Types.Enums (PickupStatus (Scheduled, Completed))
+import Infrastructure.Services.Yandex.Types.Enums (PickupStatus (..))
 import Infrastructure.Services.Yandex.Types.Enums (YandexOrderStatus)
 import Infrastructure.Services.Yandex.Types (YandexRequestId)
 import qualified Infrastructure.Services.Yandex.Types as YA (OrderStatus (..))
@@ -3960,6 +3961,26 @@ completeYandexPickup pickupId pool =
        SET status = $2 :: text
        WHERE pickup_id = $1 :: text
       |]
+
+cancelYandexPickup :: Text -> Hasql.Pool -> AppM (Either Text ())
+cancelYandexPickup pickupId pool = 
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $ do
+      let status = encodeToText Infrastructure.Services.Yandex.Types.Enums.Cancelled
+      recordId <- 
+        Hasql.statement (pickupId, encodeToText status) $
+         [Hasql.singletonStatement|
+           UPDATE yandex_courier_pickups
+           SET status = $2 :: text
+           WHERE pickup_id = $1 :: text
+           RETURNING id :: int8
+         |]
+      Hasql.statement (recordId) $
+       [Hasql.resultlessStatement|
+         UPDATE orders
+         SET yandex_courier_pickup_id = NULL
+         WHERE yandex_courier_pickup_id = $1 :: int8
+       |]
 
 resetOrderDimensionsAndWeight :: Text -> Hasql.Pool -> AppM (Either Text ())
 resetOrderDimensionsAndWeight orderId pool = 
