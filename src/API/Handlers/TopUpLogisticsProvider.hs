@@ -37,7 +37,7 @@ handler _ req = do
         { rtId      = transferReqId
         , rtFrom    = Payer $ _bankAccount cfg
         , rtTo      = undefined
-        , rtPurpose = undefined
+        , rtPurpose = tuplPurpose req
         , rtAmount  = tuplAmount req
         }
   let maybeTransferReq =
@@ -46,13 +46,11 @@ handler _ req = do
             let sdekCfg = _sdekConfig cfg
             in Just $ defTransferReq 
                 { rtTo = Sdek.receiver sdekCfg
-                , rtPurpose = Sdek.purpose sdekCfg 
                 }
           YANDEX ->
             let yandexCfg = _yandexConfig cfg
             in Just $ defTransferReq 
                 { rtTo = Ya.receiver yandexCfg
-                , rtPurpose = Ya.purpose yandexCfg 
                 }
           _     -> Nothing
   fmap (const (Right ())) $ forkAppM $

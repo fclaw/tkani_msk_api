@@ -799,8 +799,9 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tedr" } 
 
 data TopUpLogisticsProviderReq = 
      TopUpLogisticsProviderReq
-     { tuplAgent  :: Providers
-     , tuplAmount :: Double
+     { tuplAgent   :: Providers
+     , tuplAmount  :: Double
+     , tuplPurpose :: Text
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tupl" } ''TopUpLogisticsProviderReq)
