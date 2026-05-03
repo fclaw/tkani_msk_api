@@ -133,24 +133,29 @@ workerLogic :: (PaymentFlow, Text, GetStateRequest) -> AppM ()
 workerLogic (flow, orderId, req) = processJob orderId flow req (onSuccess flow) `catch` (handleWorkerError orderId)
 
 onSuccess :: PaymentFlow -> Text -> AppM ()
-onSuccess  flow orderId = do  
-  -- Update Telegram: Send "Green" template
-  currentTime >>= finalizeTelegram orderId "Success"
+onSuccess flow orderId = do
   eInventoryResult <- adjustInventoryForOrder orderId
-  let channel | flow == PutOnShelf = SHELF
-              | otherwise          = ORDER 
-  for_ eInventoryResult $ \case
-    StockOK msgId -> replyToOrderDetails msgId channel
-    FabricSoldOutOrPrecut msgId xs -> do
-      replyToOrderDetails msgId channel
-      for_ xs $ \case
-        RollBranch maybeMsgId renderMessage -> do
-          msg <- renderMessage
-          notifyMessage $ escapeMarkdownV2 msg
-          for_ maybeMsgId $ deleteFabric
-        PrecutBranch msgId -> deleteFabric msgId
-  when(isLeft eInventoryResult) $ $(logTM) ErrorS $ ls $ "error: " <> show (fromLeft undefined eInventoryResult)
-
+  for_ eInventoryResult $ \res -> do
+    -- Update Telegram: Send "Green" template
+    currentTime >>= finalizeTelegram orderId "Success"
+    let channel | flow == PutOnShelf = SHELF
+                | otherwise          = ORDER 
+    case res of
+      StockOK msgId -> 
+        replyToOrderDetails msgId channel
+      FabricSoldOutOrPrecut msgId xs -> do
+        replyToOrderDetails msgId channel
+        for_ xs $ \case
+          RollBranch maybeMsgId renderMessage -> do
+            msg <- renderMessage
+            notifyMessage $ escapeMarkdownV2 msg
+            for_ maybeMsgId $ deleteFabric
+          PrecutBranch msgId -> deleteFabric msgId
+  when(isLeft eInventoryResult) $ do
+    let Left err = eInventoryResult
+    let message = "Inventory adjustment failed for Order " <> orderId <> ". Error: " <> err
+    $(logTM) ErrorS $ ls $ message
+    void $ sendOrEditTelegramMessage mempty (escapeMarkdownV2 ("‼️ " <> message)) WAREHOUSE Nothing Nothing Nothing
 
 -- | Global exception handler for the worker thread.
 handleWorkerError :: Text -> SomeException -> AppM ()
@@ -371,4 +376,3 @@ deleteFabric msgId = do
                 -- It's a different, more serious error.
                 $(logTM) CriticalS $ ls $ "CRITICAL: Failed to send notification for " <> tshow msgId <> ". " <> errorText
       _ ->  $(logTM) ErrorS $ ls $ "failed to send the message " <> show ex
-
