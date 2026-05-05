@@ -247,6 +247,7 @@ data OrderRequest = OrderRequest
   , orDeliveryPointId    :: Text       -- The unique ID of the chosen delivery point.
   , orChatId             :: Int64
   , orIsPrepaid          :: Bool
+  , orBonuses            :: Maybe Int32     -- The amount of bonuses the customer wants to apply to this order.
   } deriving (Show, Generic)
 
 -- We'll need ToJSON/FromJSON instances for this to be sent over the API
@@ -669,6 +670,7 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "sir" } '
 data PutOnShelfRequest =
      PutOnShelfRequest
      { posrChatId   :: Int64
+     , posrBonuses  :: Maybe Int32
      } deriving (Show, Eq)
 
 
@@ -805,3 +807,11 @@ data TopUpLogisticsProviderReq =
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tupl" } ''TopUpLogisticsProviderReq)
+
+
+data CurrentBonusesResp =
+     CurrentBonusesResp 
+     { cbrBonuses :: Int32
+     } deriving (Show, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cbr" } ''CurrentBonusesResp)

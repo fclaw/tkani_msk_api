@@ -28,6 +28,7 @@ import Control.Monad.State.Class (get)
 import App
 import Text (encodeToText, tshow)
 import Infrastructure.Utils.OrderId (generateOrderId)
+import  Domain.Logic.BonusCalculator (calculate, TransactionResult (..))
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Types.Init as Tinkoff
@@ -45,7 +46,7 @@ import Domain.Services.Warehouse (ensureWarehousePlatformId)
 import Infrastructure.Services.Yandex.Types.Enums (Tariff (SelfPickup), PaymentMethod (AlreadyPaid, CardOnReceipt))
 import Infrastructure.Services.Telegram (MessageIdResponse (..))
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
-import Infrastructure.Database (Order, OrderItem (..), NewPaymentRecord (..), oiTotalPrice, finalizeYandexOrderRegistration, YandexOrder (..), Order (..))
+import Infrastructure.Database (Order, OrderItem (..), NewPaymentRecord (..), AddedBonuses (..), oiTotalPrice, finalizeSimpleOrderRegistration, YandexOrder (..), Order (..))
 
 
 data PlaceOrderError =
@@ -57,6 +58,7 @@ data PlaceOrderError =
      | TinkoffHttpError HttpError
      | TinkoffPaymentLinkFailed Text
      | NotificationSendFailed Text
+     | BonusesExceedAvailable Int32
      deriving Show
 
 wrap action error = withExceptT error (ExceptT action)
@@ -86,14 +88,24 @@ place orderRequest@OrderRequest {..} = do
   cfg <- lift ask
   let pool = _appDBPool cfg
     -- STEP A. Fetch items from the cart
-  items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
+  (items, currentBonusPoints) <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
-  
+
  -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
   orderId <- liftIO generateOrderId
-  let initReq = Sdek.mkInitRequest orderId items orCustomerPhone tinkoffCred
+  let initReqDraft = Sdek.mkInitRequest orderId items orCustomerPhone tinkoffCred
+
+    -- calculate bonus points for the order
+  let expendedBonuses = fromMaybe 0 orBonuses
+
+  -- check bonuses 
+  when (expendedBonuses > currentBonusPoints) $
+    except $ Left $ BonusesExceedAvailable currentBonusPoints
+ 
+  let TransactionResult {..} = calculate (Tinkoff.irAmount initReqDraft) currentBonusPoints expendedBonuses
+  let initReq = initReqDraft { Tinkoff.irAmount = netAmountToPay }
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
@@ -197,10 +209,19 @@ place orderRequest@OrderRequest {..} = do
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText ShipNow
         , nprShelfOrderId      = Nothing
+        , nprExpendedBonuses   = expendedBonuses -- in Rubles, not kopecks
         }
 
   let dbOrder = mkDbOrder orderRequest orderId telegramMsgId orderDraftJson
-  void $ wrap (finalizeYandexOrderRegistration dbOrder newPaymentRecord pool) DatabaseFailed
+
+  let addedBonuses = 
+       AddedBonuses
+       { abUserId    = orTelegramUserId
+       , abPoints    = pointsEarned -- in Rubles, not kopecks
+       , abPaymentId = undefined -- This can be set to the actual payment ID after the payment is completed, if needed
+       }
+
+  void $ wrap (finalizeSimpleOrderRegistration dbOrder newPaymentRecord addedBonuses pool) DatabaseFailed
 
   let trackingNumber = Nothing
   return OrderConfirmationDetails {..}

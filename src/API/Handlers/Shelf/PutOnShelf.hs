@@ -12,7 +12,7 @@ module API.Handlers.Shelf.PutOnShelf (handler) where
 
 import Katip
 import Data.Either (isLeft)
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Data.Text (Text, unlines, pack)
 import Control.Monad (when, void, join)
 import Data.Either (fromRight)
@@ -21,7 +21,7 @@ import Data.Foldable (for_)
 import Data.Bifunctor (first, bimap)
 import qualified Data.Text as T
 import Data.Text as T (unpack, pack)
-import Data.Maybe (isNothing, fromJust, isJust)
+import Data.Maybe (isNothing, fromJust, isJust, fromMaybe)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader.Class (ask)
@@ -45,9 +45,10 @@ import TH.Location (currentModule)
 import Infrastructure.Utils.Http (HttpError)
 import Workers.SimpleOrderOrchestrator.Sdek (mkInitRequest, formatOrderItemLine)
 import Utils.Telegram.Markdown (escapeMarkdownV2)
+import  Domain.Logic.BonusCalculator (calculate, TransactionResult (..))
 import Infrastructure.Utils.OrderId (generateOrderId)
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
-import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..))
+import Infrastructure.Database (storeTelegramMessageDetails, TelegramMessageDetails (..), AddedBonuses (..))
 import Infrastructure.Services.Types (PaymentProvider (Tinkoff))
 import qualified Infrastructure.Services.Tinkoff.Types.QR as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
@@ -64,15 +65,17 @@ data PutOnShelfError
   | DatabaseFailed Text              -- General DB error
   | CapacityExceeded                 -- Shelf capacity exceeded
   | CartEmpty                        -- No items in the cart to put on shelf
+  | BonusesExceedAvailable Int32      -- User tried to use more bonuses than they have
   deriving (Show)
 
 
 wrap action error = withExceptT error (ExceptT action)
 
 handler :: Int64 -> PutOnShelfRequest -> AppM (ApiResponse ())
-handler userId PutOnShelfRequest {posrChatId=chatId} = do
+handler userId PutOnShelfRequest {posrChatId=chatId, posrBonuses=maybeBonuses} = do
   -- 1. Run the core business logic.
-  eResult <- runExceptT (putOnShelf userId)
+  let bonuses = fromMaybe 0 maybeBonuses
+  eResult <- runExceptT (putOnShelf userId bonuses)
   -- 2. Pattern match on the result to build the final API response.
   case eResult of
     -- THE SUCCESS CASE
@@ -112,18 +115,18 @@ handler userId PutOnShelfRequest {posrChatId=chatId} = do
           -- Return a user-friendly, generic failure response
           return $ Left $ mkError "Failed to obtain payment options. See server logs for details."  
 
-putOnShelf :: Int64 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
-putOnShelf userId = do
+putOnShelf :: Int64 -> Int32 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
+putOnShelf userId bonuses = do
   cfg <- ask
   let pool = _appDBPool cfg
   shelfStatus <- wrap(getShelfStatus userId pool) DatabaseFailed
   case shelfStatus of
-    Active     -> onSuccess userId
+    Active     -> onSuccess userId bonuses
     status     -> return $ mkDefPutOnShelfPaymentOptions { pspoShelfStatus = status }
 
 
-onSuccess :: Int64 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
-onSuccess userId = do
+onSuccess :: Int64 -> Int32 -> ExceptT PutOnShelfError AppM PutOnShelfPaymentOptions
+onSuccess userId bonuses = do
   cfg <- ask
   let pool = _appDBPool cfg
     -- fetch items
@@ -131,6 +134,10 @@ onSuccess userId = do
 
   when (isNothing maybeDetails) $ except $ Left CartEmpty
   let PutOnShelfDetails {..} = fromJust maybeDetails
+
+  -- check bonuses
+  when (bonuses > posdBonuses) $ 
+    except $ Left $ BonusesExceedAvailable posdBonuses
 
   -- check capacity overflow
   let totalCount = length posdItems + fromIntegral posdItemsOnShelfCount
@@ -141,7 +148,11 @@ onSuccess userId = do
   orderId <- fmap ((<>) "SHELF-") $ liftIO generateOrderId
   -- prepare Tinkoff init request
   let tinkoffCred = _tinkoffCred cfg
-  let initReq = mkInitRequest orderId posdItems posdPhone tinkoffCred
+  let _initReq = mkInitRequest orderId posdItems posdPhone tinkoffCred
+
+  let TransactionResult {..} = calculate (Tinkoff.irAmount _initReq) (fromIntegral posdBonuses) (fromIntegral posdBonuses) -- This is just to ensure that the BonusCalculator module is included in the build, even if we don't use the result here. The actual bonus calculation and application can be implemented in the future as needed.
+
+  let initReq = _initReq { Tinkoff.irAmount = netAmountToPay }
 
   $(logTM) InfoS $ ls $ "API.Handlers.Shelf.PutOnShelf:initReq " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
@@ -195,6 +206,7 @@ onSuccess userId = do
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText PutOnShelf
         , nprShelfOrderId      = Just orderId
+        , nprExpendedBonuses   = pointsUsed -- in Rubles, not kopecks
         }
   
   -- Generate a notification message ID placeholder (could be from Telegram)
@@ -218,6 +230,13 @@ onSuccess userId = do
   eTelResp <- lift $ sendOrEditTelegramMessage mempty message SHELF Nothing Nothing Nothing
   let notificationId = fromRight 0 $ fmap message_id eTelResp
 
+  let addedBonuses = 
+       AddedBonuses
+       { abUserId    = userId
+       , abPoints    = pointsEarned -- in Rubles, not kopecks
+       , abPaymentId = undefined -- This can be set to the actual payment ID after the payment is completed, if needed
+       }
+
   -- Finalize the entire "put on shelf" checkout process within a single database transaction.
   -- This involves three critical steps:
   --   1. Create the 'shelf_order' record.
@@ -226,7 +245,7 @@ onSuccess userId = do
   -- The entire block is transactional: if any step fails, all previous steps are rolled back,
   -- ensuring the database remains in a consistent state. 'wrap' handles any database
   -- exception by converting it into our application-specific 'DatabaseFailed' error.
-  void $ wrap (finalizeShelfCheckout userId orderId notificationId newPaymentRecord pool) DatabaseFailed
+  void $ wrap (finalizeShelfCheckout userId orderId notificationId newPaymentRecord addedBonuses pool) DatabaseFailed
 
   let getStateRequest = 
         Tinkoff.GetStateRequest

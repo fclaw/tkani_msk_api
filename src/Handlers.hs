@@ -56,6 +56,7 @@ import qualified API.Handlers.Yandex.FinalizeShipment as Yandex.FinalizeShipment
 
 import qualified API.Handlers.TopUpLogisticsProvider as TopUpLogisticsProvider
 
+import qualified API.Handlers.GetCurrentBonuses as GetCurrentBonuses
 
 
 -- This is the implementation of our server.
@@ -108,4 +109,6 @@ apiHandlers = Routes
   , _finalizeShipment          = Yandex.FinalizeShipment.handler
 
   , _topUpLogisticsProvider    = TopUpLogisticsProvider.handler
+
+  , _getCurrentBonuses         = GetCurrentBonuses.handler
   }

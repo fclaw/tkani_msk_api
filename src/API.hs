@@ -320,6 +320,13 @@ data Routes route = Routes
       :> ReqBody '[JSON] TopUpLogisticsProviderReq
       :> Post '[JSON] (ApiResponse ())
 
+    , _getCurrentBonuses 
+      :: route
+      :- "bonuses"
+      :> Capture "user_id" Int64
+      :> RateLimitPerUser (Second 1) 'Nothing
+      :> Get '[JSON] (ApiResponse CurrentBonusesResp)
+
   } deriving (Generic)
 
 

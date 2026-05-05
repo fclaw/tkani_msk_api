@@ -98,6 +98,7 @@ data NewPaymentRecord =
     , nprToken              :: Text
     , nprPaymentFlow        :: Text
     , nprShelfOrderId       :: Maybe Text
+    , nprExpendedBonuses    :: Int32
     }
 
 
@@ -136,6 +137,7 @@ data PutOnShelfDetails =
      , posdPhone             :: Text
      , posdItems             :: [OrderItem]
      , posdItemsOnShelfCount :: Int32
+     , posdBonuses           :: Int32
      }
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "posd" } ''PutOnShelfDetails)
@@ -513,3 +515,23 @@ data FabricLifeCycleInfo =
      } deriving (Show, Eq, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "fcli" } ''FabricLifeCycleInfo)
+
+
+data AddedBonuses =
+     AddedBonuses
+     { abUserId    :: Int64
+     , abPoints    :: Int32
+     , abPaymentId :: Int64
+     } deriving (Show, Eq, Generic)
+
+
+data BonusesDetails =
+     BonusesDetails
+     { bdUserId          :: Int64
+     , bdEarnedBonuses   :: Int32
+     , bdExpendedBonuses :: Int32
+     , bdCurrentBonuses  :: Int32
+     , bdChatId          :: Int64
+     } deriving (Show, Eq, Generic)
+
+$(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "bd" } ''BonusesDetails)

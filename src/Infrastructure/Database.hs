@@ -103,8 +103,8 @@ module Infrastructure.Database
   , fetchOrderDetailsForYaml
   , fetchLostParcels
   , fetchPreferredSdekPoint
-    -- Yandex 
-  , finalizeYandexOrderRegistration
+  , finalizeSimpleOrderRegistration
+    -- Yandex
   , getYandexOrderDetailsForPricing
   , storeYandexOrderParticulars
   , getYandexOrdersInTransit
@@ -149,6 +149,10 @@ module Infrastructure.Database
   , createRubleTransferRecord
   , fetchRubleTransferStatuses
   , updateRubleTransferStatus
+   -- bonuses
+  , fetchBonusesDetails
+  , adjustBonuses
+  , getCurrentBonuses
   ) where
 
 
@@ -440,11 +444,20 @@ getOrderItemsStatement =
 -- | Fetches the final, calculated price for a fabric order item.
 --   The entire calculation (per-meter vs. fixed price) is handled by the SQL query.
 --   Returns 'Nothing' if the fabric or pre-cut is not found.
-getOrderItems :: Int64 -> Hasql.Pool -> AppM (Either Text [OrderItem])
+getOrderItems :: Int64 -> Hasql.Pool -> AppM (Either Text ([OrderItem], Int32))
 getOrderItems userId pool = 
   fmap (first (pack . show)) $
-    runTransactionM pool Hasql.Write $ 
-      userId `Hasql.statement` getOrderItemsStatement
+    runTransactionM pool Hasql.Read $ do
+      items <- userId `Hasql.statement` getOrderItemsStatement
+      maybePoints <- 
+        Hasql.statement 
+         userId 
+         [Hasql.maybeStatement| 
+           SELECT points :: int4 
+           FROM bonuses 
+           WHERE telegram_user_id = $1 :: int8
+         |]
+      return (items, fromMaybe 0 maybePoints)
 
 placeNewOrderStatement :: Hasql.Statement (Text, Text, Text, Int64, Int64, Maybe Int64, Maybe Int64) Int64
 placeNewOrderStatement =
@@ -870,7 +883,8 @@ insertNewPaymentRecordStatement =
       error,
       token,
       payment_flow,
-      shelf_order_id
+      shelf_order_id,
+      bonuses
     ) VALUES (
       $1 :: text?,
       cast($2 :: text as payment_provider),
@@ -880,7 +894,8 @@ insertNewPaymentRecordStatement =
       $6 :: text?,
       $7 :: text,
       CAST(LOWER($8 :: text) as payment_flow_types),
-      $9 :: text?
+      $9 :: text?,
+      $10 :: int4
     )
     RETURNING id :: int8
   |]
@@ -3072,7 +3087,8 @@ getPutOnDShelfDetailsStatement =
       'phone', s.user_phone,
       'items', ci.items,
       'items_on_shelf_count', 
-       COALESCE(COUNT(si.id) FILTER (WHERE si.status = 'ON_SHELF'), 0)
+       COALESCE(COUNT(si.id) FILTER (WHERE si.status = 'ON_SHELF'), 0),
+       'bonuses', COALESCE((SELECT points FROM bonuses WHERE telegram_user_id = $1 :: int8), 0)
      ) :: jsonb
     FROM shelves AS s
     LEFT JOIN shelf_items AS si
@@ -3089,16 +3105,25 @@ getPutOnDShelfDetailsStatement =
   |]
 
 
-finalizeShelfCheckout :: Int64 -> Text -> Int64 -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
-finalizeShelfCheckout userId orderId notificationId paymentRecord pool =
+finalizeShelfCheckout :: Int64 -> Text -> Int64 -> NewPaymentRecord -> AddedBonuses -> Hasql.Pool -> AppM (Either Text ())
+finalizeShelfCheckout userId orderId notificationId paymentRecord addedBonuses pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
       -- Step 1: Create the main shelf_order record.
      Hasql.statement (userId, orderId, notificationId) $
        createShelfOrderStatement userId orderId notificationId
      -- Step 2: Create the associated payment record.
-     Hasql.statement paymentRecord $
+     paymentRecordId <- Hasql.statement paymentRecord $
        insertNewPaymentRecordStatement
+     -- Step 2.5: Add bonuses to the user's account if applicable.
+     let addedBonusesWithPayment = addedBonuses { abPaymentId = paymentRecordId }
+     Hasql.statement addedBonusesWithPayment $
+       lmap $(recordToTuple ''AddedBonuses)
+       [Hasql.resultlessStatement|
+        INSERT INTO added_bonuses
+        (telegram_user_id, points, payment_id)
+        VALUES ($1 :: int8, $2 :: int4, $3 :: int8)
+       |]
      -- Step 3: Clear the user's cart.
      Hasql.statement userId $ clearCartStatement
 
@@ -3765,12 +3790,23 @@ setDeliveryCost orderId deliveryCost pool =
       WHERE id = $1 :: text
      |]
 
-finalizeYandexOrderRegistration :: Order -> NewPaymentRecord -> Hasql.Pool -> AppM (Either Text ())
-finalizeYandexOrderRegistration order paymentRecord pool =
+
+finalizeSimpleOrderRegistration :: Order -> NewPaymentRecord -> AddedBonuses -> Hasql.Pool -> AppM (Either Text ())
+finalizeSimpleOrderRegistration order paymentRecord addedBonuses pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $ do
       void $ placeNewOrderTransaction order
-      void $ Hasql.statement paymentRecord insertNewPaymentRecordStatement
+      paymentId <- Hasql.statement paymentRecord insertNewPaymentRecordStatement
+
+      let addedBonusesWithPayment = addedBonuses { abPaymentId = paymentId }
+      Hasql.statement addedBonusesWithPayment $
+       lmap $(recordToTuple ''AddedBonuses) $
+       [Hasql.resultlessStatement|
+        INSERT INTO added_bonuses
+        (telegram_user_id, points, payment_id)
+        VALUES ($1 :: int8, $2 :: int4, $3 :: int8)
+       |]
+
       Hasql.statement (_orderTelegramUserId order) clearCartStatement
   
 getYandexOrderDetailsForPricing :: Text -> Hasql.Pool -> AppM (Either Text YandexOrderDetailsForPricing)
@@ -4647,3 +4683,56 @@ updateRubleTransferStatus transferId newStatus pool =
               updated_at = NOW()
           WHERE id = $1 :: int8
         |]
+
+
+fetchBonusesDetails :: Int64 -> Hasql.Pool -> AppM (Either Text BonusesDetails)
+fetchBonusesDetails paymentId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (paymentId) $
+      rmap (extractADT . convertFromJson @BonusesDetails)
+      [Hasql.singletonStatement|
+        SELECT
+          jsonb_build_object(
+            'user_id', ab.telegram_user_id,
+            'earned_bonuses', ab.points,
+            'expended_bonuses', COALESCE(p.bonuses, 0),
+            'current_bonuses', COALESCE(b.points, 0),
+            'chat_id', otb.chat_id
+          ) :: jsonb
+        FROM payments AS p 
+        INNER JOIN added_bonuses AS ab
+        ON ab.payment_id = p.id
+        INNER JOIN order_telegram_bindings AS otb
+        ON otb.order_id = COALESCE(p.order_id, p.shelf_order_id)
+        LEFT JOIN bonuses AS b
+        ON b.telegram_user_id = ab.telegram_user_id
+        WHERE p.id = $1 :: int8
+      |]
+
+adjustBonuses :: Int64 -> Int32 -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+adjustBonuses paymentId earnedBonuses expendedBonuses pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Write $
+      Hasql.statement 
+        ( paymentId
+        , earnedBonuses
+        , expendedBonuses) $
+      [Hasql.resultlessStatement|
+        INSERT INTO bonuses (telegram_user_id, points)
+        VALUES ($1 :: int8, $2 :: int4)
+        ON CONFLICT (telegram_user_id) DO UPDATE
+        SET points = bonuses.points + $2 :: int4 - $3 :: int4
+      |]
+
+getCurrentBonuses :: Int64 -> Hasql.Pool -> AppM (Either Text Int32)
+getCurrentBonuses userId pool =
+  fmap (first (pack . show)) $
+    runTransactionM pool Hasql.Read $
+      Hasql.statement (userId) $
+       rmap (fromMaybe 0)
+       [Hasql.maybeStatement|
+        SELECT points :: int4 
+        FROM bonuses
+        WHERE telegram_user_id = $1 :: int8 
+       |]

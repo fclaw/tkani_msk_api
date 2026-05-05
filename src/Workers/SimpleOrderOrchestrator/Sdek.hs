@@ -40,7 +40,7 @@ import Control.Monad.Reader.Class (ask)
 import System.Timeout (timeout)
 import Data.List (find)
 import Data.Coerce (coerce)
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
@@ -54,10 +54,11 @@ import App (AppM, SdekJob (..), PaymentFlow (ShipNow), currentTime, render, Conf
 import Infrastructure.Utils.OrderId (generateOrderId)
 import Infrastructure.Services.Telegram (sendOrEditTelegramMessage, deleteMessage, MessageIdResponse (..))
 import TH.Location (currentModule)
+import  Domain.Logic.BonusCalculator (calculate, TransactionResult (..))
 import Infrastructure.Services.Sdek.CachedTariffs (getTariffs)
 import qualified Infrastructure.Services.Sdek as Sdek
 import qualified Infrastructure.Services.Sdek.Types as Sdek
-import Infrastructure.Database (getOrderItems, placeNewOrder, insertNewPaymentRecord, clearCart, NewPaymentRecord (..), OrderItem)
+import Infrastructure.Database (getOrderItems, placeNewOrder, insertNewPaymentRecord, finalizeSimpleOrderRegistration, clearCart, NewPaymentRecord (..), OrderItem, AddedBonuses (..))
 import qualified Infrastructure.Database as DB
 import qualified Infrastructure.Services.Tinkoff as Tinkoff
 import qualified Infrastructure.Services.Tinkoff.Security as Tinkoff
@@ -88,6 +89,7 @@ data PlaceOrderError
   | TariffNetworkError HttpError
   | TariffError Text
   | NetworkError HttpError
+  | BonusesExceedAvailable Int32
   deriving (Show)
 
 
@@ -109,7 +111,7 @@ place orderRequest@OrderRequest {..} = do
   let shipmentPoint = Sdek.dropOffPoint sdekConfig
 
   -- fetch total price for a given fabric
-  items <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
+  (items, currentBonusPoints) <- wrap (getOrderItems orTelegramUserId pool) DatabaseFailed
 
   when (length items == 0) $ except $ Left CartEmpty
 
@@ -125,7 +127,18 @@ place orderRequest@OrderRequest {..} = do
 
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
-  let initReq = mkInitRequest orderId items orCustomerPhone tinkoffCred
+  let initReqDraft = mkInitRequest orderId items orCustomerPhone tinkoffCred
+
+  -- calculate bonus points for the order
+  let expendedBonuses = fromMaybe 0 orBonuses
+  
+  -- check bonuses 
+  when (expendedBonuses > currentBonusPoints) $ 
+    except $ Left $ BonusesExceedAvailable currentBonusPoints
+ 
+
+  let TransactionResult {..} = calculate (Tinkoff.irAmount initReqDraft) currentBonusPoints expendedBonuses
+  let initReq = initReqDraft { Tinkoff.irAmount = netAmountToPay }
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- 
@@ -181,12 +194,12 @@ place orderRequest@OrderRequest {..} = do
     NotificationSendFailed $
     void $ Sdek.cancelOrder sdekUuid
 
-  -- STEP E. Save the order in database
-  let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId _trackingNumber telegramMsgId
+  -- STEP E. Finish up the flow by saving the order to the database, along with the payment record and the expended/earned bonuses.
   let clearArtifacts = do
         void $ Sdek.cancelOrder sdekUuid
         void $ deleteMessage (coerce telegramMsgId) ORDER
-  void $ wrapOrCancel (placeNewOrder dbOrder pool) DatabaseFailed clearArtifacts
+
+  let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId _trackingNumber telegramMsgId
 
   let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
   let newPaymentRecord = 
@@ -200,8 +213,17 @@ place orderRequest@OrderRequest {..} = do
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText ShipNow
         , nprShelfOrderId      = Nothing
+        , nprExpendedBonuses   = expendedBonuses -- in Rubles, not kopecks
         }
-  void $ wrapOrCancel (insertNewPaymentRecord newPaymentRecord pool) DatabaseFailed clearArtifacts
+
+  let addedBonuses = 
+       AddedBonuses
+       { abUserId    = orTelegramUserId
+       , abPoints    = pointsEarned -- in Rubles, not kopecks
+       , abPaymentId = undefined -- This can be set to the actual payment ID after the payment is completed, if needed
+       }
+ 
+  void $ wrapOrCancel (finalizeSimpleOrderRegistration dbOrder newPaymentRecord addedBonuses pool) NotificationSendFailed clearArtifacts
 
   -- STEP F. forward paymentId to the poller
   let getStateRequest = 
@@ -218,15 +240,12 @@ place orderRequest@OrderRequest {..} = do
         }
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (ShipNow, orderId, getStateRequest)) . _tinkoffPaymentChan)
 
-  -- clear out the cart
-  void $ wrapOrCancel (clearCart orTelegramUserId pool) DatabaseFailed clearArtifacts
-
   let trackingNumber = Just _trackingNumber 
   return OrderConfirmationDetails {..}
 
 
 tryTariffs :: OrderRequest -> Text -> [Sdek.Tariff] -> [OrderItem] -> ExceptT PlaceOrderError AppM (UUID.UUID, Int)
-tryTariffs request shipmentPoint tariffs items = do 
+tryTariffs request shipmentPoint tariffs items = do
   maybeSdekRes <- wrap(getTariffs shipmentPoint (fromMaybe undefined (T.stripPrefix "sdek_" (orDeliveryPointId request)))) TariffNetworkError
   let eSdekRes = maybe (Left "getTariffs:empty list") Right maybeSdekRes
   availableTariffs <- except $ (first TariffError) eSdekRes

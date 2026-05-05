@@ -110,6 +110,7 @@ import Workers.ExtraDiscountPromotionScheduler (runExtraDiscountPromotionSchedul
 import Workers.FabricLifecycleManager (runFabricLifecycleManager)
 import Workers.InventoryStagnationJanitor (runInventoryStagnationJanitor)
 import Workers.MoneyTransferStatusPoller  (runMoneyTransferStatusPoller)
+import Workers.BonusesWorker (runBonusesWorker)
 -- workers END
 import qualified Infrastructure.Services.Tinkoff.Manager as Tinkoff (setupManager)
 import Infrastructure.Services.Overpass (fetchAllRussianMetros)
@@ -161,7 +162,7 @@ data Workers =
       | FabricLifecycleManager
       | InventoryStagnationJanitor
       | MoneyTransferStatusPoller
-
+      | BonusesWorker
 
 
 
@@ -203,7 +204,7 @@ instance Show Workers where
   show FabricLifecycleManager             = "Fabric Lifecycle Manager"
   show InventoryStagnationJanitor         = "Inventory Stagnation Janitor"
   show MoneyTransferStatusPoller          = "Money Transfer Status Poller"
-
+  show BonusesWorker                      = "Bonuses Worker"
 --
 
 
@@ -654,6 +655,13 @@ main = do
                   appMToHandler runMoneyTransferStatusPoller
                     >>= showErrorInWorker
                           MoneyTransferStatusPoller)
+              , (BonusesWorker,
+                  appMToHandler (
+                    runBonusesWorker 
+                     connInfo 
+                     appMToHandler)
+                    >>= showErrorInWorker
+                          BonusesWorker)
               ]
 
         let courierPickupTasks 

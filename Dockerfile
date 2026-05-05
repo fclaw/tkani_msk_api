@@ -16,7 +16,7 @@ COPY shell.nix ./
 COPY stack.yaml package.yaml *.cabal ./
 
 # Use a specific cache location for Docker layer caching
-RUN nix-shell shell.nix --run "stack build --only-dependencies --system-ghc --no-nix"
+RUN nix-shell shell.nix --run "stack build --test --only-dependencies --system-ghc --no-nix"
 
 # 2. BUILD BINARY
 COPY src ./src
@@ -24,7 +24,7 @@ COPY app ./app
 COPY sql ./sql
 # COPY test ./test 
 
-RUN nix-shell shell.nix --run "stack build --copy-bins --system-ghc --no-nix"
+RUN nix-shell shell.nix --run "stack build --test --copy-bins --system-ghc --no-nix"
 
 # 3. PREPARE MINIMAL RUNTIME CLOSURE (The Optimization Magic)
 #    a. Instantiate the closure.nix file
