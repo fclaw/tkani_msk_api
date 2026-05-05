@@ -811,7 +811,8 @@ $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "tupl" } 
 
 data CurrentBonusesResp =
      CurrentBonusesResp 
-     { cbrBonuses :: Int32
+     { cbrTotalBalance :: Int32
+     , cbrMaxSpendable :: Int32
      } deriving (Show, Generic)
 
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "cbr" } ''CurrentBonusesResp)

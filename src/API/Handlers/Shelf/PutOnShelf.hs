@@ -148,11 +148,11 @@ onSuccess userId bonuses = do
   orderId <- fmap ((<>) "SHELF-") $ liftIO generateOrderId
   -- prepare Tinkoff init request
   let tinkoffCred = _tinkoffCred cfg
-  let _initReq = mkInitRequest orderId posdItems posdPhone tinkoffCred
+  
+  let totalPrice = round $ sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
+  let TransactionResult {..} = calculate totalPrice (fromIntegral posdBonuses) (fromIntegral posdBonuses) -- This is just to ensure that the BonusCalculator module is included in the build, even if we don't use the result here. The actual bonus calculation and application can be implemented in the future as needed.
 
-  let TransactionResult {..} = calculate (Tinkoff.irAmount _initReq) (fromIntegral posdBonuses) (fromIntegral posdBonuses) -- This is just to ensure that the BonusCalculator module is included in the build, even if we don't use the result here. The actual bonus calculation and application can be implemented in the future as needed.
-
-  let initReq = _initReq { Tinkoff.irAmount = netAmountToPay }
+  let initReq = mkInitRequest orderId posdItems posdPhone tinkoffCred bonuses
 
   $(logTM) InfoS $ ls $ "API.Handlers.Shelf.PutOnShelf:initReq " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError

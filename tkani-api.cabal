@@ -74,6 +74,7 @@ library
       API.Handlers.ClearCart
       API.Handlers.DeleteFabric
       API.Handlers.GetCatalogSummary
+      API.Handlers.GetCurrentBonuses
       API.Handlers.GetFabricPreview
       API.Handlers.GetProviders
       API.Handlers.GetSdekPointFullAddress

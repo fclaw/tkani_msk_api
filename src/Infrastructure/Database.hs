@@ -4725,14 +4725,54 @@ adjustBonuses paymentId earnedBonuses expendedBonuses pool =
         SET points = bonuses.points + $2 :: int4 - $3 :: int4
       |]
 
-getCurrentBonuses :: Int64 -> Hasql.Pool -> AppM (Either Text Int32)
+getCurrentBonuses :: Int64 -> Hasql.Pool -> AppM (Either Text (Int32, Int32))
 getCurrentBonuses userId pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Read $
       Hasql.statement (userId) $
-       rmap (fromMaybe 0)
+       rmap (fromMaybe (0, 0))
        [Hasql.maybeStatement|
-        SELECT points :: int4 
-        FROM bonuses
-        WHERE telegram_user_id = $1 :: int8 
+         WITH total_sum AS (
+           SELECT
+            c.telegram_user_id AS user_id,
+            ROUND(
+              ci.length_m * 
+              f.price_per_meter * 
+              (1 - calculate_total_discount(
+                f.discount, 
+                f.lifecycle :: text, 
+                f.is_extra_discount_eligible))) AS price
+           FROM carts as c 
+           INNER JOIN cart_items as ci
+           ON c.id = ci.cart_id
+           INNER JOIN fabrics as f
+           ON ci.fabric_id = f.id
+           WHERE c.telegram_user_id = $1 :: int8
+
+           UNION ALL
+
+           SELECT
+            c.telegram_user_id AS user_id,
+            ROUND(
+              pc.price_rub * 
+              (1 - calculate_total_discount(
+                f.discount,
+                f.lifecycle :: text, 
+                f.is_extra_discount_eligible))) AS price
+           FROM cart_items as ci
+           INNER JOIN carts as c
+           ON c.id = ci.cart_id
+           INNER JOIN pre_cuts as pc
+           ON pc.id = ci.pre_cut_id
+           INNER JOIN fabrics as f
+           ON pc.fabric_id = f.id
+         )
+        SELECT
+         b.points :: int4,
+         COALESCE(SUM(ts.price), 0) :: int4
+        FROM bonuses AS b
+        LEFT JOIN total_sum AS ts
+        ON b.telegram_user_id = ts.user_id
+        WHERE b.telegram_user_id = $1 :: int8
+        GROUP BY b.points
        |]

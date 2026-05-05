@@ -45,7 +45,7 @@ prepareAndSchedulePickup = do
   -- Get the current date to pass to the query for the idempotency check
   today <- liftIO $ localDay . zonedTimeToLocalTime <$> getZonedTime
   -- 1. Atomically find and update the orders.
-  --    The query now has built-in guards.
+  --    The query now has built-in guards.ScheduledForPickup
   cfg <- ask
   let pool = _appDBPool cfg
   let yaConfig = _yandexConfig cfg

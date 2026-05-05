@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 
 module Workers.SimpleOrderOrchestrator.Sdek 
       ( PlaceOrderError (..)
@@ -23,6 +24,7 @@ import qualified Data.Text as T
 import qualified Data.Char as C
 import Data.Text (Text)
 import Data.Maybe
+import Data.Functor ((<&>))
 import Data.Bifunctor (first, second)
 import Data.Traversable (for)
 import Data.Foldable (for_)
@@ -127,7 +129,6 @@ place orderRequest@OrderRequest {..} = do
 
   -- STEP B. Generate the payment link
   let tinkoffCred = _tinkoffCred cfg
-  let initReqDraft = mkInitRequest orderId items orCustomerPhone tinkoffCred
 
   -- calculate bonus points for the order
   let expendedBonuses = fromMaybe 0 orBonuses
@@ -136,9 +137,9 @@ place orderRequest@OrderRequest {..} = do
   when (expendedBonuses > currentBonusPoints) $ 
     except $ Left $ BonusesExceedAvailable currentBonusPoints
  
-
-  let TransactionResult {..} = calculate (Tinkoff.irAmount initReqDraft) currentBonusPoints expendedBonuses
-  let initReq = initReqDraft { Tinkoff.irAmount = netAmountToPay }
+  let price = round $ sum [ DB.oiTotalPrice item | item <- items]
+  let TransactionResult {..} = calculate price currentBonusPoints expendedBonuses
+  let initReq = mkInitRequest orderId items orCustomerPhone tinkoffCred expendedBonuses
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- 
@@ -440,14 +441,43 @@ formatDescriptionLine (index, item) =
 
 
 -- | Main function to construct the Tinkoff InitRequest for a multi-item order.
-mkInitRequest :: Text -> [DB.OrderItem] -> Text -> TinkoffCredentials -> Tinkoff.InitRequest
-mkInitRequest orderId items customerPhone tinkoffCred =
+mkInitRequest :: Text -> [DB.OrderItem] -> Text -> TinkoffCredentials -> Int32 -> Tinkoff.InitRequest
+mkInitRequest orderId items customerPhone tinkoffCred bonuses =
   let
     -- 1. Create a fiscal receipt item for EACH item in the cart.
     receiptItems = map mkReceiptItem items
 
     -- 2. Calculate the total amount for the entire order.
-    totalAmountKopecks = sum $ map Tinkoff.riAmount receiptItems
+    totalAmountKopecks = sum (map Tinkoff.riAmount receiptItems)
+
+    targetAmountKopecks = totalAmountKopecks - toKopecks (fromIntegral bonuses)
+
+    applyDiscount :: [Tinkoff.ReceiptItem] -> Int64 -> [Tinkoff.ReceiptItem]
+    applyDiscount items target = 
+      let 
+        
+          ratio = fromIntegral target / fromIntegral totalAmountKopecks :: Double
+          
+          initialItems = init items
+          lastItem = last items
+          
+          newInitialItems = initialItems <&> \item ->
+            let newPrice = floor (fromIntegral (Tinkoff.riPrice item) * ratio)
+            in item { 
+                Tinkoff.riPrice  = newPrice,
+                Tinkoff.riAmount = newPrice * floor (Tinkoff.riQuantity item) 
+              }
+          
+          currentSum = sum (map Tinkoff.riAmount newInitialItems)
+          
+          finalLastItem = lastItem {
+              Tinkoff.riAmount = target - currentSum,
+              -- Цену вычисляем делением остатка на количество
+              Tinkoff.riPrice = (target - currentSum) `div` floor (Tinkoff.riQuantity lastItem)
+          }
+      in newInitialItems <> [finalLastItem]
+
+    receiptItemsWithDiscount = applyDiscount receiptItems targetAmountKopecks
 
     -- 3. === BUILD THE DESCRIPTION LIST ===
     --    First, format each item into a line.
@@ -463,20 +493,24 @@ mkInitRequest orderId items customerPhone tinkoffCred =
     terminalKey = tinkoffTerminalKey tinkoffCred
     terminalSecret = tinkoffSecret tinkoffCred
     tokenData = Tinkoff.InitToken
-                  (T.pack $ show totalAmountKopecks)
+                  (T.pack $ show targetAmountKopecks)
                   orderId
                   (Just description)
                   terminalKey
                   terminalSecret
     signature = Tinkoff.generatedInitToken tokenData
     customerData = Tinkoff.defCustomerData { Tinkoff.cdPhone = Just customerPhone }
-    receiptData = Tinkoff.defReceiptData {Tinkoff.rdPhone = Just customerPhone, Tinkoff.rdItems = receiptItems}
+    receiptData = 
+      Tinkoff.defReceiptData {
+        Tinkoff.rdPhone = Just customerPhone
+      , Tinkoff.rdItems = receiptItemsWithDiscount
+      }
   in
      -- 5. Construct the final request.
   Tinkoff.InitRequest
     { Tinkoff.irOrderId = orderId
     , Tinkoff.irTerminalKey = terminalKey
-    , Tinkoff.irAmount = totalAmountKopecks
+    , Tinkoff.irAmount = targetAmountKopecks
     , Tinkoff.irDescription = Just description
     , Tinkoff.irToken = signature
     , Tinkoff.irData = Just customerData

@@ -104,8 +104,9 @@ place orderRequest@OrderRequest {..} = do
   when (expendedBonuses > currentBonusPoints) $
     except $ Left $ BonusesExceedAvailable currentBonusPoints
  
-  let TransactionResult {..} = calculate (Tinkoff.irAmount initReqDraft) currentBonusPoints expendedBonuses
-  let initReq = initReqDraft { Tinkoff.irAmount = netAmountToPay }
+  let price = round $ sum [ oiTotalPrice item | item <- items]
+  let TransactionResult {..} = calculate price currentBonusPoints expendedBonuses
+  let initReq = Sdek.mkInitRequest orderId items orCustomerPhone tinkoffCred expendedBonuses
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
   tinkoffResp :: Tinkoff.InitResponse <- wrap (Tinkoff.initiateTinkoffPayment initReq) TinkoffHttpError
