@@ -48,7 +48,8 @@ import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar)
 import Control.Concurrent.STM (writeTChan, atomically, readTVar)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Control.Concurrent.STM.TMVar (newEmptyTMVarIO, takeTMVar)
-
+ 
+import Debug.Trace (trace)
 
 
 import API.Types (OrderRequest (..), OrderConfirmationDetails (..), formatStatus, OrderStatus (Registered))
@@ -137,8 +138,17 @@ place orderRequest@OrderRequest {..} = do
   when (expendedBonuses > currentBonusPoints) $ 
     except $ Left $ BonusesExceedAvailable currentBonusPoints
  
-  let price = round $ sum [ DB.oiTotalPrice item | item <- items]
-  let TransactionResult {..} = calculate price currentBonusPoints expendedBonuses
+  let totalPriceInKopecks = toKopecks $ sum [ DB.oiTotalPrice item | item <- items]
+
+  $(logTM) InfoS $ ls $ 
+    "transactional result params: price (in kopecks) " <> tshow totalPriceInKopecks <> 
+    ", current bonuses: " <> tshow currentBonusPoints <> 
+    ", expended bonuses: " <> tshow expendedBonuses
+  
+  let transactionalRes@TransactionResult {..} = calculate totalPriceInKopecks currentBonusPoints expendedBonuses
+  
+  $(logTM) InfoS $ ls $ "transactional result: " <> tshow transactionalRes
+
   let initReq = mkInitRequest orderId items orCustomerPhone tinkoffCred expendedBonuses
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
@@ -202,19 +212,18 @@ place orderRequest@OrderRequest {..} = do
 
   let dbOrder = mkDbOrder orderRequest optimalTariff sdekUuid orderId _trackingNumber telegramMsgId
 
-  let totalPrice = sum [ DB.oiTotalPrice item | item <- items]
   let newPaymentRecord = 
         NewPaymentRecord
         { nprOrderId           = Just orderId
         , nprProvider          = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks     = round totalPrice
+        , nprAmountKopecks     = netAmountToPay
         , nprPaymentUrl        = paymentLink
         , nprError             = Nothing
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText ShipNow
         , nprShelfOrderId      = Nothing
-        , nprExpendedBonuses   = expendedBonuses -- in Rubles, not kopecks
+        , nprExpendedBonuses   = pointsUsed -- in Rubles, not kopecks
         }
 
   let addedBonuses = 
@@ -449,6 +458,7 @@ mkInitRequest orderId items customerPhone tinkoffCred bonuses =
 
     -- 2. Calculate the total amount for the entire order.
     totalAmountKopecks = sum (map Tinkoff.riAmount receiptItems)
+    
 
     targetAmountKopecks = totalAmountKopecks - toKopecks (fromIntegral bonuses)
 
@@ -461,21 +471,22 @@ mkInitRequest orderId items customerPhone tinkoffCred bonuses =
           initialItems = init items
           lastItem = last items
           
-          newInitialItems = initialItems <&> \item ->
-            let newPrice = floor (fromIntegral (Tinkoff.riPrice item) * ratio)
-            in item { 
-                Tinkoff.riPrice  = newPrice,
-                Tinkoff.riAmount = newPrice * floor (Tinkoff.riQuantity item) 
-              }
+          newInitialItems = 
+            initialItems <&> \item ->
+              let newAmount = floor (fromIntegral (Tinkoff.riAmount item) * ratio)
+                  newPrice = round (fromIntegral newAmount / Tinkoff.riQuantity item)
+              in item { 
+                  Tinkoff.riPrice  = newPrice,
+                  Tinkoff.riAmount = newAmount 
+                 }
           
           currentSum = sum (map Tinkoff.riAmount newInitialItems)
-          
+          remainingAmount = target - currentSum
           finalLastItem = lastItem {
-              Tinkoff.riAmount = target - currentSum,
-              -- Цену вычисляем делением остатка на количество
-              Tinkoff.riPrice = (target - currentSum) `div` floor (Tinkoff.riQuantity lastItem)
+              Tinkoff.riAmount = remainingAmount,
+              Tinkoff.riPrice = round (fromIntegral remainingAmount / Tinkoff.riQuantity lastItem)
           }
-      in newInitialItems <> [finalLastItem]
+      in trace ("newInitialItems --> " <> show newInitialItems) $ newInitialItems <> [finalLastItem]
 
     receiptItemsWithDiscount = applyDiscount receiptItems targetAmountKopecks
 

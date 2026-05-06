@@ -104,8 +104,17 @@ place orderRequest@OrderRequest {..} = do
   when (expendedBonuses > currentBonusPoints) $
     except $ Left $ BonusesExceedAvailable currentBonusPoints
  
-  let price = round $ sum [ oiTotalPrice item | item <- items]
-  let TransactionResult {..} = calculate price currentBonusPoints expendedBonuses
+  let totalPriceInKopecks = round $ (* 100) $ sum [ oiTotalPrice item | item <- items]
+
+  $(logTM) InfoS $ ls $ 
+    "transactional result params: price (in kopecks) " <> tshow totalPriceInKopecks <> 
+    ", current bonuses: " <> tshow currentBonusPoints <> 
+    ", expended bonuses: " <> tshow expendedBonuses
+
+  let transactionalRes@TransactionResult {..} = calculate totalPriceInKopecks currentBonusPoints expendedBonuses
+   
+  $(logTM) InfoS $ ls $ "transactional result: " <> tshow transactionalRes
+
   let initReq = Sdek.mkInitRequest orderId items orCustomerPhone tinkoffCred expendedBonuses
 
   $(logTM) InfoS $ ls $ "initReq: " <> encodePretty initReq
@@ -198,19 +207,18 @@ place orderRequest@OrderRequest {..} = do
          , lastMilePolicy = SelfPickup
          }
 
-  let totalPrice = sum [ oiTotalPrice item | item <- items]
   let newPaymentRecord = 
         NewPaymentRecord
         { nprOrderId           = Just orderId
         , nprProvider          = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks     = round totalPrice
+        , nprAmountKopecks     = netAmountToPay
         , nprPaymentUrl        = paymentLink
         , nprError             = Nothing
         , nprToken             = Tinkoff.irToken initReq
         , nprPaymentFlow       = encodeToText ShipNow
         , nprShelfOrderId      = Nothing
-        , nprExpendedBonuses   = expendedBonuses -- in Rubles, not kopecks
+        , nprExpendedBonuses   = pointsUsed -- in Rubles, not kopecks
         }
 
   let dbOrder = mkDbOrder orderRequest orderId telegramMsgId orderDraftJson

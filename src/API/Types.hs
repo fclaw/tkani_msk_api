@@ -686,6 +686,8 @@ data PutOnShelfPaymentOptions =
      PutOnShelfPaymentOptions
      { pspoPaymentLink      :: Maybe Text
      , pspoTotalPrice       :: Maybe Double
+     , pspoNetTotalPrice    :: Maybe Double
+     , pspoExpendedBonuses  :: Maybe Int32
      , pspoLinkToQr         :: Maybe Text
      , pspoOrderId          :: Maybe Text
      , pspoShelfStatus      :: ShelfStatus
@@ -694,7 +696,7 @@ data PutOnShelfPaymentOptions =
 $(deriveJSON defaultOptions { fieldLabelModifier = recordLabelModifier "pspo" } ''PutOnShelfPaymentOptions)
 
 
-mkDefPutOnShelfPaymentOptions = PutOnShelfPaymentOptions Nothing Nothing Nothing Nothing Requested
+mkDefPutOnShelfPaymentOptions = PutOnShelfPaymentOptions Nothing Nothing Nothing Nothing Nothing Nothing Requested
 
 data InitiateShelfShipment =
      InitiateShelfShipment

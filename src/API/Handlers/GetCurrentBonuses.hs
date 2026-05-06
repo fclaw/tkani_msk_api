@@ -24,12 +24,12 @@ handler userId = do
       return $ Left $ mkError err
     Right (totalBonuses, cartPrice) ->
       return $ Right $ 
-        -- 1. Determine the hard ceiling (50% of the cart price)
-        let limitFromCart = cartPrice `div` 2
+        -- 1. Determine the hard ceiling (1/10th of the cart price)
+        let limitFromCart = cartPrice `div` 10
       
         -- 2. The amount they can actually spend is the MINIMUM of:
         --    a) All their bonuses
-        --    b) The 50% ceiling
+        --    b) The 1/10th ceiling
             spendable = min totalBonuses limitFromCart
       
         in  CurrentBonusesResp { 

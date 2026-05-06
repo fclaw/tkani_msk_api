@@ -22,7 +22,7 @@ RUN nix-shell shell.nix --run "stack build --test --only-dependencies --system-g
 COPY src ./src
 COPY app ./app
 COPY sql ./sql
-# COPY test ./test 
+COPY test ./test
 
 RUN nix-shell shell.nix --run "stack build --test --copy-bins --system-ghc --no-nix"
 

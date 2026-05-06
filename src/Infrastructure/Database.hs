@@ -452,10 +452,22 @@ getOrderItems userId pool =
       maybePoints <- 
         Hasql.statement 
          userId 
-         [Hasql.maybeStatement| 
-           SELECT points :: int4 
-           FROM bonuses 
-           WHERE telegram_user_id = $1 :: int8
+         [Hasql.maybeStatement|
+           WITH locked_bonuses AS (
+            SELECT
+             ab.telegram_user_id AS user_id,
+             SUM(p.bonuses) AS expended_bonuses
+            FROM added_bonuses AS ab
+            INNER JOIN payments AS p
+            ON ab.payment_id = p.id
+            WHERE p.status = 'pending'
+            GROUP BY ab.telegram_user_id
+           )
+           SELECT (b.points - COALESCE(lb.expended_bonuses, 0)) :: int4 
+           FROM bonuses AS b
+           LEFT JOIN locked_bonuses AS lb
+           ON b.telegram_user_id = lb.user_id
+           WHERE b.telegram_user_id = $1 :: int8
          |]
       return (items, fromMaybe 0 maybePoints)
 
@@ -3079,7 +3091,22 @@ getPutOnDShelfDetailsStatement =
       ON pc.id = ci.pre_cut_id
       INNER JOIN fabrics AS f
       ON f.id = pc.fabric_id
-      WHERE c.telegram_user_id = $1 :: int8)
+      WHERE c.telegram_user_id = $1 :: int8
+    ), bonuses AS (
+       SELECT (b.points - COALESCE(lb.expended_bonuses, 0)) AS points
+       FROM bonuses AS b
+       LEFT JOIN (
+         SELECT
+          ab.telegram_user_id AS user_id,
+          SUM(p.bonuses) AS expended_bonuses
+         FROM added_bonuses AS ab
+         INNER JOIN payments AS p
+         ON ab.payment_id = p.id
+         WHERE p.status = 'pending'
+         GROUP BY ab.telegram_user_id) AS lb
+       ON b.telegram_user_id = lb.user_id
+       WHERE b.telegram_user_id = $1 :: int8
+    )
     SELECT
      jsonb_build_object(
       'shelf_id', s.id,
@@ -3088,7 +3115,7 @@ getPutOnDShelfDetailsStatement =
       'items', ci.items,
       'items_on_shelf_count', 
        COALESCE(COUNT(si.id) FILTER (WHERE si.status = 'ON_SHELF'), 0),
-       'bonuses', COALESCE((SELECT points FROM bonuses WHERE telegram_user_id = $1 :: int8), 0)
+       'bonuses', COALESCE((SELECT points FROM bonuses), 0)
      ) :: jsonb
     FROM shelves AS s
     LEFT JOIN shelf_items AS si
@@ -4684,7 +4711,6 @@ updateRubleTransferStatus transferId newStatus pool =
           WHERE id = $1 :: int8
         |]
 
-
 fetchBonusesDetails :: Int64 -> Hasql.Pool -> AppM (Either Text BonusesDetails)
 fetchBonusesDetails paymentId pool =
   fmap (first (pack . show)) $
@@ -4704,7 +4730,8 @@ fetchBonusesDetails paymentId pool =
         INNER JOIN added_bonuses AS ab
         ON ab.payment_id = p.id
         INNER JOIN order_telegram_bindings AS otb
-        ON otb.order_id = COALESCE(p.order_id, p.shelf_order_id)
+        ON otb.order_id = p.order_id
+           OR otb.shelf_order_id = p.shelf_order_id
         LEFT JOIN bonuses AS b
         ON b.telegram_user_id = ab.telegram_user_id
         WHERE p.id = $1 :: int8
@@ -4766,13 +4793,25 @@ getCurrentBonuses userId pool =
            ON pc.id = ci.pre_cut_id
            INNER JOIN fabrics as f
            ON pc.fabric_id = f.id
-         )
+         ),
+        locked_bonuses AS (
+         SELECT
+          ab.telegram_user_id AS user_id,
+          SUM(p.bonuses) AS expended_bonuses
+         FROM added_bonuses AS ab
+         INNER JOIN payments AS p
+         ON ab.payment_id = p.id
+         WHERE p.status = 'pending'
+         GROUP BY ab.telegram_user_id
+        )
         SELECT
-         b.points :: int4,
+         (b.points - COALESCE(lb.expended_bonuses, 0)) :: int4,
          COALESCE(SUM(ts.price), 0) :: int4
         FROM bonuses AS b
         LEFT JOIN total_sum AS ts
         ON b.telegram_user_id = ts.user_id
+        LEFT JOIN locked_bonuses AS lb
+        ON b.telegram_user_id = lb.user_id
         WHERE b.telegram_user_id = $1 :: int8
-        GROUP BY b.points
-       |]
+        GROUP BY b.points, lb.expended_bonuses
+      |]

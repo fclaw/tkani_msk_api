@@ -149,8 +149,17 @@ onSuccess userId bonuses = do
   -- prepare Tinkoff init request
   let tinkoffCred = _tinkoffCred cfg
   
-  let totalPrice = round $ sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
-  let TransactionResult {..} = calculate totalPrice (fromIntegral posdBonuses) (fromIntegral posdBonuses) -- This is just to ensure that the BonusCalculator module is included in the build, even if we don't use the result here. The actual bonus calculation and application can be implemented in the future as needed.
+  let totalPriceInKopecks = round $ (* 100) $ sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
+
+  $(logTM) InfoS $ ls $ 
+    "transactional result params: price (in kopecks) " <> 
+      tshow totalPriceInKopecks <> 
+    ", current bonuses: " <> tshow posdBonuses <>
+    ", expended bonuses: " <> tshow bonuses
+
+  let transactionalRes@TransactionResult {..} = calculate totalPriceInKopecks (fromIntegral posdBonuses) (fromIntegral bonuses) -- This is just to ensure that the BonusCalculator module is included in the build, even if we don't use the result here. The actual bonus calculation and application can be implemented in the future as needed.
+
+  $(logTM) InfoS $ ls $ "transactional result: " <> tshow transactionalRes 
 
   let initReq = mkInitRequest orderId posdItems posdPhone tinkoffCred bonuses
 
@@ -192,15 +201,13 @@ onSuccess userId bonuses = do
   when (isNothing linkToQr) $
     except $ Left $ TinkoffQrCodeFailed "Tinkoff Get QR API did not return a QR code link."
 
-  let amount = sum $ map oiTotalPrice posdItems  -- convert from kopecks to rubles
-  let totalPrice = amount
 
   let newPaymentRecord =
         NewPaymentRecord
         { nprOrderId           = Nothing
         , nprProvider          = Tinkoff
         , nprProviderPaymentId = tinkoffPaymentId
-        , nprAmountKopecks     = round amount
+        , nprAmountKopecks     = netAmountToPay -- from  Domain.Logic.BonusCalculator
         , nprPaymentUrl        = paymentLink
         , nprError             = Nothing
         , nprToken             = Tinkoff.irToken initReq
@@ -262,13 +269,18 @@ onSuccess userId bonuses = do
 
   st <- lift get
   liftIO $ atomically $ readTVar st >>= ((`writeTChan` (PutOnShelf, orderId, getStateRequest)) . _tinkoffPaymentChan)
+
+  let totalPrice = sum $ map oiTotalPrice posdItems
+
   let putOnShelfPaymentOptions = 
        PutOnShelfPaymentOptions
-       { pspoPaymentLink = Just paymentLink 
-       , pspoTotalPrice  = Just totalPrice
-       , pspoLinkToQr    = linkToQr
-       , pspoOrderId     = Just orderId
-       , pspoShelfStatus = Active
+       { pspoPaymentLink     = Just paymentLink 
+       , pspoTotalPrice      = Just totalPrice
+      ,  pspoNetTotalPrice   = Just $ fromIntegral netAmountToPay / 100
+       , pspoExpendedBonuses = Just bonuses
+       , pspoLinkToQr        = linkToQr
+       , pspoOrderId         = Just orderId
+       , pspoShelfStatus     = Active
        }
   return putOnShelfPaymentOptions
 
@@ -282,7 +294,12 @@ sendMessage chatId PutOnShelfPaymentOptions {..} = do
   eTelResp <-
     case pspoShelfStatus of
       Active -> do
-        let templateData = HM.fromList [("amount", tshow (fromJust pspoTotalPrice))]
+        let templateData = 
+              HM.fromList
+              [ ("totalPrice", tshow (fromJust pspoTotalPrice))
+              , ("netPrice", tshow (fromJust pspoNetTotalPrice))
+              , ("bonuses", tshow (fromJust pspoExpendedBonuses))
+              ]
         message <- fmap escapeMarkdownV2 $ render ($currentModule <> "." <> tshow Active) templateData
         let cardRow = [ object [ "text" .= ("💳 Оплатить картой" :: Text), "url" .= pspoPaymentLink ] ]  
         -- Create the SBP row ONLY if the link exists, otherwise return an empty list
