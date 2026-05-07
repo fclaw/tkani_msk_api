@@ -74,3 +74,4 @@
 00070.money_transfer 2026-04-28T06:19:22Z System Administrator <root@Sonny.local> # money transfer
 00071.search_teaser_extra_discoun 2026-04-29T07:54:15Z System Administrator <root@Sonny.local> # search teaser: add extra discount
 00072.bonuses 2026-05-02T15:11:00Z System Administrator <root@Sonny.local> # bonuses
+00073.daily_stats_bonuses 2026-05-07T07:54:39Z System Administrator <root@Sonny-2.local> # daily stats: account for bonuses

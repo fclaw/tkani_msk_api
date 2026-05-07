@@ -80,9 +80,9 @@ captionForLifecycle :: FabricLifecycle -> Text
 captionForLifecycle lifecycle =
   case lifecycle of
     NewArrival -> "💫 НОВОЕ ПОСТУПЛЕНИЕ 💫"      -- NEW ARRIVAL
-    Advertised -> "✨ СКОРО В ПРОДАЖЕ ✨"         -- COMING SOON
-    Regular    -> "💎 АССОРТИМЕНТ КАТАЛОГА 💎" -- CATALOG ASSORTMENT
-    OnSale     -> "🔥 СЕЗОННАЯ РАСПРОДАЖА 🔥"  -- SEASONAL SALE
+    Advertised -> "✨ СКОРО В ПРОДАЖЕ ✨"        -- COMING SOON
+    Regular    -> "💎 АССОРТИМЕНТ КАТАЛОГА 💎"   -- CATALOG ASSORTMENT
+    OnSale     -> "🔥 РАСПРОДАЖА 🔥"             -- SALE
     Clearance  -> "💥 ЛИКВИДАЦИЯ ОСТАТКОВ 💥"    -- LIQUIDATION OF REMNANTS
     Archived   -> "АРХИВ"
 
