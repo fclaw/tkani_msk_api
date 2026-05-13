@@ -27,8 +27,8 @@ tariffs:
 
 # Your standard daily window for courier pickup requests
 pickup_window:
-  from: "13:00"
-  to: "15:00"
+  from: "12:00"
+  to: "14:00"
 
 # Business account number for reference
 account_number: "YOUR_SDEK_ACCOUNT_NUMBER"
