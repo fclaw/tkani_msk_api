@@ -4574,32 +4574,20 @@ fetchFabricLifeCycleInfo threshold pool =
         OR (pc.id IS NOT NULL AND pc.in_stock IS TRUE)
       |]
 
-updateFabricLifecycle :: Int64 -> FabricType -> FabricLifecycle -> Int32 -> Hasql.Pool -> AppM (Either Text ())
-updateFabricLifecycle itemId fabricType lifecycle discount pool =
+updateFabricLifecycle :: Int64 -> FabricLifecycle -> Int32 -> Hasql.Pool -> AppM (Either Text ())
+updateFabricLifecycle itemId lifecycle discount pool =
   fmap (first (pack . show)) $
     runTransactionM pool Hasql.Write $
       Hasql.statement (
        itemId,
-       encodeToText fabricType, 
        encodeToText lifecycle, 
        discount) $
        [Hasql.resultlessStatement|
-        WITH target_fabrics AS (
-         SELECT 
-          id
-         FROM fabrics
-         WHERE (id = $1 :: int8 AND $2 :: text = 'roll')
-         OR (id IN (
-            SELECT fabric_id 
-            FROM pre_cuts 
-            WHERE id = $1 :: int8) AND $2 :: text = 'pre_cut')
-        )
-        UPDATE fabrics AS f
-        SET discount = ($4 :: int4 / 100.0),
-            lifecycle_changed_at = NOW(),
-            lifecycle = CAST($3 :: text AS fabric_lifecycle)
-        FROM target_fabrics AS tf
-        WHERE f.id = tf.id
+         UPDATE fabrics AS f
+         SET discount = ($3 :: int4 / 100.0),
+             lifecycle_changed_at = NOW(),
+             lifecycle = CAST($2 :: text AS fabric_lifecycle)
+         WHERE f.id = $1 :: int8
        |]
 
 fetchStallingFabrics :: Double -> Hasql.Pool -> AppM (Either Text [(Int64, Text, Text, Int64)])

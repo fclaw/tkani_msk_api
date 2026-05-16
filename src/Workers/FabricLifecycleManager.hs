@@ -46,7 +46,7 @@ runFabricLifecycleManager = do
             tshow fcliId <> "(" <> tshow fcliFabricType  <> 
             ") from " <> tshow fcliLifecycle <> " to " <> tshow cycle
           -- Here you would call a function to update the lifecycle in the database, e.g.:
-          updateFabricLifecycle fcliId fcliFabricType cycle discount pool
+          updateFabricLifecycle fcliId cycle discount pool
 
 
 checkTransition :: FabricLifecycle -> Day -> Day -> Maybe (FabricLifecycle, Int32)
