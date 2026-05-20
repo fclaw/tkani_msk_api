@@ -514,7 +514,7 @@ sendPriceAndTrackingNumber orderId yandexOrderId pickupId PriceCalculatorResp {.
       let intPrice = calculateFinalConsumerPrice $ toKopecks pcrPricingTotal
       let templateData = 
             HM.fromList 
-            [ ("deliveryCost", tshow intPrice)
+            [ ("deliveryCost", tshow (fromIntegral intPrice / 100.0))
             , ("deliveryDays", tshow pcrDeliveryDays)
             , ("orderId",      orderId)
             , ("address",      address)
